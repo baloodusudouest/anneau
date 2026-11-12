@@ -2,3 +2,12 @@
 maquette/
 node_modules/
 __pycache__/
+# Jamais de secret ni de donnée personnelle dans le dépôt
+.env
+data/
+
+# Construction
+__pycache__/
+.pytest_cache/
+frontend/node_modules/
+app/static/

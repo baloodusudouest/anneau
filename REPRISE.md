@@ -2,26 +2,46 @@
 
 Fichier à lire en premier dans une nouvelle session, et à mettre à jour à chaque fin de session, dans le même commit que le code.
 
-## État (12/11/2026)
+## État (13/11/2026)
 
-- Grill fini, **dossier écrit** (`docs/dossier.md`), **premier passage au conseil** (`docs/conseil.md`), décisions d'après conseil et design arrêté sur maquette en fin de dossier.
-- **Rien n'est codé.** La maquette cliquable porte la vraie liste des services : elle n'est pas dans ce dépôt (voir `.gitignore`).
-- L'inventaire réel des services n'est pas dans ce dépôt non plus : il ira dans le fichier des services de l'installation.
+- **0.1.0 sur `main`** : le temps 1, « la vue ». Codée et testée contre un **faux réseau** (15 tests du serveur, 14 tests d'écran sur PC et iPhone). **Jamais lancée sur la vraie installation.**
+- Dossier : `docs/dossier.md` (version 2 et décisions). Avis du conseil : `docs/conseil.md`, `docs/conseil-2.md`.
+- La maquette cliquable et l'inventaire réel des services ne sont pas dans ce dépôt (il est public) : voir `.gitignore`.
 
-## Sonde de Portainer (13/11/2026)
+## Où est quoi
 
-Faite en lecture seule ; résultats et conséquences en fin de `docs/dossier.md` (« Ajouts du 13/11/2026 »). Un seul Portainer gratuit pour les deux NAS, un seul compte administrateur, aucun déclencheur. La sonde s'est arrêtée sur un onglet figé pendant le test d'affichage en cadre : trois services restent à tester.
+- `app/services.py` : lecture de `services.yaml` (une ligne fausse est écartée et signalée). `app/services.exemple.yaml` : l'exemple inventé, servi si le fichier manque.
+- `app/veille.py` : la sonde et les règles d'une panne (trois échecs, trois réussites, machine qui emporte ses services, arrêt attendu, seuil des disques, Home Assistant muet). Mémoire : `pannes.json` dans le dossier de données, rien d'autre.
+- `app/main.py` : `/api/etat`, `/api/pannes/vue`, `/api/recharger`, `/api/ha/etat` (ouverte par le secret).
+- `frontend/src/lib/Cercle.svelte` : l'anneau (arcs, dépliage). `pages/Anneau.svelte` : l'écran et la vue réduite. `lib/icones.js` : les pictogrammes que le fichier appelle par leur nom.
+- `tests/interface/serveur.py` : l'Anneau de démonstration ; `morts.txt` dit quelles adresses ne répondent plus.
 
-## Prochaine étape
+## À vérifier sur la vraie installation
 
-1. Sondes de Portainer et de Home Assistant faites (voir la fin du dossier) ; l'appel de recréation marche. Restent : le cadre pour quelques services, l'intégration du second NAS dans Home Assistant (entités des deux NAS, de l'iPhone, du PC). Par le navigateur, sans rien écrire. Rapport sans secret.
-2. Vérifier quels services acceptent d'être affichés dans un cadre.
-3. **Second passage au conseil**, sur le dossier révisé et la sonde.
-4. Temps 1 : la vue (liste, voyants, écran d'ouverture, alerte de place), depuis le socle.
+1. Depuis le conteneur, les adresses locales des services du même NAS répondent-elles ? (La sonde part du conteneur, pas du navigateur.)
+2. Le cadre sur un vrai iPhone, Anneau installé sur l'écran d'accueil : les services gardent-ils leur session ?
+3. « Ouvrir » sur iPhone : où s'ouvre le service, et comment on revient.
+4. La police de plume et les halos sur un écran réel (lisibilité au soleil).
+5. Preuve de vie : arrêter un service sans enjeu, voir la panne s'ouvrir en trois minutes, puis se clore.
+
+## Prochaines étapes
+
+1. Écrire le vrai `services.yaml` avec l'utilisateur (adresses du réseau privé, ports du second NAS), déployer.
+2. Côté Home Assistant : l'automatisation qui envoie l'état chaque minute et notifie ; le réglage qui autorise le cadre. **À inscrire dans le document maître de Home Assistant.**
+3. Un mois d'usage, puis décider du temps 2 (file de travail des applis maison) et du temps 3 (mises à jour).
 
 ## Décisions à ne pas rouvrir sans raison
 
-- Trois temps : la vue sans pouvoir d'écrire, puis la file de travail des applis maison, puis les mises à jour.
-- Gestes : second mot de passe propre à l'Anneau ; liste des conteneurs touchables dans les variables de la stack ; jamais lui-même, jamais la stack.
-- État des NAS, de l'iPhone et du PC lu dans Home Assistant ; alerte de place au-delà de 90 %.
-- Design : familles en texte seul sur l'anneau, plume fine, rouge lave pour une panne, bleu spectral pour une action ; colonne d'icônes en vue réduite.
+- Temps 1 et 2 sans aucun jeton : ni Portainer, ni Home Assistant (c'est lui qui envoie).
+- Disques : seuil fixe, 99,8 % par défaut, dans le fichier.
+- Cadre si le service l'accepte, sinon fenêtre réutilisée.
+- L'anneau porte les familles en texte seul ; rouge lave pour une panne, bleu spectral pour une action ; l'état est aussi dit en mots.
+- Sombre seulement, pour l'instant.
+- La liste des services est un fichier tenu à la main ; pas d'éditeur dans l'interface.
+
+## Limites connues
+
+- Un service mort derrière une page de connexion qui répond encore reste « or ».
+- La sonde ne teste que l'adresse locale, pas celle du réseau privé.
+- Pas de version claire.
+- Les notifications sont préparées (réponse de `/api/ha/etat`) mais rien n'est branché côté Home Assistant.

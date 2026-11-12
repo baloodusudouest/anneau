@@ -1,0 +1,105 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn-svelte/tailwind.css";
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Thème de l'Anneau : les neutres chauds du socle, et l'or. Sombre seulement : l'or, le rouge lave
+   et le bleu spectral sont dessinés pour un fond sombre (pas de version claire pour l'instant).
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* L'Anneau est toujours sombre : « dark: » s'applique partout */
+@custom-variant dark {
+  @media all {
+    @slot;
+  }
+}
+
+:root {
+  color-scheme: dark;
+  --app: #e2c98a;                         /* or */
+  --app-contraste: #1e1a16;               /* texte posé sur l'or */
+  --or-vif: #f6e6b4;
+  --or-sourd: #8f7d52;
+  --lave: #ff5a26;                        /* en panne */
+  --spectre: #6fd0ff;                     /* quelque chose à faire */
+  --plume: "Tangerine", "Snell Roundhand", cursive;
+
+  --radius: 0.75rem;
+  --background: #151311;
+  --foreground: #f2ece2;
+  --card: #1f1c19;
+  --card-foreground: var(--foreground);
+  --popover: #25211d;
+  --popover-foreground: var(--foreground);
+  --primary: var(--app);
+  --primary-foreground: var(--app-contraste);
+  --secondary: #2a2521;
+  --secondary-foreground: var(--foreground);
+  --muted: #2a2521;
+  --muted-foreground: #a89e91;
+  --accent: #2a2521;
+  --accent-foreground: var(--foreground);
+  --destructive: oklch(0.72 0.18 22);
+  --border: oklch(1 0 0 / 0.1);
+  --input: oklch(1 0 0 / 0.16);
+  --ring: var(--app);
+  --valide: oklch(0.78 0.14 155);
+  --chart-1: var(--app);
+}
+
+@theme inline {
+  --font-sans: "Inter Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-valide: var(--valide);
+  --color-chart-1: var(--chart-1);
+}
+
+@layer base {
+  * { border-color: var(--border); }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+  :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  button { cursor: pointer; }
+  /* Animation sobre : rien ne bouge si l'appareil demande de réduire les animations */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+  }
+}
+
+@layer components {
+  /* Titre d'écran : grand, fin, serré. C'est la signature typographique du socle. */
+  .titre { font-size: 2rem; line-height: 1.1; font-weight: 300; letter-spacing: -0.035em; }
+  .etiquette { font-size: 0.72rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted-foreground); }
+  .chiffre { font-weight: 300; letter-spacing: -0.04em; line-height: 1; font-variant-numeric: tabular-nums; }
+}

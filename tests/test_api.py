@@ -1,0 +1,267 @@
+"""Tests de l'Anneau (temps 1) : la garde, le fichier des services, les règles d'une panne,
+les envois de Home Assistant, le choix des adresses. Tout est inventé : aucune vraie adresse."""
+import asyncio
+import dataclasses
+import json
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app import main, services
+from app.config import Config
+from app.veille import SILENCE_HA, Veille
+
+MDP = "mot-de-passe-de-test"
+SECRET = "secret-de-home-assistant"
+
+
+class Monde:
+    """Un faux réseau : on dit quelles adresses répondent, et quelle heure il est."""
+    def __init__(self):
+        self.morts: set[str] = set()
+        self.t = 1000.0
+        self.demandes: list[str] = []
+
+    async def sonder(self, adresse):
+        self.demandes.append(adresse)
+        return (not any(m in adresse for m in self.morts), 12)
+
+    def horloge(self):
+        return self.t
+
+
+@pytest.fixture()
+def monde():
+    return Monde()
+
+
+@pytest.fixture()
+def veille(tmp_path, monde):
+    return Veille(tmp_path, services.lire(tmp_path / "services.yaml"), ha_attendu=True, sonder=monde.sonder, horloge=monde.horloge)
+
+
+def tours(v, n=1):
+    for _ in range(n):
+        asyncio.run(v.tour())
+
+
+def etat_de(v, nom, **kw):
+    return next(s for f in v.etat(**kw)["familles"] for s in f["services"] if s["nom"] == nom)
+
+
+@pytest.fixture()
+def client(tmp_path, veille):
+    main.ETAT.clear()
+    main.ETAT.update(cfg=Config(password=MDP, data=tmp_path, static=tmp_path / "static", secret_ha=SECRET,
+                                attente_connexion=False, veille=False), veille=veille)
+    with TestClient(main.app) as c:
+        yield c
+    main.ETAT.clear()
+
+
+def connecter(client):
+    assert client.post("/api/connexion", json={"mot_de_passe": MDP}).status_code == 200
+
+
+# ---------------------------------------------------------------- la garde
+
+def test_tout_est_ferme_sans_session(client):
+    assert client.get("/health").json()["ok"] is True
+    for chemin in ("/api/etat", "/api/inconnue"):
+        assert client.get(chemin).status_code == 401, chemin
+    for chemin in ("/api/pannes/vue", "/api/recharger"):
+        assert client.post(chemin, json={}).status_code == 401, chemin
+    assert client.post("/api/connexion", json={"mot_de_passe": "faux"}).status_code == 401
+    connecter(client)
+    assert client.get("/api/etat").status_code == 200 and client.get("/api/inconnue").status_code == 404
+    assert client.get("/api/etat").headers["cache-control"] == "no-store"
+
+
+def test_deconnexion_invalide_les_anciens_cookies(client, tmp_path):
+    connecter(client)
+    ancien = client.cookies.get("anneau_session")
+    assert client.post("/api/deconnexion").status_code == 200
+    client.cookies.set("anneau_session", ancien)
+    assert client.get("/api/etat").status_code == 401
+    assert (tmp_path / "session_generation").read_text() == "1"
+
+
+# ---------------------------------------------------------------- le fichier des services
+
+def test_sans_fichier_l_exemple_sert_et_c_est_dit(tmp_path):
+    f = services.lire(tmp_path / "services.yaml")
+    assert f.exemple and len(f.services) == 7 and [x["nom"] for x in f.familles][:2] == ["Proches", "Photos"]
+    assert f.seuil_disque == 99.8 and f.famille_ha == "Maison" and not f.erreurs
+    assert all("192.0.2." in s.locale for s in f.services)              # adresses réservées à la documentation
+
+
+def test_une_ligne_fausse_est_ecartee_et_signalee(tmp_path):
+    (tmp_path / "services.yaml").write_text("""
+reglages: { seuil_disque: beaucoup }
+familles: [{ nom: Photos }]
+machines: [{ nom: Grand NAS, sonde: "pas une adresse" }]
+services:
+  - { nom: Bon, famille: Photos, locale: "http://192.0.2.1:80/" }
+  - { nom: Bon, famille: Photos, locale: "http://192.0.2.1:81" }
+  - { nom: Sans famille, famille: Ailleurs, locale: "http://192.0.2.1:82" }
+  - { nom: Sans adresse, famille: Photos }
+  - { nom: Machine fantôme, famille: Photos, locale: "http://192.0.2.1:83", machine: Inconnue }
+""", encoding="utf-8")
+    f = services.lire(tmp_path / "services.yaml")
+    assert [s.nom for s in f.services] == ["Bon", "Machine fantôme"] and f.services[0].locale == "http://192.0.2.1:80"
+    assert f.seuil_disque == 99.8 and not f.exemple and f.modifie_le
+    assert len(f.erreurs) == 6
+    (tmp_path / "services.yaml").write_text("- ceci\n- n'est pas\n- un fichier de services")
+    with pytest.raises(services.FichierInvalide):
+        services.lire(tmp_path / "services.yaml")
+
+
+# ---------------------------------------------------------------- les règles d'une panne
+
+def test_trois_echecs_ouvrent_trois_reussites_closent(veille, monde):
+    tours(veille)
+    assert etat_de(veille, "Cinéma")["etat"] == "ok" and veille.pannes == {} and veille.derniere_sonde
+    monde.morts.add(":8103")
+    tours(veille, 2)
+    assert etat_de(veille, "Cinéma")["etat"] == "ok" and veille.pannes == {}        # deux échecs : rien encore
+    tours(veille)
+    assert etat_de(veille, "Cinéma")["etat"] == "panne"
+    p = veille.pannes["service:cinema"]
+    assert p["phrase"] == "Cinéma ne répond plus" and p["famille"] == "Médias"
+    assert next(f for f in veille.etat()["familles"] if f["nom"] == "Médias")["etat"] == "panne"
+    monde.morts.clear()
+    tours(veille, 2)
+    assert "service:cinema" in veille.pannes                                        # deux réussites : pas encore close
+    tours(veille)
+    assert veille.pannes == {} and veille.closes[0]["phrase_fin"] == "Cinéma répond de nouveau"
+    assert etat_de(veille, "Cinéma")["etat"] == "ok"
+
+
+def test_un_arret_attendu_n_est_jamais_une_panne(veille, monde):
+    monde.morts.add(":3003")
+    tours(veille, 5)
+    assert etat_de(veille, "Ordinateur de calcul")["etat"] == "eteint" and veille.pannes == {}
+    assert next(f for f in veille.etat()["familles"] if f["nom"] == "Machines")["etat"] == "ok"
+
+
+def test_une_machine_qui_tombe_fait_une_seule_panne(veille, monde):
+    monde.morts.add("192.0.2.10")                      # le grand NAS et ses quatre services
+    tours(veille, 3)
+    assert list(veille.pannes) == ["machine:grand-nas"]
+    assert veille.pannes["machine:grand-nas"]["phrase"] == "Grand NAS ne répond plus"
+    e = etat_de(veille, "Cinéma")
+    assert e["etat"] == "panne" and e["machine_en_panne"]
+    assert next(f for f in veille.etat()["familles"] if f["nom"] == "Machines")["etat"] == "panne"   # la famille de la machine
+    monde.morts.clear()
+    tours(veille, 3)
+    assert veille.pannes == {}
+
+
+def test_une_panne_survit_au_redemarrage_et_se_prend_en_compte(veille, monde, tmp_path):
+    monde.morts.add(":8104")
+    tours(veille, 3)
+    assert veille.prendre_en_compte("service:statistiques") and not veille.prendre_en_compte("service:inconnu")
+    suite = Veille(tmp_path, veille.fichier, sonder=monde.sonder, horloge=monde.horloge)
+    assert suite.pannes["service:statistiques"]["prise_en_compte_le"]
+    assert etat_de(suite, "Statistiques")["etat"] == "panne"
+    monde.morts.clear()
+    tours(suite, 3)
+    assert suite.pannes == {} and json.loads((tmp_path / "pannes.json").read_text())["ouvertes"] == []
+
+
+def test_un_service_retire_du_fichier_emporte_sa_panne(veille, monde):
+    monde.morts.add(":8104")
+    tours(veille, 3)
+    veille.fichier = dataclasses.replace(veille.fichier, services=tuple(s for s in veille.fichier.services if s.nom != "Statistiques"))
+    tours(veille)
+    assert veille.pannes == {}
+
+
+# ---------------------------------------------------------------- Home Assistant
+
+ENVOI = {"volumes": [{"machine": "Grand NAS", "nom": "Volume 1", "pourcentage": 99.6, "etat": "attention"},
+                     {"machine": "Grand NAS", "nom": "Volume 2", "pourcentage": "unavailable", "etat": "unavailable"}],
+         "mises_a_jour": [{"machine": "Grand NAS", "disponible": False}, {"machine": "Petit NAS", "disponible": True, "version": "9.9"}]}
+
+
+def test_le_seuil_des_disques_est_fixe(veille):
+    r = veille.recevoir(ENVOI)
+    assert r["pannes"] == 0 and veille.pannes == {}                                  # 99,6 % : sous le seuil, pas une panne
+    assert veille.etat()["volumes"][1]["pourcentage"] is None                        # « indisponible » : ni panne ni vert
+    assert veille.etat()["a_faire"] == [{"cle": "maj:petit-nas", "sorte": "systeme", "famille": "",
+                                         "phrase": "Mise à jour du système disponible pour Petit NAS (9.9)"}]
+    plein = {"volumes": [{"machine": "Grand NAS", "nom": "Volume 1", "pourcentage": 99.8}]}
+    r = veille.recevoir(plein)
+    assert r == {"pannes": 1, "ouvertes": ["Volume 1 de Grand NAS est plein à 99,8 %"], "closes": [],
+                 "liste": ["Volume 1 de Grand NAS est plein à 99,8 %"]}
+    assert veille.pannes["volume:grand-nas-volume-1"]["famille"] == "Machines"
+    assert veille.recevoir(plein)["ouvertes"] == []                                  # dit une fois, pas à chaque envoi
+    veille.recevoir({"volumes": [{"machine": "Grand NAS", "nom": "Volume 1", "pourcentage": "unknown"}]})
+    assert "volume:grand-nas-volume-1" in veille.pannes                              # on ne sait pas : on ne clôt pas
+    r = veille.recevoir({"volumes": [{"machine": "Grand NAS", "nom": "Volume 1", "pourcentage": 97}]})
+    assert r["pannes"] == 0 and r["closes"] == ["Volume 1 de Grand NAS est redescendu à 97,0 %"]
+
+
+def test_home_assistant_muet_apres_cinq_minutes(veille, monde):
+    tours(veille)
+    assert veille.pannes == {}
+    monde.t += SILENCE_HA + 1
+    tours(veille)
+    assert veille.pannes["ha"]["phrase"] == "Home Assistant est muet" and veille.pannes["ha"]["famille"] == "Maison"
+    assert veille.recevoir({})["closes"] == ["Home Assistant envoie de nouveau son état"] and veille.pannes == {}
+    assert veille.etat()["fraicheur"]["ha_age"] == 0
+    sans = Veille(veille.data, veille.fichier, ha_attendu=False, sonder=monde.sonder, horloge=monde.horloge)
+    monde.t += 10 * SILENCE_HA
+    tours(sans)
+    assert "ha" not in sans.pannes                                                   # sans secret, on n'attend personne
+
+
+def test_l_envoi_de_home_assistant_demande_le_secret(client):
+    assert client.post("/api/ha/etat", json=ENVOI).status_code == 401
+    assert client.post("/api/ha/etat", json=ENVOI, headers={"X-Anneau-Secret": "faux"}).status_code == 401
+    r = client.post("/api/ha/etat", json=ENVOI, headers={"X-Anneau-Secret": SECRET})
+    assert r.status_code == 200 and r.json()["pannes"] == 0
+    main.ETAT["cfg"] = dataclasses.replace(main.ETAT["cfg"], secret_ha="")
+    assert client.post("/api/ha/etat", json=ENVOI, headers={"X-Anneau-Secret": ""}).status_code == 503
+
+
+# ---------------------------------------------------------------- les adresses, par l'API
+
+def test_adresse_locale_ou_du_reseau_prive_selon_l_appel(client, veille):
+    connecter(client)
+    tours(veille)
+    def service(nom, **entetes):
+        return next(s for f in client.get("/api/etat", headers=entetes).json()["familles"] for s in f["services"] if s["nom"] == nom)
+    assert service("Photothèque")["adresse"] == "http://192.0.2.10:8102" and service("Photothèque")["cadre"] is True
+    prive = {"host": "anneau.reseau-prive.exemple", "x-forwarded-proto": "https"}
+    assert service("Photothèque", **prive)["adresse"] == "https://photos.reseau-prive.exemple"
+    assert service("Photothèque", **prive)["cadre"] is True
+    assert service("Domotique", **prive)["adresse"] == "http://192.0.2.30:8123"       # pas d'adresse privée : la locale
+    assert service("Domotique", **prive)["cadre"] is False                           # du http dans une page https : pas de cadre
+    assert service("Cinéma", host="faux-reseau-prive.exemple.invalide")["adresse"] == "http://192.0.2.10:8103"
+
+
+def test_pris_en_compte_et_recharger_par_l_api(client, veille, monde, tmp_path):
+    connecter(client)
+    monde.morts.add(":8104")
+    tours(veille, 3)
+    assert client.post("/api/pannes/vue", json={"cle": "service:statistiques"}).status_code == 200
+    assert client.get("/api/etat").json()["pannes"][0]["prise_en_compte_le"]
+    assert client.post("/api/pannes/vue", json={"cle": "service:rien"}).status_code == 404
+    (tmp_path / "services.yaml").write_text('familles: [{nom: Photos}]\nservices: [{nom: Seul, famille: Photos, locale: "http://192.0.2.9"}]')
+    r = client.post("/api/recharger").json()
+    assert r["services"] == 1 and client.get("/api/etat").json()["fraicheur"]["exemple"] is False
+    assert client.get("/api/etat").json()["pannes"] == []
+    (tmp_path / "services.yaml").write_text("[")
+    assert client.post("/api/recharger").status_code == 422
+
+
+def test_l_anneau_ne_fait_que_des_lectures(veille, monde):
+    """Temps 1 : aucune écriture hors de chez lui. La sonde ne connaît qu'un geste, lire une adresse du fichier."""
+    tours(veille, 2)
+    attendues = {s.a_sonder for s in veille.fichier.services} | {m.sonde for m in veille.fichier.machines}
+    assert set(monde.demandes) == attendues
+    import inspect
+    from app import veille as module
+    source = inspect.getsource(module)
+    assert ".post(" not in source and ".put(" not in source and ".delete(" not in source and ".patch(" not in source
