@@ -1,0 +1,4 @@
+# La maquette porte la vraie liste des services : elle reste hors du dépôt.
+maquette/
+node_modules/
+__pycache__/
