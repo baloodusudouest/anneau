@@ -131,6 +131,19 @@ Maquette cliquable : `maquette/anneau-maquette-2.html`. Choix de l'utilisateur, 
 - **Icônes** : les applis maison gardent la leur ; pour les autres, celle que le service fournit lui-même, sinon un pictogramme générique.
 - **Six familles** : Proches (contacts, arbre généalogique, kit d'urgence), Photos (photothèque, numérisation, et les quatre applis maison de photos), Médias, Maison, Collecte, Machines. Le squelette des applis n'est pas dans l'Anneau. La répartition exacte est dans le fichier des services, hors dépôt.
 
+## Ajouts du 13/11/2026
+
+- **Adresses** : si l'Anneau est ouvert par son adresse du réseau privé, tous les services s'ouvrent par leur adresse du réseau privé ; sinon par leur adresse locale. Chaque service a donc deux adresses dans le fichier des services, et l'Anneau choisit d'après l'adresse par laquelle il est lui-même appelé.
+- **Icône de la vue réduite** : un anneau d'or lisse et brillant, sans aucune inscription.
+- **Première sonde de Portainer** (lecture seule, par le navigateur) — ce qu'elle change au dossier :
+  - **Un seul Portainer** (édition gratuite, 2.45) pilote les deux NAS : le second par un agent. Un seul jeton suffira, pas deux.
+  - **Un seul compte, administrateur.** Aucun compte restreint n'existe ; l'édition gratuite n'a pas de droits fins. Le « compte dédié » du dossier ne protège donc de rien : la protection reste la liste figée et le second mot de passe.
+  - **Aucun déclencheur** (webhook) n'est défini.
+  - Sur le NAS principal, tout est dans une seule stack ; sur le second, une stack connue de Portainer et un ensemble de conteneurs lancés hors de Portainer (il peut les voir et les redémarrer, pas les redéployer).
+  - Deux services de la liste ne sont pas des conteneurs (le serveur de médias, Home Assistant) : pour eux, seulement « répond ou non ».
+  - **Affichage dans un cadre** (cinq services testés) : deux l'acceptent, deux le refusent (« même origine seulement »), un reste à tester. Le cadre « état + Ouvrir » sera donc courant, pas une exception ; les applis maison, elles, pourront l'autoriser.
+  - **Reste à sonder** : l'appel « recréer un conteneur » (non essayé, il écrit), Home Assistant, et le cas du réseau privé en HTTPS, où un service en HTTP ne peut pas être affiché dans un cadre.
+
 ## Questions ouvertes pour le conseil
 
 1. **Une appli sur mesure est-elle justifiée**, quand des portails tout faits existent, pour un seul utilisateur ?
