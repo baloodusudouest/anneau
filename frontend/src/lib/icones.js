@@ -1,0 +1,45 @@
+// Pictogrammes au trait (24 × 24), dessinés pour l'Anneau. Le fichier des services les appelle par leur nom ;
+// un service peut aussi donner l'adresse de sa propre icône (les applis maison le font).
+export const ICONES = {
+  personnes: '<circle cx="9" cy="8.5" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="16.5" cy="9.5" r="2.3"/><path d="M15.5 14.2a4.5 4.5 0 0 1 5 4.8"/>',
+  image: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m4.5 17 4.5-4.2 3.2 3 2.6-2.4 4.7 4.2"/>',
+  lecture: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="m10 9.2 5 2.8-5 2.8z"/>',
+  maison: '<path d="M4 11.5 12 5l8 6.5"/><path d="M6.5 10v9h11v-9"/><path d="M10.5 19v-5h3v5"/>',
+  descente: '<path d="M12 4v10M8 10.5l4 4 4-4"/><path d="M4.5 15v3.5h15V15"/>',
+  serveur: '<rect x="4" y="4.5" width="16" height="6" rx="1.5"/><rect x="4" y="13.5" width="16" height="6" rx="1.5"/><path d="M7.5 7.5h.1M7.5 16.5h.1M11 7.5h5M11 16.5h5"/>',
+  carnet: '<rect x="5.5" y="3.5" width="13" height="17" rx="2"/><circle cx="12" cy="10" r="2.2"/><path d="M8.5 16a3.6 3.6 0 0 1 7 0M3.5 8h2M3.5 12h2M3.5 16h2"/>',
+  verre: '<path d="M8 4h8l-.5 4a3.5 3.5 0 0 1-7 0z"/><path d="M12 11.5V19M9 19.5h6"/>',
+  calendrier: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 9.5h16M8.5 3.5v3M15.5 3.5v3M9 14h6M9 17h3.5"/>',
+  trousse: '<rect x="3.5" y="7.5" width="17" height="12" rx="2"/><path d="M9 7.5V5.5h6v2M12 11v5M9.5 13.5h5"/>',
+  montagne: '<path d="m3.5 18 5.5-9 3.5 5 2.5-3.5 5.5 7.500z"/>',
+  chemin: '<path d="M6 4c5 2 7 5 6.5 8.500S9 18 13 20.500"/><circle cx="6" cy="4" r="1.3"/><circle cx="12.5" cy="12" r="1.3"/><circle cx="13" cy="20.5" r="1.3"/>',
+  soleil: '<circle cx="12" cy="12" r="3"/><path d="M12 3.5v3M12 17.5v3M3.5 12h3M17.5 12h3M6 6l2.1 2.1M15.9 15.9 18 18M18 6l-2.1 2.1M8.1 15.9 6 18"/>',
+  numerisation: '<path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.500H16M8 20H5.5A1.5 1.5 0 0 1 4 18.500V16M4 12h16"/>',
+  arbre: '<path d="M12 21v-7"/><path d="M12 14c-4 0-6.5-2.500-6.5-5.500S8 3.500 12 3.500s6.500 2 6.500 5S16 14 12 14z"/><path d="m12 11-2.500-2.500M12 9l2-2"/>',
+  disque: '<circle cx="12" cy="12" r="8.5"/><path d="m10 8.5 5 3.500-5 3.500z"/>',
+  courbes: '<path d="M4.5 19.5h15M7.5 16v-4M12 16V7M16.5 16v-6.500"/>',
+  oeil: '<path d="M3 12s3.3-6 9-6 9 6 9 6-3.300 6-9 6-9-6-9-6z"/><circle cx="12" cy="12" r="2.6"/>',
+  comete: '<circle cx="15.5" cy="8.5" r="3.5"/><path d="m12.8 10.800-8.300 8.700M10.5 8l-5 5M16 13.500l-5 5"/>',
+  casque: '<path d="M5 14v-2a7 7 0 0 1 14 0v2"/><rect x="3.5" y="13.5" width="4" height="6" rx="1.5"/><rect x="16.5" y="13.5" width="4" height="6" rx="1.5"/>',
+  livre: '<path d="M12 6.500C10 5 7.500 4.500 4 4.500v13c3.500 0 6 .500 8 2 2-1.500 4.500-2 8-2v-13c-3.500 0-6 .500-8 2zM12 6.500v13"/>',
+  ecran: '<rect x="3.5" y="6" width="17" height="11" rx="2"/><path d="M9 20.500h6M9 3l3 3 3-3"/>',
+  pellicule: '<rect x="4" y="4.5" width="16" height="15" rx="2"/><path d="M8 4.500v15M16 4.500v15M4 9.500h4M4 14.500h4M16 9.500h4M16 14.500h4"/>',
+  musique: '<path d="M9.5 17.500V6l9-2v11.500"/><circle cx="7" cy="17.5" r="2.5"/><circle cx="16" cy="15.5" r="2.5"/>',
+  'sous-titres': '<rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="M7 11.500h4M13.500 11.500H17M7 15h7M16.500 15h.500"/>',
+  loupe: '<circle cx="10.5" cy="10.5" r="6"/><path d="m20 20-5.200-5.200"/>',
+  prise: '<path d="M9 3.500v5M15 3.500v5M6.500 8.500h11v3a5.500 5.500 0 0 1-11 0zM12 17v3.500"/>',
+  echange: '<path d="M8 4v11M4.500 11.500l3.500 3.500 3.500-3.500M16 20V9M12.500 12.500 16 9l3.500 3.500"/>',
+  video: '<rect x="3.5" y="4.5" width="17" height="10" rx="2"/><path d="m10.500 7.500 3.500 2-3.500 2zM12 16.500v4M9.500 18.500l2.500 2.500 2.500-2.500"/>',
+  rond: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.5"/>',
+  boite: '<path d="M4 8.500h16v10.500a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM3 4.500h18v4H3zM10 12.500h4"/>',
+  nas: '<rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M8.500 7.500h7M8.500 11h7M8.500 14.500h7M9 18h.100"/>',
+  baies: '<rect x="3.5" y="6" width="17" height="12" rx="2"/><path d="M8 6v12M12 6v12M16 6v12"/>',
+  cube: '<path d="M12 3.500 19.500 8v8L12 20.500 4.500 16V8zM4.500 8 12 12.500 19.500 8M12 12.500v8"/>',
+  reseau: '<circle cx="6" cy="6" r="1.8"/><circle cx="12" cy="6" r="1.8"/><circle cx="18" cy="6" r="1.8"/><circle cx="6" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="18" cy="12" r="1.8"/><circle cx="12" cy="18" r="1.8"/>',
+  processeur: '<rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M10 3.500V7M14 3.500V7M10 17v3.500M14 17v3.500M3.500 10H7M3.500 14H7M17 10h3.500M17 14h3.500"/>',
+  point: '<circle cx="12" cy="12" r="6.5"/>',
+}
+
+// Une icône du fichier : une adresse d'image, ou le nom d'un pictogramme (sinon un simple rond).
+export const estImage = (icone) => /^(https?:)?\//.test(icone || '')
+export const trait = (icone) => ICONES[icone] || ICONES.point

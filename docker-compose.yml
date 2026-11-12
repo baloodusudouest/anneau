@@ -1,0 +1,18 @@
+# Service « anneau » à placer dans la stack de la maison (Portainer).
+# Les variables viennent des « Environment variables » de la stack (voir .env.example).
+services:
+  anneau:
+    image: ghcr.io/baloodusudouest/anneau:latest
+    container_name: anneau
+    restart: unless-stopped
+    ports:
+      - "${PORT_ANNEAU:-8094}:8094"                   # réseau local et réseau privé uniquement
+    environment:
+      - TZ=Europe/Paris
+      - ANNEAU_PASSWORD=${APPS_PASSWORD}              # mot de passe commun aux applis, obligatoire
+      - ANNEAU_SECRET_HA=${ANNEAU_SECRET_HA:-}        # secret joint par Home Assistant à ses envois ; vide : pas d'envois
+    volumes:
+      - ${ANNEAU_DATA_DIR}:/data                      # services.yaml (à poser à la main) et pannes.json
+    labels:
+      # mise à jour à la main, comme les autres applis de la maison
+      - "com.centurylinklabs.watchtower.enable=false"

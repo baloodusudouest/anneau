@@ -1,0 +1,62 @@
+# Exemple inventé du fichier des services de l'Anneau.
+# Le vrai fichier se pose dans le dossier de données du conteneur, sous le nom services.yaml.
+# Aucune de ces adresses n'existe.
+
+reglages:
+  seuil_disque: 99.8                # un volume plus plein que cela est « en panne »
+  famille_ha: Maison                # la famille que colore « Home Assistant est muet »
+  hotes_prives: [reseau-prive.exemple]   # ouvert par un de ces hôtes, l'Anneau donne les adresses « privee »
+
+familles:
+  - { nom: Proches, icone: personnes }
+  - { nom: Photos, icone: image }
+  - { nom: Médias, icone: lecture }
+  - { nom: Maison, icone: maison }
+  - { nom: Machines, icone: serveur }
+
+machines:
+  - { nom: Grand NAS, sonde: "http://192.0.2.10:5000", famille: Machines }   # sa panne colore « Machines »
+  - { nom: Petit NAS, sonde: "http://192.0.2.20:8080", famille: Machines }
+
+services:
+  - nom: Répertoire
+    famille: Proches
+    locale: "http://192.0.2.10:8101"
+    privee: "https://repertoire.reseau-prive.exemple"
+    sonde: "http://192.0.2.10:8101/health"
+    icone: "http://192.0.2.10:8101/icone.svg"     # une appli maison fournit sa propre icône
+    cadre: true
+    machine: Grand NAS
+  - nom: Photothèque
+    famille: Photos
+    locale: "http://192.0.2.10:8102"
+    privee: "https://photos.reseau-prive.exemple"
+    icone: image
+    cadre: true
+    machine: Grand NAS
+  - nom: Cinéma
+    famille: Médias
+    locale: "http://192.0.2.10:8103"
+    icone: lecture
+    machine: Grand NAS
+  - nom: Statistiques
+    famille: Médias
+    locale: "http://192.0.2.10:8104"
+    icone: courbes
+    machine: Grand NAS
+  - nom: Domotique
+    famille: Maison
+    locale: "http://192.0.2.30:8123"
+    icone: maison
+    cadre: true
+  - nom: Téléchargements
+    famille: Machines
+    locale: "http://192.0.2.20:8105"
+    icone: descente
+    machine: Petit NAS
+  - nom: Ordinateur de calcul
+    famille: Machines
+    locale: "http://192.0.2.40:3003"
+    sonde: "http://192.0.2.40:3003/ping"
+    icone: processeur
+    arret_attendu: true              # éteint la plupart du temps : jamais « en panne »
