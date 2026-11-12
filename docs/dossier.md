@@ -146,7 +146,7 @@ Maquette cliquable : `maquette/anneau-maquette-2.html`. Choix de l'utilisateur, 
 
 - **Sonde de Home Assistant** (lecture seule, 13/11/2026) :
   - Le NAS principal y est connu : une entité « mise à jour du système », et pour chaque volume son état et son pourcentage utilisé. L'alerte de place et la mise à jour du système se lisent donc sans rien ajouter.
-  - **Le second NAS n'y est pas** : aucune entité. Il faudra y ajouter son intégration, ou renoncer pour lui à la place et aux mises à jour.
+  - **Le second NAS y a été ajouté le 13/11/2026** : état général, température, processeur, mémoire et pourcentage utilisé du volume. Sept entités actives sur trente-sept (les autres sont désactivées par défaut). **Aucune entité « mise à jour du système »** n'a été vue pour lui : pour ce NAS, l'Anneau aura la place et l'état, pas l'annonce d'une mise à jour, sauf à trouver une entité parmi celles désactivées.
   - L'iPhone y est (batterie, stockage, réseau), et un bouton de réveil du PC existe.
   - L'adresse HTTPS de Home Assistant présente une erreur de certificat depuis ce navigateur ; la sonde est passée par l'adresse locale. À régler avant de compter sur les adresses du réseau privé.
 - **Essai de l'appel « recréer un conteneur »** (13/11/2026, sur le conteneur du squelette, avec l'accord de l'utilisateur) : accepté par Portainer en 29 secondes, avec retéléchargement de l'image. Le conteneur revient sous un nouvel identifiant, toujours rattaché à sa stack, avec son port. Le temps 3 (mises à jour une par une) est donc faisable sans redéployer la stack. Non vérifié : le cas où une image plus récente existe réellement, et le retour à « sain » du conteneur (encore « en démarrage » 48 secondes après).
