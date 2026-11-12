@@ -14,7 +14,7 @@ Faite en lecture seule ; résultats et conséquences en fin de `docs/dossier.md`
 
 ## Prochaine étape
 
-1. **Sonde en lecture seule de Home Assistant** (Portainer est fait, sauf l'appel de recréation) (entités des deux NAS, de l'iPhone, du PC). Par le navigateur, sans rien écrire. Rapport sans secret.
+1. Sondes de Portainer et de Home Assistant faites (voir la fin du dossier) ; l'appel de recréation marche. Restent : le cadre pour quelques services, l'intégration du second NAS dans Home Assistant (entités des deux NAS, de l'iPhone, du PC). Par le navigateur, sans rien écrire. Rapport sans secret.
 2. Vérifier quels services acceptent d'être affichés dans un cadre.
 3. **Second passage au conseil**, sur le dossier révisé et la sonde.
 4. Temps 1 : la vue (liste, voyants, écran d'ouverture, alerte de place), depuis le socle.

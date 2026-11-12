@@ -144,6 +144,13 @@ Maquette cliquable : `maquette/anneau-maquette-2.html`. Choix de l'utilisateur, 
   - **Affichage dans un cadre** (cinq services testés) : deux l'acceptent, deux le refusent (« même origine seulement »), un reste à tester. Le cadre « état + Ouvrir » sera donc courant, pas une exception ; les applis maison, elles, pourront l'autoriser.
   - **Reste à sonder** : l'appel « recréer un conteneur » (non essayé, il écrit), Home Assistant, et le cas du réseau privé en HTTPS, où un service en HTTP ne peut pas être affiché dans un cadre.
 
+- **Sonde de Home Assistant** (lecture seule, 13/11/2026) :
+  - Le NAS principal y est connu : une entité « mise à jour du système », et pour chaque volume son état et son pourcentage utilisé. L'alerte de place et la mise à jour du système se lisent donc sans rien ajouter.
+  - **Le second NAS n'y est pas** : aucune entité. Il faudra y ajouter son intégration, ou renoncer pour lui à la place et aux mises à jour.
+  - L'iPhone y est (batterie, stockage, réseau), et un bouton de réveil du PC existe.
+  - L'adresse HTTPS de Home Assistant présente une erreur de certificat depuis ce navigateur ; la sonde est passée par l'adresse locale. À régler avant de compter sur les adresses du réseau privé.
+- **Essai de l'appel « recréer un conteneur »** (13/11/2026, sur le conteneur du squelette, avec l'accord de l'utilisateur) : accepté par Portainer en 29 secondes, avec retéléchargement de l'image. Le conteneur revient sous un nouvel identifiant, toujours rattaché à sa stack, avec son port. Le temps 3 (mises à jour une par une) est donc faisable sans redéployer la stack. Non vérifié : le cas où une image plus récente existe réellement, et le retour à « sain » du conteneur (encore « en démarrage » 48 secondes après).
+
 ## Questions ouvertes pour le conseil
 
 1. **Une appli sur mesure est-elle justifiée**, quand des portails tout faits existent, pour un seul utilisateur ?
