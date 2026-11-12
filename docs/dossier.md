@@ -83,7 +83,8 @@ Arrêté sur maquette cliquable (hors dépôt : elle porte la vraie liste).
 services.yaml   familles ; services (nom, famille, adresse locale, adresse du réseau privé, sonde, icône, cadre oui/non)
 sondes          service, le, répond, délai, version — gardées quelques jours
 machines        dernière lecture de Home Assistant : volumes (pourcentage, état), mises à jour, iPhone, PC
-alertes         rang (panne | à faire), sorte, service, depuis, vue
+pannes          cause (service, machine, volume, Home Assistant muet), ouverte_le, close_le, prise_en_compte_le, notifiée
+a_faire         sorte, service, depuis
 journal         le, geste, service, résultat — sans secret (temps 3)
 ```
 
@@ -102,6 +103,16 @@ journal         le, geste, service, résultat — sans secret (temps 3)
 **Temps 3** — mises à jour une par une, puis les autres gestes, avec la sécurité décrite plus haut.
 
 Tests : faux services, faux Home Assistant ; le découpage panne / à faire ; les trois échecs ; le choix d'adresse selon l'adresse d'appel ; tests d'écran PC et iPhone (dépliage, vue réduite, cadre refusé).
+
+## Décisions prises après le second passage (13/11/2026)
+
+Avis complet : `conseil-2.md`.
+
+- **Home Assistant envoie son état à l'Anneau** (une automatisation, chaque minute, avec un secret partagé). L'Anneau ne détient aucun jeton de Home Assistant. Sans envoi depuis cinq minutes : « Home Assistant muet ». Une valeur « indisponible » n'est ni une panne ni un vert.
+- **Disques : seuil fixe à 99,8 %** (choix de l'utilisateur, contre la recommandation « alerter sur l'aggravation »). En dessous, un volume n'est pas une panne, quel que soit l'état que le NAS lui donne. Le seuil est dans le fichier des services.
+- **Cadre si possible, sinon fenêtre.** Chaque service a son mode dans le fichier. En mode fenêtre : son état, et « Ouvrir » qui réutilise toujours la même fenêtre pour ce service. **Home Assistant sera réglé pour accepter le cadre** (une ligne de configuration, à inscrire dans le document maître ; elle retire une protection contre l'affichage de Home Assistant dans une page tierce, acceptable sur un réseau fermé). À essayer sur un vrai iPhone avant de coder la vue réduite.
+- **iPhone** : l'ordre entre l'anneau et la liste des pannes se choisit sur une maquette à deux versions.
+- **Repris de la recommandation du président**, sans objection : l'anneau est codé dès la première étape, depuis la maquette ; déploiement tôt ; cycle de vie d'une panne (trois échecs pour l'ouvrir, trois réussites pour la clore, une notification à l'ouverture et une à la clôture, une panne par cause, « arrêt attendu » pour le PC) ; fraîcheur affichée partout ; données de l'iPhone, écran Connexion et seuils réglables à l'écran coupés du temps 1 ; preuve de vie à la mise en service.
 
 ## Questions ouvertes pour le second passage au conseil
 
