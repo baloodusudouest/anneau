@@ -114,6 +114,11 @@ def test_3_un_service_dans_le_cadre_un_autre_a_cote(page, monde):
     cadre = page.get_by_role("region", name="Photothèque").locator("iframe")
     assert cadre.get_attribute("src") == monde[0] + "/health?s=phototheque"          # il accepte le cadre
     assert "camera" in cadre.get_attribute("allow")                                   # l'appareil photo passe dans le cadre
+    boite, ecran = cadre.bounding_box(), page.viewport_size
+    if page.ecran != "pc":                                                           # sur téléphone, le service a toute la largeur
+        assert boite["width"] >= ecran["width"] - 16 and boite["height"] >= ecran["height"] * 0.7
+        barre = page.get_by_role("navigation", name="Familles").bounding_box()
+        assert barre["y"] < boite["y"] and barre["height"] < 60                      # les familles sont en ligne, au-dessus
     colonne = page.get_by_role("navigation", name="Familles")
     assert colonne.get_by_role("button").count() == 6 and colonne.inner_text().strip() == ""   # des icônes, pas de noms
     assert colonne.get_by_role("button", name="Photos").get_attribute("aria-current") == "true"
