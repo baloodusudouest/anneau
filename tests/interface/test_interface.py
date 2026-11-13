@@ -120,6 +120,7 @@ def test_3_un_service_dans_le_cadre_un_autre_a_cote(page, monde):
     page.get_by_label("Services de Photos").get_by_role("button", name="Numérisation").click()
     fiche = page.get_by_role("region", name="Numérisation")
     assert fiche.locator("iframe").count() == 0 and "Numérisation répond" in fiche.inner_text()
+    assert "il interdit d'être affiché dans une autre page (X-Frame-Options : SAMEORIGIN)" in fiche.inner_text()
     with page.expect_popup() as fenetre:                                             # il s'ouvre à côté…
         fiche.get_by_role("button", name="Ouvrir Numérisation").click()
     assert "s=numerisation" in fenetre.value.url

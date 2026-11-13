@@ -87,7 +87,7 @@
       {/each}
     </div>
     <section class="contenu" aria-label={leService.nom}>
-      {#if leService.cadre && leService.etat !== 'panne'}
+      {#if leService.cadre && leService.etat !== 'panne' && leService.etat !== 'eteint'}
         {#key leService.adresse}<iframe src={leService.adresse} title={leService.nom} allow="camera; fullscreen; clipboard-write"></iframe>{/key}
       {:else}
         <div class="fiche">
@@ -95,7 +95,7 @@
           <p role="status">{leService.nom} {PHRASES[leService.etat]}{leService.depuis ? ` depuis ${duree(leService.depuis, tic)}` : ''}{leService.etat === 'ok' && leService.delai != null ? ` · réponse en ${leService.delai} ms` : ''}.</p>
           {#if leService.machine_en_panne}<p class="text-sm text-muted-foreground">{leService.machine} ne répond plus : c'est lui qui est en panne.</p>{/if}
           <Button onclick={() => dehors(leService)}>Ouvrir {leService.nom}</Button>
-          <p class="text-sm text-muted-foreground">{leService.cadre ? 'En panne : rien à afficher ici.' : 'Ce service ne s\'affiche pas dans l\'Anneau : il s\'ouvre à côté, toujours dans la même fenêtre.'}</p>
+          <p class="text-sm text-muted-foreground">{leService.cadre ? (leService.etat === 'eteint' ? 'Éteint : rien à afficher ici.' : 'En panne : rien à afficher ici.') : `${leService.nom} s'ouvre à côté, toujours dans la même fenêtre : ${leService.hors_cadre}.`}</p>
         </div>
       {/if}
     </section>

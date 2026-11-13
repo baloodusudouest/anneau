@@ -25,14 +25,12 @@ services:
     privee: "https://repertoire.reseau-prive.exemple"
     sonde: "http://192.0.2.10:8101/health"
     icone: "http://192.0.2.10:8101/icone.svg"     # une appli maison fournit sa propre icône
-    cadre: true
     machine: Grand NAS
   - nom: Photothèque
     famille: Photos
     locale: "http://192.0.2.10:8102"
     privee: "https://photos.reseau-prive.exemple"
     icone: image
-    cadre: true
     machine: Grand NAS
   - nom: Cinéma
     famille: Médias
@@ -43,12 +41,12 @@ services:
     famille: Médias
     locale: "http://192.0.2.10:8104"
     icone: courbes
+    cadre: false                                  # jamais dans l'Anneau : toujours ouvert à côté
     machine: Grand NAS
   - nom: Domotique
     famille: Maison
     locale: "http://192.0.2.30:8123"
     icone: maison
-    cadre: true
   - nom: Téléchargements
     famille: Machines
     locale: "http://192.0.2.20:8105"
