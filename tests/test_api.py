@@ -240,13 +240,29 @@ def test_adresse_locale_ou_du_reseau_prive_selon_l_appel(client, veille):
     tours(veille)
     def service(nom, **entetes):
         return next(s for f in client.get("/api/etat", headers=entetes).json()["familles"] for s in f["services"] if s["nom"] == nom)
-    assert service("Photothèque")["adresse"] == "http://192.0.2.10:8102" and service("Photothèque")["cadre"] is True
+    maison = {"host": "192.0.2.10:8094"}
+    assert service("Photothèque", **maison)["adresse"] == "http://192.0.2.10:8102" and service("Photothèque", **maison)["cadre"] is True
     prive = {"host": "anneau.reseau-prive.exemple", "x-forwarded-proto": "https"}
     assert service("Photothèque", **prive)["adresse"] == "https://photos.reseau-prive.exemple"
     assert service("Photothèque", **prive)["cadre"] is True
     assert service("Domotique", **prive)["adresse"] == "http://192.0.2.30:8123"       # pas d'adresse privée : la locale
     assert service("Domotique", **prive)["cadre"] is False                           # du http dans une page https : pas de cadre
-    assert service("Cinéma", host="faux-reseau-prive.exemple.invalide")["adresse"] == "http://192.0.2.10:8103"
+    assert service("Répertoire", host="faux-reseau-prive.exemple.invalide")["adresse"].startswith("http://")      # pas l'adresse privée
+
+
+def test_le_service_suit_l_hote_par_lequel_l_anneau_est_ouvert(client, veille):
+    """Ouvert par un autre nom que celui de la maison, l'Anneau donne ses services sous ce nom :
+    sinon le navigateur refuse leur cookie de connexion dans le cadre."""
+    connecter(client)
+    tours(veille)
+    def adresse(nom, **entetes):
+        return next(s for f in client.get("/api/etat", headers=entetes).json()["familles"] for s in f["services"] if s["nom"] == nom)["adresse"]
+    assert adresse("Photothèque", host="192.0.2.10:8094") == "http://192.0.2.10:8102"         # ouvert par l'hôte de la maison : rien ne change
+    assert adresse("Photothèque", host="grand-nas:8094") == "http://grand-nas:8102"           # par un nom : le service suit, port gardé
+    assert adresse("Photothèque", host="100.64.0.7:8094") == "http://100.64.0.7:8102"         # par une autre adresse : pareil
+    assert adresse("Domotique", host="grand-nas:8094") == "http://192.0.2.30:8123"            # une autre machine garde son adresse
+    assert adresse("Photothèque", host="grand-nas", **{"x-forwarded-proto": "https"}) == "http://192.0.2.10:8102"   # en https : on ne devine pas
+    assert adresse("Photothèque", host="anneau.reseau-prive.exemple") == "https://photos.reseau-prive.exemple"     # l'adresse privée passe devant
 
 
 def test_tout_s_ouvre_dans_l_anneau_sauf_refus(veille, monde):

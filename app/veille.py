@@ -21,6 +21,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Awaitable, Callable
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
@@ -252,17 +253,30 @@ class Veille:
                 "liste": [p["phrase"] for p in self.pannes.values()][:10]}
 
     # ------------------------------------------------------------ ce que l'écran affiche
-    def _hors_cadre(self, s, adresse: str, https: bool) -> str:
+    def _hors_cadre(self, s, adresse: str, https: bool, examinee: str) -> str:
         """Pourquoi ce service ne s'affiche pas dans l'Anneau ; vide : il s'y affiche."""
         if https and adresse.startswith("http://"):
             return "son adresse est en http et l'Anneau est ouvert en https"
         if s.cadre is False:
             return "le fichier des services le veut ainsi (cadre: false)"
-        if s.cadre is None and self.refus.get(adresse):
-            return f"il interdit d'être affiché dans une autre page ({self.refus[adresse]})"
+        if s.cadre is None and self.refus.get(examinee):
+            return f"il interdit d'être affiché dans une autre page ({self.refus[examinee]})"
         return ""
 
-    def etat(self, prive: bool = False, https: bool = False) -> dict:
+    def _adresse(self, s, prive: bool, https: bool, hote: str) -> str:
+        """L'adresse à donner au navigateur. L'adresse du réseau privé si l'Anneau est ouvert par là ; sinon la locale,
+        où l'hôte de la maison est remplacé par celui qui a servi à ouvrir l'Anneau : le service reste ainsi « du même
+        site » que l'Anneau, sans quoi le navigateur refuse son cookie de connexion dans le cadre."""
+        if prive and s.privee:
+            return s.privee
+        local = self.fichier.hote_local
+        if local and hote and hote != local and not https:
+            morceaux = urlsplit(s.locale)
+            if morceaux.hostname == local:
+                return urlunsplit(morceaux._replace(netloc=hote + (f":{morceaux.port}" if morceaux.port else "")))
+        return s.locale
+
+    def etat(self, prive: bool = False, https: bool = False, hote: str = "") -> dict:
         f = self.fichier
         en_panne = {m.nom for m in f.machines if self.suivi.get("machine:" + m.cle, {}).get("etat") == "panne"}
         familles = []
@@ -270,11 +284,11 @@ class Veille:
             services = []
             for s in (x for x in f.services if x.famille == fam["nom"]):
                 suivi = self.suivi.get("service:" + s.cle, {})
-                adresse = s.privee if prive and s.privee else s.locale
+                adresse = self._adresse(s, prive, https, hote)
                 services.append({
                     "nom": s.nom, "cle": s.cle, "icone": s.icone, "etat": suivi.get("etat", "inconnu"),
                     "depuis": suivi.get("depuis", ""), "delai": suivi.get("delai"), "adresse": adresse,
-                    "cadre": not (pourquoi := self._hors_cadre(s, adresse, https)), "hors_cadre": pourquoi,
+                    "cadre": not (pourquoi := self._hors_cadre(s, adresse, https, s.privee if adresse == s.privee else s.locale)), "hors_cadre": pourquoi,
                     "machine": s.machine, "machine_en_panne": s.machine in en_panne})
             etats = {x["etat"] for x in services}
             familles.append({**fam, "services": services,

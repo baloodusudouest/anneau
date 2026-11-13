@@ -123,9 +123,13 @@ def deconnexion():
 
 # ================================================================ l'état
 
+def _hote(request: Request) -> str:
+    return (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").split(":")[0].lower()
+
+
 def _prive(request: Request) -> bool:
     """L'Anneau est-il ouvert par son adresse du réseau privé ? Alors tous les liens le sont aussi."""
-    hote = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").split(":")[0].lower()
+    hote = _hote(request)
     return any(hote == h or hote.endswith("." + h) for h in ETAT["veille"].fichier.hotes_prives)
 
 
@@ -135,7 +139,7 @@ def _https(request: Request) -> bool:
 
 @app.get("/api/etat")
 def etat(request: Request):
-    return {**ETAT["veille"].etat(prive=_prive(request), https=_https(request)), "version": __version__}
+    return {**ETAT["veille"].etat(prive=_prive(request), https=_https(request), hote=_hote(request)), "version": __version__}
 
 
 @app.post("/api/pannes/vue")
