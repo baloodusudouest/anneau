@@ -4,6 +4,7 @@ Fichier à lire en premier dans une nouvelle session, et à mettre à jour à ch
 
 ## État (13/11/2026)
 
+- **0.1.2** (13/11/2026) : le cadre porte `allow="camera; fullscreen; clipboard-write"` (numérisation dans l'Anneau ; caméra en direct seulement si l'Anneau et le service sont en HTTPS).
 - **0.1.1** (13/11/2026) : le bouton du milieu ouvre un service dans un nouvel onglet (`Anneau.svelte` : `milieu`, `onglet` ; `Cercle.svelte` : `onmilieu`).
 - **0.1.0 sur `main`** : le temps 1, « la vue ». Codée et testée contre un **faux réseau** (15 tests du serveur, 14 tests d'écran sur PC et iPhone). **Jamais lancée sur la vraie installation.**
 - Dossier : `docs/dossier.md` (version 2 et décisions). Avis du conseil : `docs/conseil.md`, `docs/conseil-2.md`.

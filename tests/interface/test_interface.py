@@ -113,6 +113,7 @@ def test_3_un_service_dans_le_cadre_un_autre_a_cote(page, monde):
     ouvrir_service(page, "Photos", "Photothèque")
     cadre = page.get_by_role("region", name="Photothèque").locator("iframe")
     assert cadre.get_attribute("src") == monde[0] + "/health?s=phototheque"          # il accepte le cadre
+    assert "camera" in cadre.get_attribute("allow")                                   # l'appareil photo passe dans le cadre
     colonne = page.get_by_role("navigation", name="Familles")
     assert colonne.get_by_role("button").count() == 6 and colonne.inner_text().strip() == ""   # des icônes, pas de noms
     assert colonne.get_by_role("button", name="Photos").get_attribute("aria-current") == "true"
