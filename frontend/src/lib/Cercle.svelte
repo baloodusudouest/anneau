@@ -109,10 +109,12 @@
   .anneau { display: block; width: 100%; height: auto; overflow: visible; }
   text { font-family: var(--plume); font-weight: 700; }
   text:focus:not(:focus-visible) { outline: none; }
-  .famille { cursor: pointer; fill: url(#or); transition: opacity 0.25s; }
+  .famille { cursor: pointer; fill: url(#or); }
   .famille:hover, .famille.active { fill: var(--or-vif); }
   .famille.inconnu { fill: var(--or-sourd); }
-  .deplie .famille:not(.active):not(.panne):not(.faire) { opacity: 0.38; }
+  /* Les autres familles s'effacent par leur couleur, pas par « opacity » : sur iPhone, un texte courbe rendu
+     translucide est rogné à sa boîte, et les grandes boucles de la plume (le M, le n final) y perdaient un morceau. */
+  .deplie .famille:not(.active):not(.panne):not(.faire) { fill: color-mix(in srgb, var(--or-sourd) 62%, var(--background)); }
   .service { cursor: pointer; fill: var(--app); }
   .service:hover { fill: var(--or-vif); }
   .service.inconnu, .service.eteint { fill: var(--or-sourd); }
