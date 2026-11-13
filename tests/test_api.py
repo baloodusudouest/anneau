@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from app import main, services
 from app.config import Config
-from app.veille import SILENCE_HA, Veille
+from app.veille import Veille
 
 MDP = "mot-de-passe-de-test"
 SECRET = "secret-de-home-assistant"
@@ -210,18 +210,34 @@ def test_le_seuil_des_disques_est_fixe(veille):
     assert r["pannes"] == 0 and r["closes"] == ["Volume 1 de Grand NAS est redescendu à 97,0 %"]
 
 
-def test_home_assistant_muet_apres_cinq_minutes(veille, monde):
+def test_home_assistant_muet_apres_son_silence(veille, monde):
+    """0.4.1 : Home Assistant envoie chaque heure ; il est muet après `silence_ha` minutes (90 par défaut)."""
+    assert veille.fichier.silence_ha == 90
     tours(veille)
-    assert veille.pannes == {}
-    monde.t += SILENCE_HA + 1
+    monde.t += 89 * 60
+    tours(veille)
+    assert veille.pannes == {}                                                       # une heure sans envoi : normal
+    monde.t += 2 * 60
     tours(veille)
     assert veille.pannes["ha"]["phrase"] == "Home Assistant est muet" and veille.pannes["ha"]["famille"] == "Maison"
     assert veille.recevoir({})["closes"] == ["Home Assistant envoie de nouveau son état"] and veille.pannes == {}
     assert veille.etat()["fraicheur"]["ha_age"] == 0
     sans = Veille(veille.data, veille.fichier, ha_attendu=False, sonder=monde.sonder, horloge=monde.horloge, examiner=monde.examiner)
-    monde.t += 10 * SILENCE_HA
+    monde.t += 10 * 3600
     tours(sans)
     assert "ha" not in sans.pannes                                                   # sans secret, on n'attend personne
+
+
+def test_silence_ha_reglable(tmp_path):
+    from app.services import lire
+    f = tmp_path / "services.yaml"
+    base = "familles: [{nom: Maison}]\nservices: [{nom: X, famille: Maison, locale: 'http://192.0.2.1'}]\n"
+    f.write_text(base + "reglages: {silence_ha: 10}\n", encoding="utf-8")
+    assert lire(f).silence_ha == 10
+    for faux in ("0", "abc", "-5"):
+        f.write_text(base + f"reglages: {{silence_ha: {faux}}}\n", encoding="utf-8")
+        r = lire(f)
+        assert r.silence_ha == 90 and any("silence_ha" in e for e in r.erreurs)
 
 
 def test_l_envoi_de_home_assistant_demande_le_secret(client):

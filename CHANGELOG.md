@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 0.4.1 — 13 novembre 2026
+- **Home Assistant n'envoie plus qu'une fois par heure** (et dès qu'un état de volume ou la mise à jour de DSM change). L'Anneau le dit muet après 90 minutes sans envoi, au lieu de 5. Réglable dans le fichier des services : `reglages: silence_ha: <minutes>`.
+- Tests : 20 du serveur, 18 d'écran.
+
 ## 0.4.0 — 13 novembre 2026
 - **Les services ouverts restent chargés.** Passer d'un service à l'autre, ou revenir à l'anneau, ne recharge plus rien : on retrouve chaque service où on l'avait laissé. Huit au plus restent ouverts, le plus ancien cède sa place. Un point sur la pastille dit qu'un service est resté ouvert. Toucher le service déjà affiché le recharge.
 - Tests : 19 du serveur, 18 d'écran.
