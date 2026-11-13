@@ -59,6 +59,7 @@ class Fichier:
     services: tuple[Service, ...] = ()
     seuil_disque: float = 99.8
     hotes_prives: tuple[str, ...] = ()
+    hote_local: str = ""        # l'hôte de la maison (ex. l'adresse du NAS) : remplacé par celui par lequel l'Anneau est ouvert
     famille_ha: str = ""        # la famille que colore « Home Assistant est muet »
     lu_le: str = ""
     modifie_le: str = ""
@@ -141,6 +142,7 @@ def lire(chemin: Path) -> Fichier:
     return Fichier(
         familles=tuple(familles), machines=tuple(machines), services=tuple(services), seuil_disque=seuil,
         hotes_prives=tuple(str(h).strip().lower() for h in (reglages.get("hotes_prives") or []) if str(h).strip()),
+        hote_local=str(reglages.get("hote_local", "")).strip().lower(),
         famille_ha=str(reglages.get("famille_ha", "")).strip() if str(reglages.get("famille_ha", "")).strip() in connues else "",
         lu_le=datetime.now().astimezone().isoformat(timespec="seconds"),
         modifie_le="" if exemple else datetime.fromtimestamp(chemin.stat().st_mtime).astimezone().isoformat(timespec="seconds"),

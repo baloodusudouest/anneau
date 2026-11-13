@@ -5,6 +5,8 @@
 reglages:
   seuil_disque: 99.8                # un volume plus plein que cela est « en panne »
   famille_ha: Maison                # la famille que colore « Home Assistant est muet »
+  hote_local: "192.0.2.10"          # ouvert par un autre nom ou une autre adresse (en http), l'Anneau donne les services
+                                    # de cet hôte sous ce même nom : ils restent « du même site », et leur connexion marche dans le cadre
   hotes_prives: [reseau-prive.exemple]   # ouvert par un de ces hôtes, l'Anneau donne les adresses « privee »
 
 familles:
