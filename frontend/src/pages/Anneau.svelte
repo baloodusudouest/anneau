@@ -2,7 +2,7 @@
   // L'écran de l'Anneau. Deux vues :
   //  - l'anneau des familles, avec ce qui est en panne et ce qui est à faire ;
   //  - la vue réduite, quand un service est ouvert : l'anneau d'or en haut à gauche (retour),
-  //    une colonne d'icônes (une par famille), les services de la famille en pastilles, et le service.
+  //    une colonne d'icônes (une par famille ; en ligne sur téléphone), les services de la famille en pastilles, et le service.
   //    Le cadre laisse passer l'appareil photo (numérisation), le plein écran et la copie.
   import { onMount } from 'svelte'
   import { api } from '$lib/api.js'
@@ -211,6 +211,18 @@
   .colonne button[aria-current='true'] { background: var(--card); border-left-color: var(--app); }
   .contenu { grid-row: 2; grid-column: 2; min-height: 0; border: 1px solid var(--border); border-radius: 0.9rem; background: var(--card); overflow: hidden; }
   .contenu iframe { display: block; width: 100%; height: 100%; border: 0; background: var(--background); }
+  /* Sur téléphone, le service prend toute la largeur : les familles passent en ligne à côté de l'anneau, les services
+     dessous. À côté d'une colonne d'icônes, le cadre n'avait que les trois quarts de l'écran et les applis y débordaient. */
+  @media (max-width: 899px) {
+    .reduit { grid-template-columns: 3rem minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); gap: 0.45rem 0.5rem;
+              padding: calc(0.4rem + env(safe-area-inset-top)) max(0.35rem, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(0.35rem, env(safe-area-inset-left)); }
+    .retour { max-width: 3rem; }
+    .colonne { grid-row: 1; grid-column: 2; flex-direction: row; justify-content: space-between; overflow-x: auto; overflow-y: hidden; }
+    .colonne button { flex: none; width: 2.75rem; height: 2.75rem; border-left: 0; border-bottom: 2px solid transparent; }
+    .colonne button[aria-current='true'] { border-bottom-color: var(--app); }
+    .reduit > .pastilles { grid-row: 2; grid-column: 1 / -1; }
+    .contenu { grid-row: 3; grid-column: 1 / -1; border-radius: 0.7rem 0.7rem 0 0; }
+  }
   .fiche { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.8rem; padding: 1.5rem; text-align: center; }
   .fiche h1 { font-size: 3.4rem; margin: 0; }
   .fiche p { max-width: 44ch; margin: 0; }

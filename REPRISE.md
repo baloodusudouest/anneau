@@ -4,6 +4,7 @@ Fichier à lire en premier dans une nouvelle session, et à mettre à jour à ch
 
 ## État (13/11/2026)
 
+- **0.3.1** (13/11/2026) : vu sur le vrai iPhone, une appli coupée dans le cadre (trop étroit à côté de la colonne). Sous 900 px, la vue réduite passe en trois rangées : anneau et familles, services, cadre pleine largeur. Autre chose vue sur la même capture, non traitée : l'appli du cadre suit le thème du téléphone (clair) alors que l'Anneau est toujours sombre.
 - **0.3.0** (13/11/2026) : connexion commune avec l'Anneau — cookie `maison_session` (posé à la connexion ; `Sessions.connecte`, `commun_valide` dans `app/auth.py`). Jamais essayée sur la vraie installation.
 - **0.2.2** (13/11/2026) : `reglages.hote_local` et `Veille._adresse` — les services de l'hôte de la maison sont donnés sous l'hôte par lequel l'Anneau est ouvert, pour que leur cookie (`SameSite=Strict`, et le blocage des cookies tiers de Safari) passe dans le cadre. Cause supposée d'après une capture, **pas encore confirmée** par l'utilisateur. En https il faut une adresse `privee` par service.
 - **0.2.1** (13/11/2026) : sur iPhone (vu sur capture), un texte courbe avec `opacity` est rogné à sa boîte ; les familles en retrait sont assombries par `fill`. **À surveiller : l'état « panne » utilise `filter: drop-shadow` sur le même texte, jamais vu sur un vrai iPhone ; il pourrait rogner de la même façon.**
