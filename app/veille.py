@@ -112,20 +112,23 @@ class Veille:
             log.warning("Pannes non enregistrées sur disque : %s", exc)
 
     # ------------------------------------------------------------ ouvrir, clore
-    def _ouvrir(self, c: str, sorte: str, nom: str, phrase: str, famille: str = "") -> None:
+    def _ouvrir(self, c: str, sorte: str, nom: str, phrase: str, famille: str = "",
+                avant: str = "", etat: str = "") -> None:
+        """avant → etat : le passage dit sur le téléphone (« Grimmory : répond → ne répond plus »)."""
         if c in self.pannes:
             return
         p = {"cle": c, "sorte": sorte, "nom": nom, "phrase": phrase, "famille": famille,
+             "avant": avant, "etat": etat,
              "ouverte_le": maintenant(), "prise_en_compte_le": ""}
         self.pannes[c] = p
         self.a_notifier.append({"quoi": "ouverte", **p})
         self._garder()
 
-    def _clore(self, c: str, phrase: str) -> None:
+    def _clore(self, c: str, phrase: str, etat_fin: str = "") -> None:
         p = self.pannes.pop(c, None)
         if p is None:
             return
-        close = {**p, "close_le": maintenant(), "phrase_fin": phrase}
+        close = {**p, "close_le": maintenant(), "phrase_fin": phrase, "etat_fin": etat_fin}
         self.closes.insert(0, close)
         del self.closes[GARDEES:]
         self.a_notifier.append({"quoi": "close", **close})
@@ -186,20 +189,20 @@ class Veille:
         for m in f.machines:
             c = "machine:" + m.cle
             if m.nom in en_panne:
-                self._ouvrir(c, "machine", m.nom, f"{m.nom} ne répond plus", m.famille)
+                self._ouvrir(c, "machine", m.nom, f"{m.nom} ne répond plus", m.famille, "répond", "ne répond plus")
             elif self.suivi.get(c, {}).get("etat") == "ok":
-                self._clore(c, f"{m.nom} répond de nouveau")
+                self._clore(c, f"{m.nom} répond de nouveau", "répond de nouveau")
         for s in f.services:
             c = "service:" + s.cle
             etat = self.suivi.get(c, {}).get("etat")
             if etat == "panne" and s.machine not in en_panne:
-                self._ouvrir(c, "service", s.nom, f"{s.nom} ne répond plus", s.famille)
+                self._ouvrir(c, "service", s.nom, f"{s.nom} ne répond plus", s.famille, "répond", "ne répond plus")
             elif etat == "panne":                  # la machine est tombée : c'est sa panne, pas celle du service
                 if c in self.pannes:
                     self.pannes.pop(c)
                     self._garder()
             elif etat in ("ok", "eteint"):
-                self._clore(c, f"{s.nom} répond de nouveau")
+                self._clore(c, f"{s.nom} répond de nouveau", "répond de nouveau")
         connus = {"machine:" + m.cle for m in f.machines} | {"service:" + s.cle for s in f.services}
         for c in [c for c, p in self.pannes.items() if p["sorte"] in ("service", "machine") and c not in connus]:
             self.pannes.pop(c)                     # service retiré du fichier : sa panne n'a plus d'objet
@@ -230,10 +233,12 @@ class Veille:
                 continue                           # on ne sait pas : on ne change rien
             if v["pourcentage"] >= self.fichier.seuil_disque:
                 famille = next((m.famille for m in self.fichier.machines if m.nom == v["machine"]), "")
-                self._ouvrir(c, "volume", nom, f"{nom} est plein à {str(v['pourcentage']).replace('.', ',')} %", famille)
+                pct = str(v['pourcentage']).replace('.', ',')
+                self._ouvrir(c, "volume", nom, f"{nom} est plein à {pct} %", famille, "sous le seuil", f"plein à {pct} %")
             else:
-                self._clore(c, f"{nom} est redescendu à {str(v['pourcentage']).replace('.', ',')} %")
-        self._clore("ha", "Home Assistant envoie de nouveau son état")
+                pct = str(v['pourcentage']).replace('.', ',')
+                self._clore(c, f"{nom} est redescendu à {pct} %", f"{pct} %")
+        self._clore("ha", "Home Assistant envoie de nouveau son état", "envoie de nouveau son état")
         return self.pour_ha()
 
     def _silence_ha(self) -> None:
@@ -241,14 +246,26 @@ class Veille:
             return
         reference = self.machines["recu_a"] if self.machines["recu_a"] is not None else self.demarrage
         if self._horloge() - reference > self.fichier.silence_ha * 60:
-            self._ouvrir("ha", "ha", "Home Assistant", "Home Assistant est muet", self.fichier.famille_ha)
+            self._ouvrir("ha", "ha", "Home Assistant", "Home Assistant est muet", self.fichier.famille_ha,
+                        "envoie son état", "muet")
 
     def pour_ha(self) -> dict:
         """Ce que Home Assistant doit dire sur le téléphone : une fois par ouverture, une fois par clôture."""
         dire, self.a_notifier = self.a_notifier, []
-        return {"pannes": len(self.pannes),
-                "ouvertes": [p["phrase"] for p in dire if p["quoi"] == "ouverte"],
-                "closes": [p["phrase_fin"] for p in dire if p["quoi"] == "close"],
+        # Chaque ligne dit le passage d'un état à l'autre : « Grimmory : répond → ne répond plus ».
+        # Une panne ouverte puis close entre deux envois ne fait qu'une ligne, dans les closes :
+        # « Grimmory : ne répond plus → répond de nouveau (coupure brève) ».
+        closes_ici = {p["cle"] for p in dire if p["quoi"] == "close"}
+        ouvertes, closes = [], []
+        for p in dire:
+            if p["quoi"] == "ouverte" and p["cle"] not in closes_ici:
+                ouvertes.append(f"{p['nom']} : {p['avant']} → {p['etat']}" if p.get("etat") else p["phrase"])
+            elif p["quoi"] == "close":
+                ligne = f"{p['nom']} : {p['etat']} → {p['etat_fin']}" if p.get("etat") and p.get("etat_fin") else p["phrase_fin"]
+                if p["sorte"] != "ha" and any(o["quoi"] == "ouverte" and o["cle"] == p["cle"] for o in dire):
+                    ligne += " (coupure brève)"
+                closes.append(ligne)
+        return {"pannes": len(self.pannes), "ouvertes": ouvertes, "closes": closes,
                 "liste": [p["phrase"] for p in self.pannes.values()][:10]}
 
     # ------------------------------------------------------------ ce que l'écran affiche

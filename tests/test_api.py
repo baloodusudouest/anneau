@@ -142,6 +142,15 @@ def test_trois_echecs_ouvrent_trois_reussites_closent(veille, monde):
     assert "service:cinema" in veille.pannes                                        # deux réussites : pas encore close
     tours(veille)
     assert veille.pannes == {} and veille.closes[0]["phrase_fin"] == "Cinéma répond de nouveau"
+    # 0.4.2 : ouverte puis close entre deux envois de HA, une seule ligne, avec le passage
+    r = veille.pour_ha()
+    assert r["ouvertes"] == [] and r["closes"] == ["Cinéma : ne répond plus → répond de nouveau (coupure brève)"]
+    monde.morts.add(":8103")
+    tours(veille, 3)
+    assert veille.pour_ha()["ouvertes"] == ["Cinéma : répond → ne répond plus"]
+    monde.morts.clear()
+    tours(veille, 3)
+    assert veille.pour_ha()["closes"] == ["Cinéma : ne répond plus → répond de nouveau"]
     assert etat_de(veille, "Cinéma")["etat"] == "ok"
 
 
@@ -200,14 +209,14 @@ def test_le_seuil_des_disques_est_fixe(veille):
                                          "phrase": "Mise à jour du système disponible pour Petit NAS (9.9)"}]
     plein = {"volumes": [{"machine": "Grand NAS", "nom": "Volume 1", "pourcentage": 99.8}]}
     r = veille.recevoir(plein)
-    assert r == {"pannes": 1, "ouvertes": ["Volume 1 de Grand NAS est plein à 99,8 %"], "closes": [],
+    assert r == {"pannes": 1, "ouvertes": ["Volume 1 de Grand NAS : sous le seuil → plein à 99,8 %"], "closes": [],
                  "liste": ["Volume 1 de Grand NAS est plein à 99,8 %"]}
     assert veille.pannes["volume:grand-nas-volume-1"]["famille"] == "Machines"
     assert veille.recevoir(plein)["ouvertes"] == []                                  # dit une fois, pas à chaque envoi
     veille.recevoir({"volumes": [{"machine": "Grand NAS", "nom": "Volume 1", "pourcentage": "unknown"}]})
     assert "volume:grand-nas-volume-1" in veille.pannes                              # on ne sait pas : on ne clôt pas
     r = veille.recevoir({"volumes": [{"machine": "Grand NAS", "nom": "Volume 1", "pourcentage": 97}]})
-    assert r["pannes"] == 0 and r["closes"] == ["Volume 1 de Grand NAS est redescendu à 97,0 %"]
+    assert r["pannes"] == 0 and r["closes"] == ["Volume 1 de Grand NAS : plein à 99,8 % → 97,0 %"]
 
 
 def test_home_assistant_muet_apres_son_silence(veille, monde):
@@ -220,7 +229,7 @@ def test_home_assistant_muet_apres_son_silence(veille, monde):
     monde.t += 2 * 60
     tours(veille)
     assert veille.pannes["ha"]["phrase"] == "Home Assistant est muet" and veille.pannes["ha"]["famille"] == "Maison"
-    assert veille.recevoir({})["closes"] == ["Home Assistant envoie de nouveau son état"] and veille.pannes == {}
+    assert veille.recevoir({})["closes"] == ["Home Assistant : muet → envoie de nouveau son état"] and veille.pannes == {}
     assert veille.etat()["fraicheur"]["ha_age"] == 0
     sans = Veille(veille.data, veille.fichier, ha_attendu=False, sonder=monde.sonder, horloge=monde.horloge, examiner=monde.examiner)
     monde.t += 10 * 3600

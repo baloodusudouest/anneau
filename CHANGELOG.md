@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 0.4.2 — 13 novembre 2026
+- **Les notifications disent le passage d'un état à l'autre**, avec une flèche : « Grimmory : répond → ne répond plus », « Grimmory : ne répond plus → répond de nouveau », « Volume 1 de Synology : plein à 99,9 % → 99,1 % », « Home Assistant : muet → envoie de nouveau son état ».
+- **Une panne ouverte puis close entre deux envois de Home Assistant ne fait plus qu'une ligne** : « Grimmory : ne répond plus → répond de nouveau (coupure brève) », au lieu d'une ligne rouge puis d'une verte, et le titre ne la compte plus comme une panne.
+- L'écran de l'Anneau ne change pas. Rien à changer dans Home Assistant.
+
 ## 0.4.1 — 13 novembre 2026
 - **Home Assistant n'envoie plus qu'une fois par heure** (et dès qu'un état de volume ou la mise à jour de DSM change). L'Anneau le dit muet après 90 minutes sans envoi, au lieu de 5. Réglable dans le fichier des services : `reglages: silence_ha: <minutes>`.
 - Tests : 20 du serveur, 18 d'écran.
