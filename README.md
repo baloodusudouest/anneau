@@ -7,7 +7,7 @@ Version 0.1 : **la vue**. L'Anneau lit (une demande par service, chaque minute) 
 ## Mise en place
 
 1. Ajouter le service de [`docker-compose.yml`](docker-compose.yml) à la stack, avec les variables de [`.env.example`](.env.example).
-2. Écrire `services.yaml` dans le dossier de données, sur le modèle de [`app/services.exemple.yaml`](app/services.exemple.yaml) : familles, machines, services (adresse locale, adresse du réseau privé, icône, cadre ou non). Sans ce fichier, l'Anneau montre l'exemple.
+2. Écrire `services.yaml` dans le dossier de données, sur le modèle de [`app/services.exemple.yaml`](app/services.exemple.yaml) : familles, machines, services (adresse locale, adresse du réseau privé, icône ; `cadre: false` pour un service qui doit toujours s'ouvrir à côté). Sans ce fichier, l'Anneau montre l'exemple.
 3. Ouvrir `http://<NAS>:8094`, se connecter avec le mot de passe commun. Après une modification du fichier : Réglages › « Recharger le fichier ».
 
 ## Home Assistant (facultatif)

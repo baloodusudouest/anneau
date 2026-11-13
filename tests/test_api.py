@@ -21,10 +21,18 @@ class Monde:
         self.morts: set[str] = set()
         self.t = 1000.0
         self.demandes: list[str] = []
+        self.refusent: dict[str, str] = {}      # morceau d'adresse → ce que le service dit du cadre
+        self.examens: list[str] = []
 
     async def sonder(self, adresse):
         self.demandes.append(adresse)
         return (not any(m in adresse for m in self.morts), 12)
+
+    async def examiner(self, adresse):
+        self.examens.append(adresse)
+        if any(m in adresse for m in self.morts):
+            return None
+        return next((r for m, r in self.refusent.items() if m in adresse), "")
 
     def horloge(self):
         return self.t
@@ -37,7 +45,7 @@ def monde():
 
 @pytest.fixture()
 def veille(tmp_path, monde):
-    return Veille(tmp_path, services.lire(tmp_path / "services.yaml"), ha_attendu=True, sonder=monde.sonder, horloge=monde.horloge)
+    return Veille(tmp_path, services.lire(tmp_path / "services.yaml"), ha_attendu=True, sonder=monde.sonder, horloge=monde.horloge, examiner=monde.examiner)
 
 
 def tours(v, n=1):
@@ -161,7 +169,7 @@ def test_une_panne_survit_au_redemarrage_et_se_prend_en_compte(veille, monde, tm
     monde.morts.add(":8104")
     tours(veille, 3)
     assert veille.prendre_en_compte("service:statistiques") and not veille.prendre_en_compte("service:inconnu")
-    suite = Veille(tmp_path, veille.fichier, sonder=monde.sonder, horloge=monde.horloge)
+    suite = Veille(tmp_path, veille.fichier, sonder=monde.sonder, horloge=monde.horloge, examiner=monde.examiner)
     assert suite.pannes["service:statistiques"]["prise_en_compte_le"]
     assert etat_de(suite, "Statistiques")["etat"] == "panne"
     monde.morts.clear()
@@ -210,7 +218,7 @@ def test_home_assistant_muet_apres_cinq_minutes(veille, monde):
     assert veille.pannes["ha"]["phrase"] == "Home Assistant est muet" and veille.pannes["ha"]["famille"] == "Maison"
     assert veille.recevoir({})["closes"] == ["Home Assistant envoie de nouveau son état"] and veille.pannes == {}
     assert veille.etat()["fraicheur"]["ha_age"] == 0
-    sans = Veille(veille.data, veille.fichier, ha_attendu=False, sonder=monde.sonder, horloge=monde.horloge)
+    sans = Veille(veille.data, veille.fichier, ha_attendu=False, sonder=monde.sonder, horloge=monde.horloge, examiner=monde.examiner)
     monde.t += 10 * SILENCE_HA
     tours(sans)
     assert "ha" not in sans.pannes                                                   # sans secret, on n'attend personne
@@ -239,6 +247,37 @@ def test_adresse_locale_ou_du_reseau_prive_selon_l_appel(client, veille):
     assert service("Domotique", **prive)["adresse"] == "http://192.0.2.30:8123"       # pas d'adresse privée : la locale
     assert service("Domotique", **prive)["cadre"] is False                           # du http dans une page https : pas de cadre
     assert service("Cinéma", host="faux-reseau-prive.exemple.invalide")["adresse"] == "http://192.0.2.10:8103"
+
+
+def test_tout_s_ouvre_dans_l_anneau_sauf_refus(veille, monde):
+    """Sans rien dire dans le fichier, l'Anneau essaie le cadre ; il y renonce si le service l'interdit."""
+    def service(nom):
+        return next(s for f in veille.etat()["familles"] for s in f["services"] if s["nom"] == nom)
+    assert service("Cinéma")["cadre"] is True                                        # avant tout examen : on essaie
+    monde.refusent = {":8103": "X-Frame-Options : SAMEORIGIN"}
+    monde.morts = {":8105"}
+    tours(veille)
+    assert service("Cinéma")["cadre"] is False and "X-Frame-Options : SAMEORIGIN" in service("Cinéma")["hors_cadre"]
+    assert service("Photothèque")["cadre"] is True and service("Photothèque")["hors_cadre"] == ""
+    assert service("Statistiques")["cadre"] is False and "cadre: false" in service("Statistiques")["hors_cadre"]
+    assert not any(":8104" in a for a in monde.examens)                              # un choix du fichier ne se discute pas
+    assert service("Téléchargements")["cadre"] is True                               # muet : on ne sait pas, on essaie
+    monde.examens.clear()
+    tours(veille)
+    assert monde.examens == ["http://192.0.2.20:8105"]                               # seul l'inconnu est relu au tour suivant
+    monde.refusent = {}
+    tours(veille, 9)                                                                 # au onzième tour, tout est relu
+    assert service("Cinéma")["cadre"] is True
+
+
+def test_ce_que_dit_un_service_du_cadre():
+    from app.veille import interdit_le_cadre
+    assert interdit_le_cadre({}) == ""
+    assert interdit_le_cadre({"x-frame-options": "sameorigin"}) == "X-Frame-Options : SAMEORIGIN"
+    assert interdit_le_cadre({"content-security-policy": "default-src 'self'; frame-ancestors 'self'"}) == "Content-Security-Policy : frame-ancestors"
+    assert interdit_le_cadre({"content-security-policy": "frame-ancestors 'none'"}) != ""
+    assert interdit_le_cadre({"content-security-policy": "frame-ancestors *"}) == ""
+    assert interdit_le_cadre({"content-security-policy": "default-src 'self'"}) == ""
 
 
 def test_pris_en_compte_et_recharger_par_l_api(client, veille, monde, tmp_path):

@@ -154,6 +154,8 @@ async def recharger():
         veille.fichier = lire(ETAT["cfg"].data / "services.yaml")
     except FichierInvalide as exc:
         raise HTTPException(422, str(exc)) from exc
+    veille.refus.clear()                       # les services sont relus : ce qu'ils disent du cadre aussi
+    veille._tours = 0
     await veille.tour()
     return {"ok": True, "services": len(veille.fichier.services), "erreurs": list(veille.fichier.erreurs)}
 

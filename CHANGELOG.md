@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.2.0 — 13 novembre 2026
+- **Tout s'ouvre dans l'Anneau, sauf refus.** Un service sans réglage `cadre` est désormais affiché dans l'Anneau. L'Anneau lit ce que chaque service dit de son affichage dans une autre page (`X-Frame-Options`, `Content-Security-Policy : frame-ancestors`) : s'il l'interdit, il s'ouvre à côté et la fiche dit pourquoi. Relu tous les dix tours et à « Recharger le fichier ».
+- Dans le fichier : `cadre: true` force le cadre, `cadre: false` l'interdit, rien (ou `auto`) laisse l'Anneau essayer.
+- Un service éteint exprès n'est pas affiché dans un cadre vide.
+- Tests : 17 du serveur, 16 d'écran.
+
 ## 0.1.2 — 13 novembre 2026
 - **Le cadre laisse passer l'appareil photo**, le plein écran et la copie : une appli de numérisation peut s'ouvrir dans l'Anneau. L'appareil photo en direct demande que l'Anneau et le service soient tous deux ouverts en HTTPS ; le navigateur demande toujours l'accord.
 - Tests : 15 du serveur, 16 d'écran.

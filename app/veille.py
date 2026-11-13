@@ -50,12 +50,38 @@ async def repond(adresse: str) -> tuple[bool, int | None]:
         return False, None
 
 
+def interdit_le_cadre(entetes) -> str:
+    """Ce que le service dit de son affichage dans une autre page. Vide : il ne l'interdit pas."""
+    for regle in (entetes.get("content-security-policy") or "").split(";"):
+        mots = regle.strip().split()
+        if mots and mots[0].lower() == "frame-ancestors":
+            if not any(m in ("*", "http:", "https:") for m in mots[1:]):
+                return "Content-Security-Policy : frame-ancestors"
+    if (entetes.get("x-frame-options") or "").strip():
+        return "X-Frame-Options : " + entetes["x-frame-options"].strip().upper()
+    return ""
+
+
+async def examiner(adresse: str) -> str | None:
+    """Lit la page d'accueil du service (en suivant ses renvois) pour savoir s'il interdit le cadre.
+    Rend la raison, vide s'il ne l'interdit pas, None si on n'a pas pu le savoir."""
+    try:
+        async with httpx.AsyncClient(timeout=5, verify=False, follow_redirects=True, max_redirects=5) as c:
+            r = await c.get(adresse, headers={"User-Agent": "anneau", "Accept": "text/html"})
+        return interdit_le_cadre(r.headers)
+    except (httpx.HTTPError, OSError, ValueError):
+        return None
+
+
 class Veille:
     def __init__(self, data: Path, fichier: Fichier, ha_attendu: bool = False,
                  sonder: Callable[[str], Awaitable[tuple[bool, int | None]]] = repond,
-                 horloge: Callable[[], float] = time.monotonic):
+                 horloge: Callable[[], float] = time.monotonic,
+                 examiner: Callable[[str], Awaitable[str | None]] = examiner):
         self.data, self.fichier, self.ha_attendu = data, fichier, ha_attendu
-        self._sonder, self._horloge = sonder, horloge
+        self._sonder, self._horloge, self._examiner = sonder, horloge, examiner
+        self.refus: dict[str, str] = {}         # adresse → raison pour laquelle le service interdit le cadre (vide : il l'accepte)
+        self._tours = 0
         self.suivi: dict[str, dict] = {}        # clé de sonde → échecs, réussites, état, depuis, délai
         self.pannes: dict[str, dict] = {}       # clé de cause → panne ouverte
         self.closes: list[dict] = []
@@ -140,8 +166,19 @@ class Veille:
         for (c, _, attendu), (vivant, delai) in zip(cibles, resultats):
             self._noter(c, vivant, delai, attendu)
         self.derniere_sonde = maintenant()
+        await self._cadres()
         self._pannes_de_sonde()
         self._silence_ha()
+
+    async def _cadres(self) -> None:
+        """Quels services interdisent d'être affichés dans une autre page ? Relu tous les dix tours,
+        et tout de suite pour une adresse qu'on n'a jamais réussi à lire."""
+        self._tours += 1
+        adresses = {a for s in self.fichier.services if s.cadre is None for a in (s.locale, s.privee) if a}
+        a_lire = sorted(adresses if self._tours % 10 == 1 else adresses - set(self.refus))
+        for adresse, raison in zip(a_lire, await asyncio.gather(*(self._examiner(a) for a in a_lire))):
+            if raison is not None:
+                self.refus[adresse] = raison
 
     def _pannes_de_sonde(self) -> None:
         f = self.fichier
@@ -215,6 +252,16 @@ class Veille:
                 "liste": [p["phrase"] for p in self.pannes.values()][:10]}
 
     # ------------------------------------------------------------ ce que l'écran affiche
+    def _hors_cadre(self, s, adresse: str, https: bool) -> str:
+        """Pourquoi ce service ne s'affiche pas dans l'Anneau ; vide : il s'y affiche."""
+        if https and adresse.startswith("http://"):
+            return "son adresse est en http et l'Anneau est ouvert en https"
+        if s.cadre is False:
+            return "le fichier des services le veut ainsi (cadre: false)"
+        if s.cadre is None and self.refus.get(adresse):
+            return f"il interdit d'être affiché dans une autre page ({self.refus[adresse]})"
+        return ""
+
     def etat(self, prive: bool = False, https: bool = False) -> dict:
         f = self.fichier
         en_panne = {m.nom for m in f.machines if self.suivi.get("machine:" + m.cle, {}).get("etat") == "panne"}
@@ -227,8 +274,7 @@ class Veille:
                 services.append({
                     "nom": s.nom, "cle": s.cle, "icone": s.icone, "etat": suivi.get("etat", "inconnu"),
                     "depuis": suivi.get("depuis", ""), "delai": suivi.get("delai"), "adresse": adresse,
-                    # un service en http ne peut pas s'afficher dans une page en https
-                    "cadre": s.cadre and not (https and adresse.startswith("http://")),
+                    "cadre": not (pourquoi := self._hors_cadre(s, adresse, https)), "hors_cadre": pourquoi,
                     "machine": s.machine, "machine_en_panne": s.machine in en_panne})
             etats = {x["etat"] for x in services}
             familles.append({**fam, "services": services,

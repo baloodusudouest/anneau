@@ -4,6 +4,7 @@ Fichier à lire en premier dans une nouvelle session, et à mettre à jour à ch
 
 ## État (13/11/2026)
 
+- **0.2.0** (13/11/2026) : le cadre par défaut. `Service.cadre` vaut oui, non ou vide ; `veille.examiner` lit les en-têtes de la page d'accueil (renvois suivis), `Veille.refus` garde la raison, `etat()` rend `cadre` et `hors_cadre`. **Jamais essayé sur les vrais services** : un service peut interdire le cadre par un moyen que les en-têtes ne disent pas (script), ou mal marcher dedans ; dans ce cas `cadre: false`.
 - **0.1.2** (13/11/2026) : le cadre porte `allow="camera; fullscreen; clipboard-write"` (numérisation dans l'Anneau ; caméra en direct seulement si l'Anneau et le service sont en HTTPS).
 - **0.1.1** (13/11/2026) : le bouton du milieu ouvre un service dans un nouvel onglet (`Anneau.svelte` : `milieu`, `onglet` ; `Cercle.svelte` : `onmilieu`).
 - **0.1.0 sur `main`** : le temps 1, « la vue ». Codée et testée contre un **faux réseau** (15 tests du serveur, 14 tests d'écran sur PC et iPhone). **Jamais lancée sur la vraie installation.**

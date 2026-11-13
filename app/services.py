@@ -35,7 +35,7 @@ class Service:
     privee: str = ""            # adresse par le réseau privé ; vide : la locale sert partout
     sonde: str = ""             # adresse interrogée ; vide : la locale
     icone: str = ""             # nom d'un pictogramme, ou adresse d'une image
-    cadre: bool = False         # accepte d'être affiché dans l'Anneau
+    cadre: bool | None = None   # affiché dans l'Anneau : oui, non, ou vide = essayer (sauf si le service l'interdit)
     machine: str = ""           # si cette machine ne répond pas, la panne est la sienne
     arret_attendu: bool = False  # un service qu'on éteint exprès (PC de calcul) n'est jamais « en panne »
 
@@ -72,6 +72,13 @@ def _adresse(valeur, quoi: str, erreurs: list[str]) -> str:
         erreurs.append(f"{quoi} : « {v} » n'est pas une adresse http(s).")
         return ""
     return v[:-1] if v.endswith("/") and v.count("/") == 3 else v    # « http://hôte/ » → « http://hôte »
+
+
+def _cadre(valeur) -> bool | None:
+    """« cadre: true » force le cadre, « cadre: false » l'interdit ; absent ou « auto » : l'Anneau essaie."""
+    if isinstance(valeur, bool):
+        return valeur
+    return {"oui": True, "non": False}.get(str(valeur or "").strip().lower())
 
 
 def lire(chemin: Path) -> Fichier:
@@ -123,7 +130,7 @@ def lire(chemin: Path) -> Fichier:
         vus.add(cle(nom))
         services.append(Service(nom=nom, cle=cle(nom), famille=famille, locale=locale,
                                 privee=_adresse(s.get("privee"), nom, erreurs), sonde=_adresse(s.get("sonde"), nom, erreurs),
-                                icone=str(s.get("icone", "")).strip(), cadre=bool(s.get("cadre", False)),
+                                icone=str(s.get("icone", "")).strip(), cadre=_cadre(s.get("cadre")),
                                 machine=machine, arret_attendu=bool(s.get("arret_attendu", False))))
     reglages = brut.get("reglages") or {}
     try:
