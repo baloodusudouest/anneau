@@ -20,7 +20,7 @@ from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 from . import __version__
-from .auth import DUREE, Sessions
+from .auth import COMMUN, DUREE, Sessions
 from .config import APPLI, Config, charger
 from .services import FichierInvalide, lire
 from .veille import Veille
@@ -73,7 +73,7 @@ app = FastAPI(title=APPLI, version=__version__, lifespan=cycle, docs_url=None, r
 async def garde(request: Request, appel):
     chemin = request.url.path
     if chemin.startswith("/api/"):
-        if chemin not in PUBLIQUES and not ETAT["sessions"].valide(request.cookies.get(ETAT["sessions"].cookie)):
+        if chemin not in PUBLIQUES and not ETAT["sessions"].connecte(request.cookies):
             return JSONResponse({"detail": "Connexion nécessaire."}, status_code=401)
     reponse = await appel(request)
     if chemin.startswith("/api/"):
@@ -93,7 +93,7 @@ def sante():
 @app.get("/api/session")
 def session(request: Request):
     s = ETAT["sessions"]
-    return {"connecte": s.valide(request.cookies.get(s.cookie)), "version": __version__}
+    return {"connecte": s.connecte(request.cookies), "version": __version__}
 
 
 @app.post("/api/connexion")
@@ -105,6 +105,8 @@ async def connexion(corps: dict = Body(...)):
         raise HTTPException(401, "Mot de passe incorrect.")
     r = JSONResponse({"ok": True})
     r.set_cookie(s.cookie, s.creer(), max_age=DUREE, httponly=True, samesite="strict")
+    # La connexion commune : les applis de la maison servies par la même adresse s'ouvrent sans rien demander.
+    r.set_cookie(COMMUN, s.creer_commun(), max_age=DUREE, httponly=True, samesite="strict")
     return r
 
 
@@ -118,6 +120,7 @@ def deconnexion():
         pass  # volume en lecture seule : la déconnexion vaut jusqu'au prochain redémarrage
     r = JSONResponse({"ok": True})
     r.delete_cookie(s.cookie)
+    r.delete_cookie(COMMUN)      # « Se déconnecter » ferme aussi la connexion commune
     return r
 
 
