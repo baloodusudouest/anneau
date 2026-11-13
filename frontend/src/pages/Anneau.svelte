@@ -48,6 +48,12 @@
   const fermer = () => (service = null)
   // « Ouvrir » réutilise toujours la même fenêtre pour un service : les onglets ne se multiplient pas.
   const dehors = (s) => window.open(s.adresse, 'anneau-' + s.cle)
+  // Le bouton du milieu ouvre le service dans un nouvel onglet, sans quitter l'anneau.
+  const onglet = (s) => window.open(s.adresse, '_blank', 'noopener')
+  const milieu = (s) => ({
+    onmousedown: (ev) => { if (ev.button === 1) ev.preventDefault() },   // pas de défilement automatique
+    onauxclick: (ev) => { if (ev.button === 1) { ev.preventDefault(); onglet(s) } },
+  })
   async function vue(p) { try { await api.post('/api/pannes/vue', { cle: p.cle }); await lire() } catch (x) { erreur = x.message } }
 </script>
 
@@ -75,7 +81,7 @@
     </nav>
     <div class="pastilles" aria-label={'Services de ' + familleDuService.nom}>
       {#each familleDuService.services as s (s.cle)}
-        <button type="button" aria-current={s.cle === service.cle ? 'true' : undefined} onclick={() => ouvrir(familleDuService, s)}>
+        <button type="button" aria-current={s.cle === service.cle ? 'true' : undefined} onclick={() => ouvrir(familleDuService, s)} {...milieu(s)}>
           <Icone icone={s.icone} etat={s.cle === service.cle && s.etat === 'ok' ? 'sombre' : s.etat === 'ok' ? '' : s.etat} />{s.nom}</button>
       {/each}
     </div>
@@ -100,13 +106,13 @@
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M5 7.500h6M15 7.500h4M5 16.500h3M12 16.500h7" /><circle cx="13" cy="7.500" r="2" /><circle cx="10" cy="16.500" r="2" /></svg>
     </button>
     <div class="rond">
-      <Cercle {familles} {etats} {ouverte} {etroit} {centre} onfamille={deplier} onservice={(s) => ouvrir(familleOuverte, s)} />
+      <Cercle {familles} {etats} {ouverte} {etroit} {centre} onfamille={deplier} onservice={(s) => ouvrir(familleOuverte, s)} onmilieu={onglet} />
       {#if etroit && familleOuverte}
         <div class="dessous" aria-label={'Services de ' + familleOuverte.nom}>
           <h2 class="plume">{familleOuverte.nom}</h2>
           <div class="pastilles libres">
             {#each familleOuverte.services as s, i (s.cle)}
-              <button type="button" style:animation-delay="{i * 28}ms" onclick={() => ouvrir(familleOuverte, s)}><Icone icone={s.icone} etat={s.etat === 'ok' ? '' : s.etat} />{s.nom}</button>
+              <button type="button" style:animation-delay="{i * 28}ms" onclick={() => ouvrir(familleOuverte, s)} {...milieu(s)}><Icone icone={s.icone} etat={s.etat === 'ok' ? '' : s.etat} />{s.nom}</button>
             {/each}
           </div>
         </div>

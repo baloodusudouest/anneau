@@ -130,6 +130,25 @@ def test_3_un_service_dans_le_cadre_un_autre_a_cote(page, monde):
     page.locator("svg.anneau").wait_for()
 
 
+def test_3b_le_bouton_du_milieu_ouvre_un_nouvel_onglet(page):
+    if famille(page, "Photos").get_attribute("aria-expanded") != "true":
+        famille(page, "Photos").click()
+    cible = page.locator("text.service", has_text="Photothèque") if page.ecran == "pc" else page.locator(".dessous").get_by_role("button", name="Photothèque")
+    with page.expect_popup() as onglet:
+        cible.click(button="middle")
+    assert "s=phototheque" in onglet.value.url
+    onglet.value.close()
+    assert page.locator("svg.anneau").count() == 1                                   # l'anneau n'a pas bougé
+    ouvrir_service(page, "Photos", "Photothèque")                                    # et depuis les pastilles de la vue réduite
+    with page.expect_popup() as onglet:
+        page.get_by_label("Services de Photos").get_by_role("button", name="Numérisation").click(button="middle")
+    assert "s=numerisation" in onglet.value.url
+    onglet.value.close()
+    assert page.get_by_role("region", name="Photothèque").count() == 1               # le service ouvert reste le même
+    page.get_by_role("button", name="Revenir à l'anneau").click()
+    page.locator("svg.anneau").wait_for()
+
+
 def test_4_une_panne_s_ecrit_en_rouge_puis_se_clot(page, monde):
     morts(monde, "s=statistiques")
     attendre_centre(page, "1 en panne")

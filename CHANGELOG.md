@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 0.1.1 — 13 novembre 2026
+- **Le bouton du milieu de la souris** sur un service (sur l'anneau ou dans les pastilles) l'ouvre dans un nouvel onglet du navigateur, sans quitter l'anneau ni changer le service affiché.
+- Tests : 15 du serveur, 16 d'écran.
+
 ## 0.1.0 — 13 novembre 2026
 Première version : la vue, sans aucun pouvoir d'écrire.
 

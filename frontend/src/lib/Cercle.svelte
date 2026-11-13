@@ -4,7 +4,7 @@
   // Or : tout répond. Rouge lave : en panne. Bleu spectral : quelque chose à faire.
   import { onMount } from 'svelte'
 
-  let { familles = [], etats = {}, ouverte = null, etroit = false, centre = null, onfamille, onservice } = $props()
+  let { familles = [], etats = {}, ouverte = null, etroit = false, centre = null, onfamille, onservice, onmilieu } = $props()
 
   const C = 400, R = 200, CORPS = 66, CORPS_SERVICE = 38
   const POLICE = '"Tangerine", "Snell Roundhand", cursive'
@@ -93,7 +93,8 @@
         <text class="service {m.s.etat}" text-anchor="middle" font-size={CORPS_SERVICE} tabindex="0" role="link"
               transform="{m.bas ? 'rotate(180) ' : ''}translate(0 {CORPS_SERVICE * 0.3})"
               aria-label={m.s.nom + (m.s.etat === 'panne' ? ', en panne' : '')}
-              onclick={() => onservice?.(m.s)} onkeydown={(e) => touche(e, () => onservice?.(m.s))}>{m.s.nom}</text>
+              onclick={() => onservice?.(m.s)} onmousedown={(e) => e.button === 1 && e.preventDefault()}
+              onauxclick={(e) => { if (e.button === 1) { e.preventDefault(); onmilieu?.(m.s) } }} onkeydown={(e) => touche(e, () => onservice?.(m.s))}>{m.s.nom}</text>
       </g>
     </g>
   {/each}
