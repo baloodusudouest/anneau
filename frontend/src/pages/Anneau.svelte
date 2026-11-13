@@ -3,6 +3,7 @@
   //  - l'anneau des familles, avec ce qui est en panne et ce qui est à faire ;
   //  - la vue réduite, quand un service est ouvert : l'anneau d'or en haut à gauche (retour),
   //    une colonne d'icônes (une par famille), les services de la famille en pastilles, et le service.
+  //    Le cadre laisse passer l'appareil photo (numérisation), le plein écran et la copie.
   import { onMount } from 'svelte'
   import { api } from '$lib/api.js'
   import { duree } from '$lib/temps.js'
@@ -87,7 +88,7 @@
     </div>
     <section class="contenu" aria-label={leService.nom}>
       {#if leService.cadre && leService.etat !== 'panne'}
-        {#key leService.adresse}<iframe src={leService.adresse} title={leService.nom}></iframe>{/key}
+        {#key leService.adresse}<iframe src={leService.adresse} title={leService.nom} allow="camera; fullscreen; clipboard-write"></iframe>{/key}
       {:else}
         <div class="fiche">
           <h1 class="plume" class:panne={leService.etat === 'panne'}>{leService.nom}</h1>

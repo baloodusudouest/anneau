@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 0.1.2 — 13 novembre 2026
+- **Le cadre laisse passer l'appareil photo**, le plein écran et la copie : une appli de numérisation peut s'ouvrir dans l'Anneau. L'appareil photo en direct demande que l'Anneau et le service soient tous deux ouverts en HTTPS ; le navigateur demande toujours l'accord.
+- Tests : 15 du serveur, 16 d'écran.
+
 ## 0.1.1 — 13 novembre 2026
 - **Le bouton du milieu de la souris** sur un service (sur l'anneau ou dans les pastilles) l'ouvre dans un nouvel onglet du navigateur, sans quitter l'anneau ni changer le service affiché.
 - Tests : 15 du serveur, 16 d'écran.
