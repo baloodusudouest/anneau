@@ -124,7 +124,7 @@ def test_3_un_service_dans_le_cadre_un_autre_a_cote(page, monde):
     assert colonne.get_by_role("button", name="Photos").get_attribute("aria-current") == "true"
     page.get_by_label("Services de Photos").get_by_role("button", name="Numérisation").click()
     fiche = page.get_by_role("region", name="Numérisation")
-    assert fiche.locator("iframe").count() == 0 and "Numérisation répond" in fiche.inner_text()
+    assert fiche.locator("iframe:visible").count() == 0 and "Numérisation répond" in fiche.inner_text()
     assert "il interdit d'être affiché dans une autre page (X-Frame-Options : SAMEORIGIN)" in fiche.inner_text()
     with page.expect_popup() as fenetre:                                             # il s'ouvre à côté…
         fiche.get_by_role("button", name="Ouvrir Numérisation").click()
@@ -152,6 +152,30 @@ def test_3b_le_bouton_du_milieu_ouvre_un_nouvel_onglet(page):
     assert "s=numerisation" in onglet.value.url
     onglet.value.close()
     assert page.get_by_role("region", name="Photothèque").count() == 1               # le service ouvert reste le même
+    page.get_by_role("button", name="Revenir à l'anneau").click()
+    page.locator("svg.anneau").wait_for()
+
+
+def test_3c_un_service_ouvert_reste_charge(page):
+    """On change de service, on revient à l'anneau : le cadre déjà ouvert n'est pas rechargé."""
+    if page.locator("svg.anneau").count() == 0:
+        page.get_by_role("button", name="Revenir à l'anneau").click()
+    ouvrir_service(page, "Photos", "Photothèque")
+    cadre = page.locator("iframe[title='Photothèque']")
+    cadre.wait_for()
+    cadre.evaluate("f => f.dataset.temoin = 'moi'")                                  # une marque sur ce cadre-là
+    page.get_by_label("Services de Photos").get_by_role("button", name="Numérisation").click()
+    page.get_by_role("region", name="Numérisation").wait_for()
+    assert cadre.is_hidden() and cadre.get_attribute("data-temoin") == "moi"         # caché, pas détruit
+    assert "resté ouvert" in page.get_by_label("Services de Photos").get_by_role("button", name=re.compile("Photothèque")).inner_text()
+    page.get_by_role("button", name="Revenir à l'anneau").click()
+    page.locator("svg.anneau").wait_for()
+    assert page.locator("iframe[title='Photothèque']").get_attribute("data-temoin") == "moi"   # toujours là derrière l'anneau
+    ouvrir_service(page, "Photos", "Photothèque")
+    assert cadre.is_visible() and cadre.get_attribute("data-temoin") == "moi"        # retrouvé tel quel
+    page.get_by_label("Services de Photos").get_by_role("button", name=re.compile("Photothèque")).click()
+    page.wait_for_function("document.querySelector(\"iframe[title='Photothèque']\").dataset.temoin === undefined")   # le toucher encore le recharge
+    assert page.locator("iframe[title='Photothèque']").count() == 1
     page.get_by_role("button", name="Revenir à l'anneau").click()
     page.locator("svg.anneau").wait_for()
 

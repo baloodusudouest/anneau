@@ -45,7 +45,19 @@
 
   const PHRASES = { ok: 'répond', panne: 'ne répond plus', eteint: 'est éteint (arrêt attendu)', inconnu: 'pas encore vérifié' }
   const deplier = (cle) => (ouverte = ouverte === cle ? null : cle)
-  const ouvrir = (f, s) => { service = { famille: f.cle, cle: s.cle }; ouverte = f.cle }
+  // Les services déjà ouverts dans le cadre restent chargés quand on passe à un autre ou qu'on revient à l'anneau :
+  // on les retrouve où on les avait laissés. Huit au plus, le plus ancien cède sa place.
+  const GARDES = 8
+  let gardes = $state([])            // [{ cle, adresse, nom, tour }], du plus ancien au plus récent
+  const affichable = (s) => !!s && s.cadre && s.etat !== 'panne' && s.etat !== 'eteint'
+  function garder(s, recharger = false) {
+    if (!affichable(s)) return
+    const deja = gardes.find((g) => g.cle === s.cle)
+    const tour = (deja?.tour || 0) + (recharger || (deja && deja.adresse !== s.adresse) ? 1 : 0)
+    gardes = [...gardes.filter((g) => g.cle !== s.cle), { cle: s.cle, adresse: s.adresse, nom: s.nom, tour }].slice(-GARDES)
+  }
+  // Toucher le service déjà affiché le recharge.
+  const ouvrir = (f, s) => { garder(s, service?.cle === s.cle); service = { famille: f.cle, cle: s.cle }; ouverte = f.cle }
   const fermer = () => (service = null)
   // « Ouvrir » réutilise toujours la même fenêtre pour un service : les onglets ne se multiplient pas.
   const dehors = (s) => window.open(s.adresse, 'anneau-' + s.cle)
@@ -60,9 +72,12 @@
 
 {#if !e}
   <p class="p-8 text-sm text-muted-foreground" role="status">{erreur || 'Lecture…'}</p>
-{:else if leService}
-  <!-- ───────────── Vue réduite ───────────── -->
-  <div class="reduit">
+{:else}
+  <!-- ───────────── Vue réduite ─────────────
+       Elle reste en place, cachée, quand on revient à l'anneau : ses cadres gardent leur page. -->
+  {#if leService || gardes.length}
+  <div class="reduit" class:absente={!leService}>
+    {#if leService}
     <button type="button" class="retour" aria-label="Revenir à l'anneau" onclick={fermer}>
       <svg viewBox="0 0 100 100" aria-hidden="true">
         <defs><linearGradient id="orBague" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff1b0" /><stop offset=".3" stop-color="#f2c14e" /><stop offset=".58" stop-color="#b9831c" /><stop offset=".8" stop-color="#e9b84a" /><stop offset="1" stop-color="#8a5a0c" /></linearGradient></defs>
@@ -83,13 +98,15 @@
     <div class="pastilles" aria-label={'Services de ' + familleDuService.nom}>
       {#each familleDuService.services as s (s.cle)}
         <button type="button" aria-current={s.cle === service.cle ? 'true' : undefined} onclick={() => ouvrir(familleDuService, s)} {...milieu(s)}>
-          <Icone icone={s.icone} etat={s.cle === service.cle && s.etat === 'ok' ? 'sombre' : s.etat === 'ok' ? '' : s.etat} />{s.nom}</button>
+          <Icone icone={s.icone} etat={s.cle === service.cle && s.etat === 'ok' ? 'sombre' : s.etat === 'ok' ? '' : s.etat} />{s.nom}{#if s.cle !== service.cle && gardes.some((g) => g.cle === s.cle)}<span class="garde" title="Resté ouvert"><span class="sr-only"> (resté ouvert)</span></span>{/if}</button>
       {/each}
     </div>
-    <section class="contenu" aria-label={leService.nom}>
-      {#if leService.cadre && leService.etat !== 'panne' && leService.etat !== 'eteint'}
-        {#key leService.adresse}<iframe src={leService.adresse} title={leService.nom} allow="camera; fullscreen; clipboard-write"></iframe>{/key}
-      {:else}
+    {/if}
+    <section class="contenu" aria-label={leService?.nom || 'Services ouverts'}>
+      {#each gardes as g (g.cle + '#' + g.tour)}
+        <iframe src={g.adresse} title={g.nom} class:absente={!(leService && g.cle === leService.cle && affichable(leService))} allow="camera; fullscreen; clipboard-write"></iframe>
+      {/each}
+      {#if leService && !affichable(leService)}
         <div class="fiche">
           <h1 class="plume" class:panne={leService.etat === 'panne'}>{leService.nom}</h1>
           <p role="status">{leService.nom} {PHRASES[leService.etat]}{leService.depuis ? ` depuis ${duree(leService.depuis, tic)}` : ''}{leService.etat === 'ok' && leService.delai != null ? ` · réponse en ${leService.delai} ms` : ''}.</p>
@@ -100,7 +117,8 @@
       {/if}
     </section>
   </div>
-{:else}
+  {/if}
+  {#if !leService}
   <!-- ───────────── L'anneau ───────────── -->
   <div class="accueil">
     <button type="button" class="roue" aria-label="Réglages" onclick={onreglages}>
@@ -153,6 +171,7 @@
       {/if}
     </div>
   </div>
+{/if}
 {/if}
 
 <style>
@@ -210,6 +229,8 @@
   .colonne button { display: grid; place-items: center; width: 3.25rem; height: 3rem; border-radius: 0.7rem; background: none; border: 0; border-left: 2px solid transparent; }
   .colonne button[aria-current='true'] { background: var(--card); border-left-color: var(--app); }
   .contenu { grid-row: 2; grid-column: 2; min-height: 0; border: 1px solid var(--border); border-radius: 0.9rem; background: var(--card); overflow: hidden; }
+  .absente { display: none !important; }
+  .garde { width: 0.4rem; height: 0.4rem; margin-left: 0.1rem; border-radius: 50%; background: var(--app); }
   .contenu iframe { display: block; width: 100%; height: 100%; border: 0; background: var(--background); }
   /* Sur téléphone, le service prend toute la largeur : les familles passent en ligne à côté de l'anneau, les services
      dessous. À côté d'une colonne d'icônes, le cadre n'avait que les trois quarts de l'écran et les applis y débordaient. */
