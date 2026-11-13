@@ -31,7 +31,6 @@ log = logging.getLogger("anneau.veille")
 
 ECHECS = 3          # échecs de suite avant d'ouvrir une panne
 REUSSITES = 3       # réussites de suite avant de la clore
-SILENCE_HA = 300    # secondes sans envoi de Home Assistant avant de le dire muet
 GARDEES = 30        # pannes closes gardées pour mémoire
 
 
@@ -241,7 +240,7 @@ class Veille:
         if not self.ha_attendu:
             return
         reference = self.machines["recu_a"] if self.machines["recu_a"] is not None else self.demarrage
-        if self._horloge() - reference > SILENCE_HA:
+        if self._horloge() - reference > self.fichier.silence_ha * 60:
             self._ouvrir("ha", "ha", "Home Assistant", "Home Assistant est muet", self.fichier.famille_ha)
 
     def pour_ha(self) -> dict:
@@ -306,4 +305,4 @@ class Veille:
                 "volumes": self.machines["volumes"],
                 "fraicheur": {"sonde": self.derniere_sonde, "ha_attendu": self.ha_attendu, "ha_recu_le": self.machines["recu_le"],
                               "ha_age": ha_age, "fichier_modifie_le": f.modifie_le, "fichier_lu_le": f.lu_le,
-                              "exemple": f.exemple, "erreurs": list(f.erreurs), "seuil_disque": f.seuil_disque}}
+                              "exemple": f.exemple, "erreurs": list(f.erreurs), "seuil_disque": f.seuil_disque, "silence_ha": f.silence_ha}}

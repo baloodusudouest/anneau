@@ -61,6 +61,7 @@ class Fichier:
     hotes_prives: tuple[str, ...] = ()
     hote_local: str = ""        # l'hôte de la maison (ex. l'adresse du NAS) : remplacé par celui par lequel l'Anneau est ouvert
     famille_ha: str = ""        # la famille que colore « Home Assistant est muet »
+    silence_ha: int = 90        # 0.4.1 : minutes sans envoi de Home Assistant avant de le dire muet
     lu_le: str = ""
     modifie_le: str = ""
     exemple: bool = False
@@ -139,8 +140,15 @@ def lire(chemin: Path) -> Fichier:
     except (TypeError, ValueError):
         erreurs.append("seuil_disque illisible : 99,8 % est gardé.")
         seuil = 99.8
+    try:
+        silence = int(reglages.get("silence_ha", 90))
+        if silence < 2:
+            raise ValueError
+    except (TypeError, ValueError):
+        erreurs.append("silence_ha illisible (un nombre de minutes, 2 au moins) : 90 minutes sont gardées.")
+        silence = 90
     return Fichier(
-        familles=tuple(familles), machines=tuple(machines), services=tuple(services), seuil_disque=seuil,
+        familles=tuple(familles), machines=tuple(machines), services=tuple(services), seuil_disque=seuil, silence_ha=silence,
         hotes_prives=tuple(str(h).strip().lower() for h in (reglages.get("hotes_prives") or []) if str(h).strip()),
         hote_local=str(reglages.get("hote_local", "")).strip().lower(),
         famille_ha=str(reglages.get("famille_ha", "")).strip() if str(reglages.get("famille_ha", "")).strip() in connues else "",
