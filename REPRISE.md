@@ -4,6 +4,7 @@ Fichier à lire en premier dans une nouvelle session, et à mettre à jour à ch
 
 ## État (13/11/2026)
 
+- **0.4.2** (13/11/2026) : `pour_ha` écrit chaque ligne « nom : avant → après » (champs `avant`, `etat`, `etat_fin` posés par `_ouvrir` et `_clore`) ; une panne ouverte et close dans le même lot ne fait qu'une ligne close « (coupure brève) ». Les pannes gardées sur disque par une version plus ancienne n'ont pas ces champs : elles gardent l'ancienne phrase.
 - **0.4.1** (13/11/2026) : `silence_ha` (minutes, 90 par défaut) remplace la constante de 300 s ; Home Assistant envoie chaque heure (package `systeme/anneau.yaml` v1.1).
 - **0.4.0** (13/11/2026) : cadres gardés (`gardes`, `garder`, `affichable` dans `Anneau.svelte`) ; la vue réduite reste montée, cachée par `.absente`, derrière l'anneau. À surveiller sur la vraie installation : la mémoire du navigateur avec huit applis chargées, surtout sur iPhone, qui peut décharger les cadres de lui-même.
 - **0.3.1** (13/11/2026) : vu sur le vrai iPhone, une appli coupée dans le cadre (trop étroit à côté de la colonne). Sous 900 px, la vue réduite passe en trois rangées : anneau et familles, services, cadre pleine largeur. Autre chose vue sur la même capture, non traitée : l'appli du cadre suit le thème du téléphone (clair) alors que l'Anneau est toujours sombre.
