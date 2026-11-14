@@ -94,6 +94,10 @@
           <Icone icone={f.icone} etat={etats[f.cle] || (f.cle === service.famille ? 'vif' : 'sourd')} taille={26} />
         </button>
       {/each}
+      <!-- 0.5.1 : les réglages restent à portée quand un service est ouvert, tout en bas de la colonne -->
+      <button type="button" class="reglages" title="Réglages" aria-label="Réglages" onclick={onreglages}>
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M5 7.500h6M15 7.500h4M5 16.500h3M12 16.500h7" /><circle cx="13" cy="7.500" r="2" /><circle cx="10" cy="16.500" r="2" /></svg>
+      </button>
     </nav>
     <div class="pastilles" aria-label={'Services de ' + familleDuService.nom}>
       {#each familleDuService.services as s (s.cle)}
@@ -228,6 +232,8 @@
   .colonne { grid-row: 2; grid-column: 1; display: flex; flex-direction: column; align-items: center; gap: 0.25rem; overflow-y: auto; scrollbar-width: none; }
   .colonne button { display: grid; place-items: center; width: 3.25rem; height: 3rem; border-radius: 0.7rem; background: none; border: 0; border-left: 2px solid transparent; }
   .colonne button[aria-current='true'] { background: var(--card); border-left-color: var(--app); }
+  .colonne .reglages { margin-top: auto; flex: none; color: var(--muted-foreground); }
+  .colonne .reglages:hover { color: var(--foreground); }
   .contenu { grid-row: 2; grid-column: 2; min-height: 0; border: 1px solid var(--border); border-radius: 0.9rem; background: var(--card); overflow: hidden; }
   .absente { display: none !important; }
   .garde { width: 0.4rem; height: 0.4rem; margin-left: 0.1rem; border-radius: 50%; background: var(--app); }
@@ -241,6 +247,7 @@
     .colonne { grid-row: 1; grid-column: 2; flex-direction: row; justify-content: space-between; overflow-x: auto; overflow-y: hidden; }
     .colonne button { flex: none; width: 2.75rem; height: 2.75rem; border-left: 0; border-bottom: 2px solid transparent; }
     .colonne button[aria-current='true'] { border-bottom-color: var(--app); }
+    .colonne .reglages { margin-top: 0; }
     .reduit > .pastilles { grid-row: 2; grid-column: 1 / -1; }
     .contenu { grid-row: 3; grid-column: 1 / -1; border-radius: 0.7rem 0.7rem 0 0; }
   }

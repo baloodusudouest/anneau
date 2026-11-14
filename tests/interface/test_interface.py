@@ -120,7 +120,7 @@ def test_3_un_service_dans_le_cadre_un_autre_a_cote(page, monde):
         barre = page.get_by_role("navigation", name="Familles").bounding_box()
         assert barre["y"] < boite["y"] and barre["height"] < 60                      # les familles sont en ligne, au-dessus
     colonne = page.get_by_role("navigation", name="Familles")
-    assert colonne.get_by_role("button").count() == 6 and colonne.inner_text().strip() == ""   # des icônes, pas de noms
+    assert colonne.get_by_role("button").count() == 7 and colonne.inner_text().strip() == ""   # six familles et les réglages, en icônes
     assert colonne.get_by_role("button", name="Photos").get_attribute("aria-current") == "true"
     page.get_by_label("Services de Photos").get_by_role("button", name="Numérisation").click()
     fiche = page.get_by_role("region", name="Numérisation")
@@ -134,6 +134,25 @@ def test_3_un_service_dans_le_cadre_un_autre_a_cote(page, monde):
     colonne.get_by_role("button", name="Médias").click()                             # la colonne change de famille
     page.get_by_role("region", name="Cinéma").wait_for()
     page.get_by_role("button", name="Revenir à l'anneau").click()
+    page.locator("svg.anneau").wait_for()
+
+
+def test_3d_les_reglages_en_bas_de_la_colonne(page):
+    """0.5.1 : un service ouvert, les réglages restent à portée, tout en bas de la colonne (au bout de la ligne sur téléphone)."""
+    ouvrir_service(page, "Photos", "Photothèque")
+    colonne = page.get_by_role("navigation", name="Familles")
+    reglages = colonne.get_by_role("button", name="Réglages")
+    boite, derniere = reglages.bounding_box(), colonne.get_by_role("button").nth(5).bounding_box()
+    if page.ecran == "pc":
+        assert boite["y"] > page.viewport_size["height"] * 0.8 and boite["x"] < 120     # en bas à gauche
+    else:
+        assert boite["x"] > derniere["x"]                                                # au bout de la ligne
+    reglages.click()
+    page.get_by_role("heading", level=1, name="Réglages").wait_for()
+    page.evaluate("location.hash = ''")                                              # retour pour les essais suivants
+    page.locator("svg.anneau, button[aria-label=\"Revenir à l'anneau\"]").first.wait_for()
+    if page.locator("svg.anneau").count() == 0:
+        page.get_by_role("button", name="Revenir à l'anneau").click()
     page.locator("svg.anneau").wait_for()
 
 
