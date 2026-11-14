@@ -1,5 +1,8 @@
 # Journal des versions
 
+## 0.5.1 — 14 novembre 2026
+- Un service ouvert, les **réglages** restent à portée : une icône tout en bas de la colonne des familles, à gauche (au bout de la ligne des familles sur téléphone).
+
 ## 0.5.0 — 14 novembre 2026
 - **Atlas dans l'Anneau.** L'Anneau relit chaque jour la carte de la maison (le fichier `atlas.html` de la publication « derniere » du dépôt privé d'Atlas) et la garde dans son dossier (`documents/`). Elle s'ouvre par une tuile, comme un service, à l'adresse `/documents/atlas.html` — seulement avec une session de l'Anneau ou le cookie commun.
 - Deux variables nouvelles, facultatives : `ANNEAU_ATLAS_DEPOT` (« baloodusudouest/atlas ») et `ANNEAU_GITHUB_JETON` (jeton GitHub en lecture seule sur ce dépôt). Vides : pas d'Atlas, rien d'autre ne change.
