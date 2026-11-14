@@ -17,6 +17,8 @@ class Config:
     attente_connexion: bool = True   # délai anti-essais ; coupé dans les tests
     veille: bool = True              # la sonde tourne toute seule ; coupée dans les tests
     periode: int = 60                # secondes entre deux tours de sonde
+    atlas_depot: str = ""            # 0.5 : dépôt GitHub d'Atlas (« propriétaire/atlas ») ; vide : pas d'Atlas
+    github_jeton: str = ""           # 0.5 : jeton GitHub en lecture seule sur ce dépôt (contenu), jamais montré
 
 
 def charger() -> Config:
@@ -28,4 +30,6 @@ def charger() -> Config:
         data=Path(os.environ.get("ANNEAU_DATA", "/data")),
         static=Path(__file__).parent / "static",
         secret_ha=os.environ.get("ANNEAU_SECRET_HA", "").strip(),
+        atlas_depot=os.environ.get("ANNEAU_ATLAS_DEPOT", "").strip(),
+        github_jeton=os.environ.get("ANNEAU_GITHUB_JETON", "").strip(),
     )

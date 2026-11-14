@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 0.5.0 — 14 novembre 2026
+- **Atlas dans l'Anneau.** L'Anneau relit chaque jour la carte de la maison (le fichier `atlas.html` de la publication « derniere » du dépôt privé d'Atlas) et la garde dans son dossier (`documents/`). Elle s'ouvre par une tuile, comme un service, à l'adresse `/documents/atlas.html` — seulement avec une session de l'Anneau ou le cookie commun.
+- Deux variables nouvelles, facultatives : `ANNEAU_ATLAS_DEPOT` (« baloodusudouest/atlas ») et `ANNEAU_GITHUB_JETON` (jeton GitHub en lecture seule sur ce dépôt). Vides : pas d'Atlas, rien d'autre ne change.
+- **Réglages › Atlas** : reçue quand, dernier essai, l'erreur s'il y en a une (jeton refusé, publication introuvable…), « Relire Atlas maintenant » et « Ouvrir Atlas à côté ». Un échec garde l'ancienne carte ; le jeton n'est jamais montré et ne part pas vers le stockage où GitHub redirige.
+
 ## 0.4.2 — 13 novembre 2026
 - **Les notifications disent le passage d'un état à l'autre**, avec une flèche : « Grimmory : répond → ne répond plus », « Grimmory : ne répond plus → répond de nouveau », « Volume 1 de Synology : plein à 99,9 % → 99,1 % », « Home Assistant : muet → envoie de nouveau son état ».
 - **Une panne ouverte puis close entre deux envois de Home Assistant ne fait plus qu'une ligne** : « Grimmory : ne répond plus → répond de nouveau (coupure brève) », au lieu d'une ligne rouge puis d'une verte, et le titre ne la compte plus comme une panne.

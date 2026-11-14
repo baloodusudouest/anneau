@@ -2,10 +2,11 @@
 
 Temps 1 : la vue. L'Anneau lit (une demande HTTP par service, chaque minute) et reçoit
 (Home Assistant lui envoie l'état des machines). Il n'écrit nulle part hors de son dossier
-et ne détient aucun jeton d'un autre service.
+et ne détient aucun jeton d'un autre service — sauf, depuis la 0.5, un jeton GitHub en lecture seule pour relire Atlas.
 
 Routes : /health (publique), /api/session, /api/connexion, /api/deconnexion, /api/etat,
-/api/pannes/vue, /api/recharger, /api/ha/etat (ouverte par le secret de Home Assistant), puis l'interface.
+/api/pannes/vue, /api/recharger, /api/ha/etat (ouverte par le secret de Home Assistant), /api/documents,
+/documents/atlas.html (0.5, derrière la session), puis l'interface.
 """
 from __future__ import annotations
 
@@ -17,7 +18,10 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import Body, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+import time
+
+from . import documents
 
 from . import __version__
 from .auth import COMMUN, DUREE, Sessions
@@ -50,6 +54,17 @@ async def _ronde(veille: Veille, periode: int) -> None:
         await asyncio.sleep(periode)
 
 
+async def _relire_atlas(cfg: Config) -> None:
+    """0.5 : Atlas est relu au démarrage puis une fois par jour (le bouton de Réglages le relit tout de suite)."""
+    while True:
+        try:
+            if documents.a_relire(cfg.data, time.time()):
+                await asyncio.to_thread(documents.telecharger_atlas, cfg.data, cfg.atlas_depot, cfg.github_jeton)
+        except Exception:
+            log.exception("Relecture d'Atlas interrompue")
+        await asyncio.sleep(3600)
+
+
 @asynccontextmanager
 async def cycle(app: FastAPI):
     cfg = ETAT.get("cfg") or charger()
@@ -57,11 +72,13 @@ async def cycle(app: FastAPI):
     veille = ETAT.get("veille") or Veille(cfg.data, lire(cfg.data / "services.yaml"), ha_attendu=bool(cfg.secret_ha))
     ETAT.update(cfg=cfg, sessions=Sessions(APPLI, cfg.password, _lire_generation(cfg)), veille=veille)
     ronde = asyncio.create_task(_ronde(veille, cfg.periode)) if cfg.veille else None
+    atlas = asyncio.create_task(_relire_atlas(cfg)) if cfg.veille and cfg.atlas_depot else None
     yield
-    if ronde:
-        ronde.cancel()
-        with suppress(asyncio.CancelledError):
-            await ronde
+    for t in (ronde, atlas):
+        if t:
+            t.cancel()
+            with suppress(asyncio.CancelledError):
+                await t
 
 
 app = FastAPI(title=APPLI, version=__version__, lifespan=cycle, docs_url=None, redoc_url=None)
@@ -179,6 +196,33 @@ def recevoir_ha(request: Request, corps: dict = Body(...)):
     if not hmac.compare_digest(request.headers.get("x-anneau-secret", "").encode(), secret.encode()):
         raise HTTPException(401, "Secret incorrect.")
     return ETAT["veille"].recevoir(corps)
+
+
+# ================================================================ documents (0.5 : Atlas)
+
+@app.get("/api/documents")
+def lire_documents():
+    cfg = ETAT["cfg"]
+    return {"atlas": {**documents.etat(cfg.data), "regle": bool(cfg.atlas_depot and cfg.github_jeton)}}
+
+
+@app.post("/api/documents/atlas")
+async def relire_atlas():
+    """Relit Atlas tout de suite (bouton de Réglages)."""
+    cfg = ETAT["cfg"]
+    return {"atlas": {**await asyncio.to_thread(documents.telecharger_atlas, cfg.data, cfg.atlas_depot, cfg.github_jeton),
+                      "regle": bool(cfg.atlas_depot and cfg.github_jeton)}}
+
+
+@app.get("/documents/atlas.html")
+def atlas(request: Request):
+    """La carte de la maison : privée, donc seulement avec une session de l'Anneau (ou le cookie commun)."""
+    if not ETAT["sessions"].connecte(request.cookies):
+        return RedirectResponse("/", status_code=303)
+    f = documents.dossier(ETAT["cfg"].data) / documents.FICHIER
+    if not f.is_file():
+        return JSONResponse({"detail": "Atlas n'est pas encore là : voir Réglages › Atlas."}, status_code=404)
+    return FileResponse(f, media_type="text/html", headers={"Cache-Control": "no-cache"})
 
 
 # ================================================================ interface
