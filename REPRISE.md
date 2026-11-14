@@ -4,6 +4,7 @@ Fichier à lire en premier dans une nouvelle session, et à mettre à jour à ch
 
 ## État (14/11/2026)
 
+- **0.5.1** : bouton Réglages en bas de la colonne des familles de la vue réduite (`.colonne .reglages`, `margin-top: auto` ; au bout de la ligne sur téléphone). Test `test_3d`.
 - **0.5.0** (14/11/2026) : Atlas relu chaque jour depuis GitHub (`app/documents.py`), servi derrière la session à `/documents/atlas.html`, section Réglages › Atlas. Variables `ANNEAU_ATLAS_DEPOT`, `ANNEAU_GITHUB_JETON`. La tuile se pose dans services.yaml (famille Machines).
 
 - **0.4.2** (13/11/2026) : `pour_ha` écrit chaque ligne « nom : avant → après » (champs `avant`, `etat`, `etat_fin` posés par `_ouvrir` et `_clore`) ; une panne ouverte et close dans le même lot ne fait qu'une ligne close « (coupure brève) ». Les pannes gardées sur disque par une version plus ancienne n'ont pas ces champs : elles gardent l'ancienne phrase.
