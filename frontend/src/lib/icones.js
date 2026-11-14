@@ -21,6 +21,7 @@ export const ICONES = {
   oeil: '<path d="M3 12s3.3-6 9-6 9 6 9 6-3.300 6-9 6-9-6-9-6z"/><circle cx="12" cy="12" r="2.6"/>',
   comete: '<circle cx="15.5" cy="8.5" r="3.5"/><path d="m12.8 10.800-8.300 8.700M10.5 8l-5 5M16 13.500l-5 5"/>',
   casque: '<path d="M5 14v-2a7 7 0 0 1 14 0v2"/><rect x="3.5" y="13.5" width="4" height="6" rx="1.5"/><rect x="16.5" y="13.5" width="4" height="6" rx="1.5"/>',
+  carte: '<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14"/>',   // 0.5 : Atlas
   livre: '<path d="M12 6.500C10 5 7.500 4.500 4 4.500v13c3.500 0 6 .500 8 2 2-1.500 4.500-2 8-2v-13c-3.500 0-6 .500-8 2zM12 6.500v13"/>',
   ecran: '<rect x="3.5" y="6" width="17" height="11" rx="2"/><path d="M9 20.500h6M9 3l3 3 3-3"/>',
   pellicule: '<rect x="4" y="4.5" width="16" height="15" rx="2"/><path d="M8 4.500v15M16 4.500v15M4 9.500h4M4 14.500h4M16 9.500h4M16 14.500h4"/>',
