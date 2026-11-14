@@ -2,7 +2,9 @@
 
 Fichier à lire en premier dans une nouvelle session, et à mettre à jour à chaque fin de session, dans le même commit que le code.
 
-## État (13/11/2026)
+## État (14/11/2026)
+
+- **0.5.0** (14/11/2026) : Atlas relu chaque jour depuis GitHub (`app/documents.py`), servi derrière la session à `/documents/atlas.html`, section Réglages › Atlas. Variables `ANNEAU_ATLAS_DEPOT`, `ANNEAU_GITHUB_JETON`. La tuile se pose dans services.yaml (famille Machines).
 
 - **0.4.2** (13/11/2026) : `pour_ha` écrit chaque ligne « nom : avant → après » (champs `avant`, `etat`, `etat_fin` posés par `_ouvrir` et `_clore`) ; une panne ouverte et close dans le même lot ne fait qu'une ligne close « (coupure brève) ». Les pannes gardées sur disque par une version plus ancienne n'ont pas ces champs : elles gardent l'ancienne phrase.
 - **0.4.1** (13/11/2026) : `silence_ha` (minutes, 90 par défaut) remplace la constante de 300 s ; Home Assistant envoie chaque heure (package `systeme/anneau.yaml` v1.1).

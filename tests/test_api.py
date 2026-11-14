@@ -345,3 +345,65 @@ def test_l_anneau_ne_fait_que_des_lectures(veille, monde):
     from app import veille as module
     source = inspect.getsource(module)
     assert ".post(" not in source and ".put(" not in source and ".delete(" not in source and ".patch(" not in source
+
+
+# ---------------------------------------------------------------- 0.5 : Atlas
+
+import httpx  # noqa: E402
+
+from app import documents  # noqa: E402
+
+PAGE = b"<!doctype html><html><head><title>Atlas</title></head><body>carte</body></html>"
+
+
+def faux_github(etat_publication=200, piece=True, contenu=PAGE, vus=None, publie="2026-11-14T09:00:00Z"):
+    def repondre(req: httpx.Request):
+        if vus is not None:
+            vus.append((str(req.url), req.headers.get("authorization", "")))
+        if req.url.path.endswith("/releases/tags/derniere"):
+            if etat_publication != 200:
+                return httpx.Response(etat_publication)
+            assets = [{"name": "atlas.html", "size": len(contenu), "updated_at": publie,
+                       "url": "https://api.github.com/repos/moi/atlas/releases/assets/7"}] if piece else []
+            return httpx.Response(200, json={"body": "Atlas 1.1.0", "assets": assets})
+        if req.url.path.endswith("/releases/assets/7"):
+            return httpx.Response(302, headers={"location": "https://stockage.exemple/atlas.html"})
+        if req.url.host == "stockage.exemple":
+            return httpx.Response(200, content=contenu)
+        return httpx.Response(404)
+    return httpx.MockTransport(repondre)
+
+
+def test_atlas_telecharge_puis_garde_l_ancien_en_cas_d_echec(tmp_path):
+    vus = []
+    e = documents.telecharger_atlas(tmp_path, "moi/atlas", "jeton-essai", faux_github(vus=vus))
+    assert e["present"] and not e["erreur"] and e["note"] == "Atlas 1.1.0"
+    assert (tmp_path / "documents" / "atlas.html").read_bytes() == PAGE
+    # le jeton ne part jamais vers le stockage où GitHub redirige
+    assert all(auth == "" for url, auth in vus if "stockage.exemple" in url)
+    assert any(auth == "Bearer jeton-essai" for url, auth in vus if "api.github.com" in url)
+    vus.clear()
+    e = documents.telecharger_atlas(tmp_path, "moi/atlas", "jeton-essai", faux_github(vus=vus))   # déjà à jour : rien de retéléchargé
+    assert not e["erreur"] and not any("stockage" in u for u, _ in vus)
+    e = documents.telecharger_atlas(tmp_path, "moi/atlas", "mauvais", faux_github(etat_publication=401))
+    assert "refuse le jeton" in e["erreur"] and e["present"]
+    e = documents.telecharger_atlas(tmp_path, "moi/atlas", "jeton-essai", faux_github(contenu=b"pas une page", publie="2026-11-15T09:00:00Z"))
+    assert "pas une page HTML" in e["erreur"]
+    assert (tmp_path / "documents" / "atlas.html").read_bytes() == PAGE
+
+
+def test_atlas_sans_reglage(tmp_path):
+    e = documents.telecharger_atlas(tmp_path, "", "", None)
+    assert not e["present"] and "ANNEAU_ATLAS_DEPOT" in e["erreur"]
+
+
+def test_atlas_servi_seulement_avec_une_session(client, tmp_path):
+    (tmp_path / "documents").mkdir()
+    (tmp_path / "documents" / "atlas.html").write_bytes(PAGE)
+    r = client.get("/documents/atlas.html", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/"
+    assert client.get("/api/documents").status_code == 401
+    connecter(client)
+    r = client.get("/documents/atlas.html")
+    assert r.status_code == 200 and b"carte" in r.content
+    assert client.get("/api/documents").json()["atlas"]["present"] is True

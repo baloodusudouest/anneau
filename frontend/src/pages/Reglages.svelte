@@ -22,6 +22,17 @@
     } catch (x) { message = x.message }
     attente = false
   }
+  // 0.5 : Atlas, la carte de la maison, relue chaque jour depuis sa publication GitHub
+  let doc = $state(null)
+  let msgAtlas = $state('')
+  let attenteAtlas = $state(false)
+  async function lireDocs() { try { doc = (await api.get('/api/documents')).atlas } catch (x) { msgAtlas = x.message } }
+  onMount(lireDocs)
+  async function relireAtlas() {
+    attenteAtlas = true; msgAtlas = ''
+    try { doc = (await api.post('/api/documents/atlas')).atlas; msgAtlas = doc.erreur ? '' : 'Atlas est à jour.' } catch (x) { msgAtlas = x.message }
+    attenteAtlas = false
+  }
   const nbServices = $derived((e?.familles || []).reduce((n, f) => n + f.services.length, 0))
   const virgule = (n) => String(n).replace('.', ',')
 </script>
@@ -49,6 +60,28 @@
         <Button onclick={recharger} disabled={attente}>{attente ? 'Lecture…' : 'Recharger le fichier'}</Button>
         {#if message}<span class="text-sm" role="status" id="message">{message}</span>{/if}
       </div>
+    </section>
+
+    <section class="mt-3 rounded-2xl border bg-card p-5" aria-label="Atlas">
+      <h2 class="text-lg font-semibold">Atlas</h2>
+      {#if !doc}<p class="mt-1 text-sm text-muted-foreground">Lecture…</p>
+      {:else if !doc.regle}
+        <p class="mt-1 text-sm">Pas réglé : ajoute <code>ANNEAU_ATLAS_DEPOT</code> et <code>ANNEAU_GITHUB_JETON</code> dans la stack, puis redéploie.</p>
+      {:else}
+        <p class="mt-1 text-sm">
+          {#if doc.present}La carte de la maison est là{doc.recu_le ? `, reçue il y a ${duree(doc.recu_le)}` : ''}. Ouvre-la par sa tuile, dans la famille Machines.
+          {:else}Pas encore reçue.{/if}
+          {#if doc.essaye_le} Dernier essai il y a {duree(doc.essaye_le)}.{/if}
+        </p>
+        {#if doc.note}<p class="mt-1 text-sm text-muted-foreground">{doc.note}</p>{/if}
+        {#if doc.erreur}<p class="mt-1 text-sm text-destructive" role="alert">{doc.erreur}</p>{/if}
+        <p class="mt-2 text-sm text-muted-foreground">Relue chaque jour depuis la publication « derniere » du dépôt d'Atlas ; un échec garde l'ancienne.</p>
+        <div class="mt-3 flex flex-wrap items-center gap-3">
+          <Button variant="outline" onclick={relireAtlas} disabled={attenteAtlas}>{attenteAtlas ? 'Lecture…' : 'Relire Atlas maintenant'}</Button>
+          {#if doc.present}<a class="text-sm underline underline-offset-4" href="/documents/atlas.html" target="_blank" rel="noopener">Ouvrir Atlas à côté</a>{/if}
+          {#if msgAtlas}<span class="text-sm" role="status">{msgAtlas}</span>{/if}
+        </div>
+      {/if}
     </section>
 
     <section class="mt-3 rounded-2xl border bg-card p-5" aria-label="Disques">
