@@ -248,3 +248,35 @@ def test_7_reglages_recharger_le_fichier(page):
     page.locator("#message", has_text="Fichier relu : 12 service(s).").wait_for()
     page.get_by_role("link", name="Revenir à l'anneau").click()
     page.locator("svg.anneau").wait_for()
+
+
+def test_8_reglages_importer_le_fichier(page, monde):
+    """0.6 : le fichier se choisit dans Réglages, se confirme, remplace l'ancien ; un mauvais fichier est refusé."""
+    page.get_by_role("button", name="Réglages").click()
+    page.get_by_role("heading", level=1, name="Réglages").wait_for()
+    bloc = page.get_by_role("region", name="Fichier des services")
+    actuel = (monde[1] / "data" / "services.yaml").read_text(encoding="utf-8")
+    champ = page.get_by_label("Choisir un fichier services.yaml")
+    # un mauvais fichier : refusé, rien ne change
+    champ.set_input_files({"name": "faux.yaml", "mimeType": "text/yaml", "buffer": b"familles: ["})
+    bloc.get_by_role("button", name="Remplacer").click()
+    page.locator("#message", has_text="illisible").wait_for()
+    assert (monde[1] / "data" / "services.yaml").read_text(encoding="utf-8") == actuel
+    # annuler ne touche à rien
+    bloc.get_by_role("button", name="Annuler").click()
+    bloc.get_by_role("button", name="Importer un fichier").wait_for()
+    # le bon fichier, avec un service de moins
+    lignes = [l for l in actuel.splitlines() if "Musique" not in l]
+    champ.set_input_files({"name": "services.yaml", "mimeType": "text/yaml", "buffer": "\n".join(lignes).encode()})
+    assert "services.yaml" in bloc.get_by_role("group", name="Import à confirmer").inner_text()
+    bloc.get_by_role("button", name="Remplacer").click()
+    page.locator("#message", has_text="Fichier importé : 11 service(s).").wait_for()
+    assert "11 service(s) dans 6 famille(s)" in bloc.inner_text()
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    # on remet le fichier complet pour l'écran suivant
+    champ.set_input_files({"name": "services.yaml", "mimeType": "text/yaml", "buffer": actuel.encode()})
+    bloc.get_by_role("button", name="Remplacer").click()
+    page.locator("#message", has_text="Fichier importé : 12 service(s).").wait_for()
+    assert "services.precedent.yaml" in page.locator("#message").inner_text()
+    page.get_by_role("link", name="Revenir à l'anneau").click()
+    page.locator("svg.anneau").wait_for()

@@ -407,3 +407,62 @@ def test_atlas_servi_seulement_avec_une_session(client, tmp_path):
     r = client.get("/documents/atlas.html")
     assert r.status_code == 200 and b"carte" in r.content
     assert client.get("/api/documents").json()["atlas"]["present"] is True
+
+
+# ================================================================ 0.6 : importer services.yaml depuis Réglages
+
+BON = """
+familles: [{ nom: Maison }]
+services:
+  - { nom: Lampe, famille: Maison, locale: "http://exemple.invalid:1" }
+  - { nom: Perdu, famille: Inconnue, locale: "http://exemple.invalid:2" }
+"""
+
+
+def test_importer_demande_une_session(client, tmp_path):
+    assert client.post("/api/services/importer", json={"texte": BON}).status_code == 401
+    assert not (tmp_path / "services.yaml").exists()
+
+
+def test_importer_remplace_garde_l_ancien_et_relit(client, veille, tmp_path):
+    connecter(client)
+    r = client.post("/api/services/importer", json={"texte": BON})
+    assert r.status_code == 200, r.text
+    assert r.json()["services"] == 1 and len(r.json()["erreurs"]) == 1 and r.json()["precedent"] == ""
+    assert (tmp_path / "services.yaml").read_text(encoding="utf-8") == BON
+    assert [s.nom for s in veille.fichier.services] == ["Lampe"] and not veille.fichier.exemple
+    # un second import garde le premier en secours, et ne laisse aucun fichier de travail
+    second = BON.replace("Lampe", "Lanterne")
+    r = client.post("/api/services/importer", json={"texte": second})
+    assert r.json()["precedent"] == services.PRECEDENT
+    assert (tmp_path / services.PRECEDENT).read_text(encoding="utf-8") == BON
+    assert [s.nom for s in veille.fichier.services] == ["Lanterne"]
+    assert not (tmp_path / "services.yaml.nouveau").exists()
+
+
+@pytest.mark.parametrize("texte", [
+    "familles: [",                                              # illisible
+    "- juste\n- une liste",                                     # pas des rubriques
+    "familles: [{ nom: Maison }]\nservices: []",                # aucun service
+    "familles: [{ nom: Maison }]\nservices: [{ nom: X, famille: Autre, locale: 'http://a.invalid' }]",  # aucun valable
+    "",
+    "x: " + "a" * (services.TAILLE_MAX + 1),                    # trop gros
+])
+def test_un_mauvais_fichier_est_refuse_sans_rien_toucher(client, veille, tmp_path, texte):
+    connecter(client)
+    (tmp_path / "services.yaml").write_text(BON, encoding="utf-8")
+    avant = veille.fichier
+    r = client.post("/api/services/importer", json={"texte": texte})
+    assert r.status_code == 422, r.text
+    assert (tmp_path / "services.yaml").read_text(encoding="utf-8") == BON
+    assert not (tmp_path / services.PRECEDENT).exists() and veille.fichier is avant
+
+
+def test_importer_dans_un_dossier_ferme_le_dit(client, veille, tmp_path, monkeypatch):
+    connecter(client)
+
+    def refuse(*a, **k):
+        raise PermissionError("lecture seule")
+    monkeypatch.setattr(services.Path, "write_text", refuse)
+    r = client.post("/api/services/importer", json={"texte": BON})
+    assert r.status_code == 500 and "écriture" in r.json()["detail"]

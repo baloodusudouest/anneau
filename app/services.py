@@ -2,9 +2,11 @@
 
 Il vit dans /data/services.yaml, hors du dépôt : c'est lui qui porte les vraies adresses.
 S'il est absent, l'Anneau démarre sur l'exemple inventé et le dit.
+Depuis la 0.6, il se pose à la main dans le dossier ou s'importe depuis Réglages (`importer`).
 """
 from __future__ import annotations
 
+import os
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -14,6 +16,9 @@ from pathlib import Path
 import yaml
 
 EXEMPLE = Path(__file__).parent / "services.exemple.yaml"
+NOM = "services.yaml"
+PRECEDENT = "services.precedent.yaml"     # 0.6 : le fichier d'avant le dernier import, gardé en secours
+TAILLE_MAX = 512 * 1024                   # un fichier de services fait quelques kilo-octets
 
 
 class FichierInvalide(Exception):
@@ -88,8 +93,40 @@ def lire(chemin: Path) -> Fichier:
     exemple = not chemin.is_file()
     source = EXEMPLE if exemple else chemin
     try:
-        brut = yaml.safe_load(source.read_text(encoding="utf-8")) or {}
-    except (OSError, yaml.YAMLError) as exc:
+        texte = source.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise FichierInvalide(f"Le fichier des services est illisible : {exc}") from exc
+    modifie = "" if exemple else datetime.fromtimestamp(chemin.stat().st_mtime).astimezone().isoformat(timespec="seconds")
+    return comprendre(texte, exemple=exemple, modifie_le=modifie)
+
+
+def importer(dossier: Path, texte: str) -> Fichier:
+    """0.6 : remplace services.yaml par le texte reçu de Réglages. Le texte est d'abord compris en entier :
+    un fichier illisible ou sans aucun service valable est refusé et rien n'est touché. L'ancien fichier est
+    gardé sous le nom services.precedent.yaml ; le nouveau est écrit à côté puis mis en place d'un coup."""
+    if len(texte.encode("utf-8")) > TAILLE_MAX:
+        raise FichierInvalide("Ce fichier est trop gros pour être un fichier de services (512 Ko au plus).")
+    lu = comprendre(texte)
+    if not lu.services:
+        detail = " " + " ".join(lu.erreurs[:3]) if lu.erreurs else ""
+        raise FichierInvalide("Ce fichier ne contient aucun service valable : rien n'a été changé." + detail)
+    cible, neuf = dossier / NOM, dossier / (NOM + ".nouveau")
+    try:
+        neuf.write_text(texte, encoding="utf-8")
+        if cible.is_file():
+            os.replace(cible, dossier / PRECEDENT)
+        os.replace(neuf, cible)
+    except OSError as exc:
+        neuf.unlink(missing_ok=True)
+        raise OSError(f"Le dossier de données de l'Anneau n'accepte pas l'écriture : {exc}") from exc
+    return lire(cible)
+
+
+def comprendre(texte: str, exemple: bool = False, modifie_le: str = "") -> Fichier:
+    """Le texte d'un fichier de services devient un Fichier, sans rien lire ni écrire sur le disque."""
+    try:
+        brut = yaml.safe_load(texte) or {}
+    except yaml.YAMLError as exc:
         raise FichierInvalide(f"Le fichier des services est illisible : {exc}") from exc
     if not isinstance(brut, dict):
         raise FichierInvalide("Le fichier des services doit contenir des rubriques (familles, services…).")
@@ -153,5 +190,5 @@ def lire(chemin: Path) -> Fichier:
         hote_local=str(reglages.get("hote_local", "")).strip().lower(),
         famille_ha=str(reglages.get("famille_ha", "")).strip() if str(reglages.get("famille_ha", "")).strip() in connues else "",
         lu_le=datetime.now().astimezone().isoformat(timespec="seconds"),
-        modifie_le="" if exemple else datetime.fromtimestamp(chemin.stat().st_mtime).astimezone().isoformat(timespec="seconds"),
+        modifie_le=modifie_le,
         exemple=exemple, erreurs=tuple(erreurs))

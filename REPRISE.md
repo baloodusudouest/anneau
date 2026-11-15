@@ -2,7 +2,9 @@
 
 Fichier à lire en premier dans une nouvelle session, et à mettre à jour à chaque fin de session, dans le même commit que le code.
 
-## État (14/11/2026)
+## État (15/11/2026)
+
+- **0.6.0** (15/11/2026) : import de `services.yaml` depuis Réglages (`services.importer`, `services.comprendre`, route `/api/services/importer`, corps JSON `{texte}` — pas d'envoi de formulaire, donc pas de dépendance de plus). Écriture à côté puis `os.replace` ; l'ancien devient `services.precedent.yaml`. **Jamais essayé sur la vraie installation** : à vérifier que le dossier de données accepte l'écriture (il le fait déjà pour `pannes.json`), et le choix du fichier depuis l'app Fichiers sur iPhone. Pas de bouton « revenir au précédent » : renommer le fichier à la main, puis Recharger.
 
 - **0.5.1** : bouton Réglages en bas de la colonne des familles de la vue réduite (`.colonne .reglages`, `margin-top: auto` ; au bout de la ligne sur téléphone). Test `test_3d`.
 - **0.5.0** (14/11/2026) : Atlas relu chaque jour depuis GitHub (`app/documents.py`), servi derrière la session à `/documents/atlas.html`, section Réglages › Atlas. Variables `ANNEAU_ATLAS_DEPOT`, `ANNEAU_GITHUB_JETON`. La tuile se pose dans services.yaml (famille Machines).
@@ -50,7 +52,7 @@ Fichier à lire en premier dans une nouvelle session, et à mettre à jour à ch
 - Cadre si le service l'accepte, sinon fenêtre réutilisée.
 - L'anneau porte les familles en texte seul ; rouge lave pour une panne, bleu spectral pour une action ; l'état est aussi dit en mots.
 - Sombre seulement, pour l'instant.
-- La liste des services est un fichier tenu à la main ; pas d'éditeur dans l'interface.
+- La liste des services est un fichier tenu hors de l'Anneau (Atlas fait foi) ; pas d'éditeur dans l'interface. Depuis la 0.6 il s'importe en entier depuis Réglages (demande du 15/11/2026).
 
 ## Limites connues
 

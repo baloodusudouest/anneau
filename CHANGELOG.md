@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 0.6.0 — 15 novembre 2026
+- **Importer le fichier des services depuis Réglages**, au lieu de le déposer dans le dossier de données : « Importer un fichier », choisir le `services.yaml` (celui qu'Atlas donne dans Fichiers), « Remplacer ». L'Anneau le lit en entier avant d'écrire : un fichier illisible, ou sans aucun service valable, est refusé et rien ne change. L'ancien fichier est gardé à côté sous le nom `services.precedent.yaml` (un seul secours : celui d'avant le dernier import).
+- Le fichier peut toujours se poser à la main, puis « Recharger le fichier ». L'Anneau écrit désormais `services.yaml` dans son dossier de données, et seulement à cet import ; toujours pas d'éditeur dans l'interface.
+- Tests : 33 du serveur, 22 d'écran.
+
 ## 0.5.1 — 14 novembre 2026
 - Un service ouvert, les **réglages** restent à portée : une icône tout en bas de la colonne des familles, à gauche (au bout de la ligne des familles sur téléphone).
 

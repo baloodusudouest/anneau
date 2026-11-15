@@ -34,7 +34,7 @@ L'inventaire réel (une trentaine de services, six familles) n'est pas dans ce d
 - **Affichage dans un cadre** : quatre services l'acceptent (dont une appli maison), trois le refusent (dont Home Assistant), un reste à tester ; ceux du second NAS n'ont pas pu être testés.
 - L'adresse HTTPS de Home Assistant présentait une erreur de certificat depuis le navigateur.
 
-**Le fichier des services** (`/data/services.yaml`, hors dépôt) : familles ; pour chaque service son nom, sa famille, ses deux adresses (locale, réseau privé), sa sonde, son icône, et s'il accepte le cadre. Prérempli depuis la liste des conteneurs, corrigé à la main ; pas d'éditeur dans l'interface au début. Un exemple inventé est dans le dépôt.
+**Le fichier des services** (`/data/services.yaml`, hors dépôt) : familles ; pour chaque service son nom, sa famille, ses deux adresses (locale, réseau privé), sa sonde, son icône, et s'il accepte le cadre. Prérempli depuis la liste des conteneurs, corrigé à la main ; pas d'éditeur dans l'interface au début. Depuis la 0.6 (15/11/2026), le fichier complet s'importe depuis Réglages (vérifié avant écriture, l'ancien gardé en `services.precedent.yaml`) ou se pose à la main. Un exemple inventé est dans le dépôt.
 
 **Les sondes de l'Anneau**, toutes les minutes, avec un délai court :
 

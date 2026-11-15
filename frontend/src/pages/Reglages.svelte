@@ -22,6 +22,29 @@
     } catch (x) { message = x.message }
     attente = false
   }
+  // 0.6 : importer services.yaml au lieu de le poser dans le dossier de données. Le fichier choisi est lu ici,
+  // montré par son nom, et n'est envoyé qu'après « Remplacer » ; le serveur le vérifie avant d'écrire.
+  let choisi = $state(null)
+  let champ = $state(null)
+  async function choisir(ev) {
+    const f = ev.target.files?.[0]
+    ev.target.value = ''
+    if (!f) return
+    message = ''
+    if (f.size > 512 * 1024) { message = 'Ce fichier est trop gros pour être un fichier de services.'; return }
+    choisi = { nom: f.name, texte: await f.text() }
+  }
+  async function importer() {
+    attente = true; message = ''
+    try {
+      const r = await api.post('/api/services/importer', { texte: choisi.texte })
+      await lire()
+      message = `Fichier importé : ${r.services} service(s)` + (r.erreurs.length ? `, ${r.erreurs.length} ligne(s) écartée(s).` : '.')
+        + (r.precedent ? ` L'ancien est gardé sous le nom ${r.precedent}.` : '')
+      choisi = null
+    } catch (x) { message = x.message }
+    attente = false
+  }
   // 0.5 : Atlas, la carte de la maison, relue chaque jour depuis sa publication GitHub
   let doc = $state(null)
   let msgAtlas = $state('')
@@ -49,17 +72,27 @@
     <section class="rounded-2xl border bg-card p-5" aria-label="Fichier des services">
       <h2 class="text-lg font-semibold">Fichier des services</h2>
       <p class="mt-1 text-sm">
-        {#if e.fraicheur.exemple}Absent : l'Anneau montre un exemple inventé. Pose ton fichier <code>services.yaml</code> dans le dossier de données de l'Anneau, puis recharge.
+        {#if e.fraicheur.exemple}Absent : l'Anneau montre un exemple inventé. Importe ton fichier <code>services.yaml</code> ci-dessous.
         {:else}{nbServices} service(s) dans {e.familles.length} famille(s). Modifié il y a {duree(e.fraicheur.fichier_modifie_le)}, relu il y a {duree(e.fraicheur.fichier_lu_le)}.{/if}
       </p>
       {#if e.fraicheur.erreurs.length}
         <ul class="mt-2 list-disc pl-5 text-sm" aria-label="Lignes écartées">{#each e.fraicheur.erreurs as l}<li>{l}</li>{/each}</ul>
       {/if}
-      <p class="mt-2 text-sm text-muted-foreground">Le fichier se modifie à la main, depuis le PC. L'Anneau ne l'écrit jamais.</p>
-      <div class="mt-3 flex flex-wrap items-center gap-3">
-        <Button onclick={recharger} disabled={attente}>{attente ? 'Lecture…' : 'Recharger le fichier'}</Button>
-        {#if message}<span class="text-sm" role="status" id="message">{message}</span>{/if}
-      </div>
+      <p class="mt-2 text-sm text-muted-foreground">Importe le <code>services.yaml</code> téléchargé depuis Atlas (Fichiers) : il est vérifié, puis remplace l'actuel, gardé en secours. Il peut aussi se poser à la main dans le dossier de données, puis « Recharger ».</p>
+      <input bind:this={champ} id="fichier-services" class="sr-only" type="file" accept=".yaml,.yml,text/yaml,text/plain" aria-label="Choisir un fichier services.yaml" onchange={choisir} />
+      {#if choisi}
+        <div class="mt-3 flex flex-wrap items-center gap-3 rounded-xl border p-3" role="group" aria-label="Import à confirmer">
+          <span class="min-w-0 flex-1 basis-48 break-words text-sm">Remplacer le fichier des services par <strong>{choisi.nom}</strong> ?</span>
+          <Button onclick={importer} disabled={attente}>{attente ? 'Import…' : 'Remplacer'}</Button>
+          <Button variant="outline" onclick={() => (choisi = null)} disabled={attente}>Annuler</Button>
+        </div>
+      {:else}
+        <div class="mt-3 flex flex-wrap items-center gap-3">
+          <Button onclick={() => champ?.click()} disabled={attente}>Importer un fichier</Button>
+          <Button variant="outline" onclick={recharger} disabled={attente}>{attente ? 'Lecture…' : 'Recharger le fichier'}</Button>
+        </div>
+      {/if}
+      {#if message}<p class="mt-3 text-sm" role="status" id="message">{message}</p>{/if}
     </section>
 
     <section class="mt-3 rounded-2xl border bg-card p-5" aria-label="Atlas">
