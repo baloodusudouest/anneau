@@ -5,6 +5,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import maison
+
 APPLI = "anneau"
 
 
@@ -22,9 +24,10 @@ class Config:
 
 
 def charger() -> Config:
-    mot_de_passe = os.environ.get("ANNEAU_PASSWORD", "")
+    mot_de_passe = maison.mot_de_passe("ANNEAU_PASSWORD")      # 0.7 : MAISON_PASSWORD, repli sur l'ancien nom
     if len(mot_de_passe) < 12:
-        raise SystemExit("ANNEAU_PASSWORD est absent ou trop court (12 caractères au moins) : l'Anneau ne démarre pas.")
+        raise SystemExit("MAISON_PASSWORD (ou ANNEAU_PASSWORD) est absent ou trop court (12 caractères au moins) : "
+                         "l'Anneau ne démarre pas.")
     return Config(
         password=mot_de_passe,
         data=Path(os.environ.get("ANNEAU_DATA", "/data")),

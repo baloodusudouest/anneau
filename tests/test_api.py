@@ -466,3 +466,25 @@ def test_importer_dans_un_dossier_ferme_le_dit(client, veille, tmp_path, monkeyp
     monkeypatch.setattr(services.Path, "write_text", refuse)
     r = client.post("/api/services/importer", json={"texte": BON})
     assert r.status_code == 500 and "écriture" in r.json()["detail"]
+
+
+# ---------------------------------------------------------------- annuaire (0.7)
+
+def test_copie_du_module_commun_non_retouchee():
+    from app import maison
+    assert maison.empreinte_calculee() == maison.empreinte_ecrite()
+
+
+def test_annuaire_des_services(client, monkeypatch):
+    """0.7 : les autres applis lisent les adresses avec le jeton commun ; vide : fermé ; sans session."""
+    monkeypatch.delenv("MAISON_JETON", raising=False)
+    monkeypatch.delenv("MAISON_JETON_ANCIEN", raising=False)
+    assert client.get("/externe/services").status_code == 404
+    monkeypatch.setenv("MAISON_JETON", "jeton-commun-essai")
+    assert client.get("/externe/services").status_code == 401
+    assert client.get("/externe/services", headers={"Authorization": "Bearer autre"}).status_code == 401
+    r = client.get("/externe/services", headers={"Authorization": "Bearer jeton-commun-essai"})
+    assert r.status_code == 200 and r.json()["contrat"] == 1
+    s = r.json()["services"]
+    assert s and set(s[0]) == {"nom", "cle", "famille", "locale", "privee"}
+    assert not any("sonde" in x or "etat" in x for x in s)

@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 0.7.0 — 16 novembre 2026
+- **Annuaire pour les applis maison** : `GET /externe/services` (jeton commun `MAISON_JETON` ; vide : adresse fermée ; `MAISON_JETON_ANCIEN` accepté pendant un changement) rend le nom, la famille, l'adresse locale et l'adresse privée de chaque tuile. Les applis y lisent les liens vers les autres au lieu d'une IP et d'un port codés chez elles (module commun du socle 0.5.0). Rien d'autre n'en sort : ni sonde, ni état, ni secret.
+- Module commun `app/maison.py` (contrat 1) ; le mot de passe se lit dans `MAISON_PASSWORD`, avec repli sur `ANNEAU_PASSWORD`.
+- Tests : annuaire fermé, jeton refusé, contenu limité ; copie du module non retouchée.
+
 ## 0.6.0 — 15 novembre 2026
 - **Importer le fichier des services depuis Réglages**, au lieu de le déposer dans le dossier de données : « Importer un fichier », choisir le `services.yaml` (celui qu'Atlas donne dans Fichiers), « Remplacer ». L'Anneau le lit en entier avant d'écrire : un fichier illisible, ou sans aucun service valable, est refusé et rien ne change. L'ancien fichier est gardé à côté sous le nom `services.precedent.yaml` (un seul secours : celui d'avant le dernier import).
 - Le fichier peut toujours se poser à la main, puis « Recharger le fichier ». L'Anneau écrit désormais `services.yaml` dans son dossier de données, et seulement à cet import ; toujours pas d'éditeur dans l'interface.

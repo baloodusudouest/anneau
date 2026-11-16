@@ -22,7 +22,7 @@ from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 import time
 
-from . import documents
+from . import documents, maison
 
 from . import __version__
 from .auth import COMMUN, DUREE, Sessions
@@ -221,6 +221,23 @@ def recevoir_ha(request: Request, corps: dict = Body(...)):
     if not hmac.compare_digest(request.headers.get("x-anneau-secret", "").encode(), secret.encode()):
         raise HTTPException(401, "Secret incorrect.")
     return ETAT["veille"].recevoir(corps)
+
+
+# ================================================================ annuaire (0.7 : module commun maison)
+
+@app.get("/externe/services")
+def annuaire(request: Request):
+    """Adresses des services (nom, famille, adresse locale, adresse privée) pour les autres applis maison,
+    qui y lisent les liens à montrer au lieu d'une IP et d'un port codés chez elles. Jeton commun MAISON_JETON ;
+    vide : adresse fermée. Rien d'autre (ni sonde, ni état, ni secret)."""
+    acceptes = maison.jetons()
+    if not acceptes:
+        raise HTTPException(404, "Adresse fermée : MAISON_JETON est vide.")
+    if not maison.jeton_valide(maison.jeton_propose(request.headers), acceptes):
+        raise HTTPException(401, "Jeton refusé.")
+    return {"contrat": maison.CONTRAT, "services": [
+        {"nom": s.nom, "cle": s.cle, "famille": s.famille, "locale": s.locale, "privee": s.privee}
+        for s in ETAT["veille"].fichier.services]}
 
 
 # ================================================================ documents (0.5 : Atlas)

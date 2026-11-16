@@ -2,8 +2,9 @@
 
 Fichier à lire en premier dans une nouvelle session, et à mettre à jour à chaque fin de session, dans le même commit que le code.
 
-## État (15/11/2026)
+## État (16/11/2026)
 
+- **0.7.0** (16/11/2026) : `/externe/services` (annuaire, jeton commun) et module commun `app/maison.py` (socle 0.5.0 ; ne pas le modifier ici, le rediffuser depuis le socle). Jamais essayé sur la vraie installation : poser `MAISON_JETON` dans la stack.
 - **0.6.0** (15/11/2026) : import de `services.yaml` depuis Réglages (`services.importer`, `services.comprendre`, route `/api/services/importer`, corps JSON `{texte}` — pas d'envoi de formulaire, donc pas de dépendance de plus). Écriture à côté puis `os.replace` ; l'ancien devient `services.precedent.yaml`. **Jamais essayé sur la vraie installation** : à vérifier que le dossier de données accepte l'écriture (il le fait déjà pour `pannes.json`), et le choix du fichier depuis l'app Fichiers sur iPhone. Pas de bouton « revenir au précédent » : renommer le fichier à la main, puis Recharger.
 
 - **0.5.1** : bouton Réglages en bas de la colonne des familles de la vue réduite (`.colonne .reglages`, `margin-top: auto` ; au bout de la ligne sur téléphone). Test `test_3d`.
