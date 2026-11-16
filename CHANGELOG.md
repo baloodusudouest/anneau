@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 0.9.1 — 16 novembre 2026
+- **Rétention des sauvegardes** (décision du 16/11 au soir) : fini le premier de chaque mois. On garde les **30 dernières sauvegardes automatiques**, la **première de chaque trimestre pour les 3 derniers trimestres**, et les **5 dernières sauvegardes à la demande**.
+- Tests : 80.
+
 ## 0.9.0 — 16 novembre 2026
 - **Deux familles de sauvegardes.** « Sauvegarder maintenant » écrit désormais son propre fichier, horodaté (`AAAA-MM-JJ-HHMMSS-manuelle.json`) : il n'écrase plus la sauvegarde automatique du jour. On garde les **5 dernières sauvegardes à la demande** et les **30 dernières automatiques** (plus la première de chaque mois, comme avant).
 - Les routes `/api/sauvegardes/{...}`, `/api/restaurer` et `/externe/sauvegardes/{appli}` acceptent les deux formes d'identifiant ; une restauration se fait à partir de l'une ou l'autre.

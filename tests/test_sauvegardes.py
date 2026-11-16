@@ -2,7 +2,7 @@
 réglages de l'Anneau, nettoyage des anciens noms. Sans réseau : les applis sont de faux services."""
 import asyncio
 import json
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -289,7 +289,8 @@ def test_retention_manuelles_et_automatiques(tmp_path):
         (d / f"{x}.json").write_text("{}")
     sauvegardes.retention(tmp_path)
     restent = {f.stem for f in d.glob("*.json")}
-    assert restent == set(autos[-30:]) | {"2026-08-20", "2026-09-01", "2026-10-01", "2026-11-01"} | set(manuelles[-5:])
+    # premières de trimestre (T3 2026 : 2026-08-20 ; T4 : 2026-10-01) ; les 3 derniers trimestres seulement
+    assert restent == set(autos[-30:]) | {"2026-08-20", "2026-10-01"} | set(manuelles[-5:])
 
 
 def test_une_collecte_a_la_demande_ne_remplace_pas_l_automatique(tmp_path, fichier):
@@ -306,6 +307,21 @@ def test_une_collecte_a_la_demande_ne_remplace_pas_l_automatique(tmp_path, fichi
     assert not sauvegardes.identifiant_valide("2026-11-16-05300-manuelle")
 
 
+def test_retention_trimestres(tmp_path):
+    """Les 30 derniers jours, plus la première automatique de chacun des 3 derniers trimestres."""
+    d = tmp_path / "sauvegardes"
+    d.mkdir()
+    debut, fin = date(2025, 6, 1), date(2026, 11, 16)
+    jours = [(debut + timedelta(days=i)).isoformat() for i in range((fin - debut).days + 1)]
+    for x in jours:
+        (d / f"{x}.json").write_text("{}")
+    sauvegardes.retention(tmp_path)
+    restent = {f.stem for f in d.glob("*.json")}
+    attendu = set(jours[-30:]) | {"2026-04-01", "2026-07-01", "2026-10-01"}   # T2, T3 et T4 2026 ; T1 2026 tombe
+    assert restent == attendu
+    assert "2026-01-01" not in restent and "2025-10-01" not in restent
+
+
 def test_retention(tmp_path):
     d = tmp_path / "sauvegardes"
     d.mkdir()
@@ -315,7 +331,7 @@ def test_retention(tmp_path):
         (d / f"{x}.json").write_text("{}")
     sauvegardes.retention(tmp_path)
     restent = sorted(f.stem for f in d.glob("*.json"))
-    assert restent == sorted(set(dates[-30:]) | {"2026-08-20", "2026-09-01", "2026-10-01", "2026-11-01"})
+    assert restent == sorted(set(dates[-30:]) | {"2026-08-20", "2026-10-01"})          # premiers de T3 et de T4
 
 
 # ---------------------------------------------------------------- portes pour Restaurer (applis)

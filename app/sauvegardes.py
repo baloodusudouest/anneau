@@ -12,8 +12,8 @@ rien n'est écrit pour elle et les autres continuent.
 
 Fichiers, dans <données>/sauvegardes/ :
   AAAA-MM-JJ.json            {"contrat": 1, "le", "applis": {<id>: <réponse>}, "ratees": {<tuile>: <raison>}}
-                             sauvegarde automatique (une par jour, remplacée le même jour ; 30 dernières
-                             + la première de chaque mois)
+                             sauvegarde automatique (une par jour, remplacée le même jour ; 30 derniers jours,
+                             plus la première de chaque trimestre pour les 3 derniers trimestres)
   AAAA-MM-JJ-HHMMSS-manuelle.json
                              même contenu, pour « Sauvegarder maintenant » (jamais remplacée ni touchée par
                              la collecte automatique ; 5 dernières gardées)
@@ -42,7 +42,8 @@ from . import maison
 log = logging.getLogger("anneau.sauvegardes")
 
 DOSSIER = "sauvegardes"
-GARDES_JOURS = 30            # dernières sauvegardes automatiques gardées (plus la première de chaque mois)
+GARDES_JOURS = 30            # dernières sauvegardes automatiques gardées
+GARDES_TRIMESTRES = 3        # première sauvegarde automatique de chaque trimestre, pour les 3 derniers trimestres
 GARDES_MANUELLES = 5         # dernières sauvegardes « Sauvegarder maintenant » gardées
 GARDES_VARIABLES = 30        # derniers exports chiffrés gardés
 DELAI = 10                   # secondes au plus par appli
@@ -291,16 +292,16 @@ async def _une(nom: str, b: str, jeton: str, lire: Lecteur) -> tuple[str, dict |
 
 
 def retention(data: Path) -> list[str]:
-    """Garde les 30 dernières sauvegardes automatiques (et la première de chaque mois) et les 5 dernières
-    « à la demande » ; rend les noms retirés."""
+    """Garde les 30 dernières sauvegardes automatiques, la première de chaque trimestre pour les 3 derniers
+    trimestres, et les 5 dernières « à la demande » ; rend les noms retirés."""
     noms = [f.stem for f in dossier(data).glob("*.json")]
     autos = sorted(n for n in noms if date_valide(n))
     manuelles = sorted(n for n in noms if RE_MANUELLE.match(n) and date_valide(n[:10]))
     garder = set(autos[-GARDES_JOURS:]) | set(manuelles[-GARDES_MANUELLES:])
-    premiers: dict[str, str] = {}
+    premieres: dict[str, str] = {}                  # « 2026-Q4 » -> première automatique du trimestre
     for d in autos:
-        premiers.setdefault(d[:7], d)
-    garder |= set(premiers.values())
+        premieres.setdefault(f"{d[:4]}-T{(int(d[5:7]) - 1) // 3 + 1}", d)
+    garder |= {premieres[t] for t in sorted(premieres)[-GARDES_TRIMESTRES:]}
     retirees = [n for n in autos + manuelles if n not in garder]
     for n in retirees:
         (dossier(data) / f"{n}.json").unlink(missing_ok=True)

@@ -4,6 +4,7 @@ Fichier à lire en premier dans une nouvelle session, et à mettre à jour à ch
 
 ## État (16/11/2026)
 
+- **0.9.1** (16/11/2026) : rétention révisée. `retention` garde les 30 dernières automatiques, la première automatique de chacun des 3 derniers trimestres (`GARDES_TRIMESTRES`), et les 5 dernières « à la demande » (`GARDES_MANUELLES`). Le premier de chaque mois est retiré. Tests : 80.
 - **0.9.0** (16/11/2026) : deux familles de sauvegardes (décision du 16/11 : garder les 5 dernières à la demande et les 30 dernières automatiques). `sauvegardes/AAAA-MM-JJ.json` (automatique, remplacée le même jour) et `sauvegardes/AAAA-MM-JJ-HHMMSS-manuelle.json` (« Sauvegarder maintenant », jamais écrasée). `identifiant_valide` remplace `date_valide` pour les routes de lecture et de restauration ; `retention` range les deux familles. Tests : 79.
 - **0.8.0** (16/11/2026) : sauvegarde des réglages (contrat de sauvegarde 1, module commun contrat 2 copié tel quel).
   - `app/sauvegardes.py` : collecte (`collecter`, `applis_maison`, `base`, `examiner_reponse`), rétention, état et journal (`sauvegardes/etat.json`, gardé en mémoire si le disque refuse), tuile `a_traiter`, exports chiffrés (`ranger_variables`). Réglages de l'Anneau : `maison.Reglages(<données>/reglages.json)` — `heure_sauvegarde` (« HH:MM », 03:30), `cle_publique` (« age1… », vide) ; aucune ancienne variable à reprendre.

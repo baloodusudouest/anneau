@@ -27,7 +27,7 @@ Les réglages d'usage (heure de la collecte, clé publique de l'export chiffré)
 
 Chaque jour à l'heure réglée (03:30 par défaut), ou par « Sauvegarder maintenant », l'Anneau demande à chaque appli maison de `services.yaml` — une tuile dont la `sonde` finit par `/health`, sauf `sauvegarde: false` — ses réglages : `GET <sonde sans /health>/externe/sauvegarde` avec `Authorization: Bearer <MAISON_JETON>`, 10 s au plus. Une réponse sans `contrat == 1`, ou qui porte une clé qui ressemble à un secret, est refusée.
 
-- Sauvegarde automatique : `sauvegardes/AAAA-MM-JJ.json` (`contrat`, `le`, `applis`, `ratees`) ; 30 dernières et la première de chaque mois.
+- Sauvegarde automatique : `sauvegardes/AAAA-MM-JJ.json` (`contrat`, `le`, `applis`, `ratees`) ; 30 dernières, plus la première de chaque trimestre pour les 3 derniers trimestres (depuis 0.9.1).
 - « Sauvegarder maintenant » : `sauvegardes/AAAA-MM-JJ-HHMMSS-manuelle.json`, même contenu ; 5 dernières gardées, et jamais de remplacement de l'automatique (depuis 0.9).
 - Tuile « Sauvegarde ratée » (rang « À traiter », en or) : dernière collecte avec des ratées, fichier non écrit, ou rien de réussi depuis 36 h. Rien n'est envoyé à Home Assistant.
 - Pour « Restaurer » dans chaque appli (jeton commun) : `GET /externe/sauvegardes/{appli}` → `{"dates": [...]}` ; `?le=AAAA-MM-JJ` → `{"le", "version", "reglages"}`.
