@@ -114,6 +114,8 @@ Avis complet : `conseil-2.md`.
 - **iPhone** : l'ordre entre l'anneau et la liste des pannes se choisit sur une maquette à deux versions.
 - **Repris de la recommandation du président**, sans objection : l'anneau est codé dès la première étape, depuis la maquette ; déploiement tôt ; cycle de vie d'une panne (trois échecs pour l'ouvrir, trois réussites pour la clore, une notification à l'ouverture et une à la clôture, une panne par cause, « arrêt attendu » pour le PC) ; fraîcheur affichée partout ; données de l'iPhone, écran Connexion et seuils réglables à l'écran coupés du temps 1 ; preuve de vie à la mise en service.
 
+- **Sauvegarde des réglages (0.8, choix du 16/11/2026, chantier B commun aux applis maison).** Chaque appli garde ses réglages d'usage dans son écran Réglages et les rend par `GET /externe/sauvegarde` (jeton commun) ; l'Anneau les collecte chaque jour à l'heure de Réglages › Sauvegarde, un fichier par jour dans son dossier (30 jours + le premier de chaque mois), emporté par Hyper Backup. Une appli ratée ou une écriture ratée donne la tuile « Sauvegarde ratée » (rang « À traiter », or), jamais une notification Home Assistant. Aucune appli ne transmet de secret. L'export des variables de la stack est chiffré par Atlas dans le navigateur (age, clé publique gardée par l'Anneau, clé privée hors de la maison) : l'Anneau ne reçoit jamais de texte clair.
+
 ## Questions ouvertes pour le second passage au conseil
 
 1. **Home Assistant : lire ou recevoir ?** L'Anneau lit Home Assistant avec un jeton (simple, mais le jeton est puissant), ou Home Assistant pousse l'état vers l'Anneau (aucun jeton côté Anneau, mais des automatisations à écrire et à entretenir) ?

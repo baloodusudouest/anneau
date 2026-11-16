@@ -4,6 +4,14 @@ Fichier à lire en premier dans une nouvelle session, et à mettre à jour à ch
 
 ## État (16/11/2026)
 
+- **0.8.0** (16/11/2026) : sauvegarde des réglages (contrat de sauvegarde 1, module commun contrat 2 copié tel quel).
+  - `app/sauvegardes.py` : collecte (`collecter`, `applis_maison`, `base`, `examiner_reponse`), rétention, état et journal (`sauvegardes/etat.json`, gardé en mémoire si le disque refuse), tuile `a_traiter`, exports chiffrés (`ranger_variables`). Réglages de l'Anneau : `maison.Reglages(<données>/reglages.json)` — `heure_sauvegarde` (« HH:MM », 03:30), `cle_publique` (« age1… », vide) ; aucune ancienne variable à reprendre.
+  - `app/main.py` : tâche `_sauvegarde_quotidienne` (toutes les 30 s, lance si l'heure est passée et pas encore faite ce jour : rattrapée au démarrage) ; routes `/api/reglages`, `/api/cle-publique`, `/api/sauvegardes[/{date}]`, `/api/restaurer`, `/api/variables-chiffrees[/{nom}]` (session) ; `/externe/sauvegarde`, `/externe/sauvegardes/{appli}` (jeton commun, `_jeton_commun`). `/api/etat` rend `a_traiter`.
+  - Tuile maison = sonde qui finit par `/health` ; adresse de base = sonde sans `/health`. `Service.sauvegarde` (`sauvegarde: false` dans services.yaml) l'en retire. **À trancher dans le coffre** : la tuile Chambre noire a une sonde `/health` de nginx sans `/externe/sauvegarde` → elle sera « ratée » chaque jour tant qu'elle n'a pas `sauvegarde: false`. La tuile Atlas (sonde `/health` de l'Anneau) renvoie l'Anneau lui-même : ignorée (déjà sauvegardé sans réseau).
+  - Écran : `Reglages.svelte` (sections Sauvegarde et Restaurer), `Anneau.svelte` (rang « À traiter », `.rang.traiter`, or `--app`). `api.put`, `api.postTexte` dans `lib/api.js`.
+  - `ANNEAU_PASSWORD` n'est plus lu (`config.charger` : `maison.mot_de_passe()` seul).
+  - **Déploiement en deux temps** : d'abord la nouvelle image avec la stack actuelle (les réglages sont repris des anciennes variables au premier démarrage ; pour l'Anneau il n'y en a aucune, mais `MAISON_PASSWORD` et `MAISON_JETON` doivent déjà être remplis), vérifier Réglages, puis la nouvelle stack sans les anciennes lignes (`ANNEAU_PASSWORD`).
+  - **Jamais essayé sur la vraie installation** : la collecte depuis le conteneur vers les autres applis (adresses des sondes), l'heure du conteneur (TZ), l'écriture de `sauvegardes/`, les téléchargements depuis l'iPhone, le dépôt d'un export par Atlas.
 - **0.7.0** (16/11/2026) : `/externe/services` (annuaire, jeton commun) et module commun `app/maison.py` (socle 0.5.0 ; ne pas le modifier ici, le rediffuser depuis le socle). Jamais essayé sur la vraie installation : poser `MAISON_JETON` dans la stack.
 - **0.6.0** (15/11/2026) : import de `services.yaml` depuis Réglages (`services.importer`, `services.comprendre`, route `/api/services/importer`, corps JSON `{texte}` — pas d'envoi de formulaire, donc pas de dépendance de plus). Écriture à côté puis `os.replace` ; l'ancien devient `services.precedent.yaml`. **Jamais essayé sur la vraie installation** : à vérifier que le dossier de données accepte l'écriture (il le fait déjà pour `pannes.json`), et le choix du fichier depuis l'app Fichiers sur iPhone. Pas de bouton « revenir au précédent » : renommer le fichier à la main, puis Recharger.
 
@@ -28,7 +36,8 @@ Fichier à lire en premier dans une nouvelle session, et à mettre à jour à ch
 
 - `app/services.py` : lecture de `services.yaml` (une ligne fausse est écartée et signalée). `app/services.exemple.yaml` : l'exemple inventé, servi si le fichier manque.
 - `app/veille.py` : la sonde et les règles d'une panne (trois échecs, trois réussites, machine qui emporte ses services, arrêt attendu, seuil des disques, Home Assistant muet). Mémoire : `pannes.json` dans le dossier de données, rien d'autre.
-- `app/main.py` : `/api/etat`, `/api/pannes/vue`, `/api/recharger`, `/api/ha/etat` (ouverte par le secret).
+- `app/main.py` : `/api/etat`, `/api/pannes/vue`, `/api/recharger`, `/api/ha/etat` (ouverte par le secret), les routes de sauvegarde (0.8).
+- `app/sauvegardes.py` (0.8) : collecte des réglages des applis maison, fichiers `sauvegardes/`, tuile « Sauvegarde ratée », exports chiffrés.
 - `frontend/src/lib/Cercle.svelte` : l'anneau (arcs, dépliage). `pages/Anneau.svelte` : l'écran et la vue réduite. `lib/icones.js` : les pictogrammes que le fichier appelle par leur nom.
 - `tests/interface/serveur.py` : l'Anneau de démonstration ; `morts.txt` dit quelles adresses ne répondent plus.
 
@@ -48,7 +57,8 @@ Fichier à lire en premier dans une nouvelle session, et à mettre à jour à ch
 
 ## Décisions à ne pas rouvrir sans raison
 
-- Temps 1 et 2 sans aucun jeton : ni Portainer, ni Home Assistant (c'est lui qui envoie).
+- Temps 1 et 2 sans aucun jeton : ni Portainer, ni Home Assistant (c'est lui qui envoie). Le jeton commun `MAISON_JETON` (0.7) sert seulement entre applis maison.
+- Sauvegarde (0.8) : jamais de secret dans une sauvegarde ; l'export des variables n'arrive que chiffré (age, clé publique ici, clé privée hors de la maison) ; pas de notification Home Assistant pour une sauvegarde ratée.
 - Disques : seuil fixe, 99,8 % par défaut, dans le fichier.
 - Cadre si le service l'accepte, sinon fenêtre réutilisée.
 - L'anneau porte les familles en texte seul ; rouge lave pour une panne, bleu spectral pour une action ; l'état est aussi dit en mots.

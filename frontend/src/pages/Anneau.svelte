@@ -34,11 +34,13 @@
   const familles = $derived(e?.familles || [])
   const pannes = $derived(e?.pannes || [])
   const aFaire = $derived(e?.a_faire || [])
+  const aTraiter = $derived(e?.a_traiter || [])   // 0.8 : « Sauvegarde ratée » (rien vers Home Assistant)
+  const nbChoses = $derived(aFaire.length + aTraiter.length)
   // l'état écrit sur l'anneau : la panne passe devant ce qui est à faire
   const etats = $derived(Object.fromEntries(familles.map((f) => [f.cle, f.etat === 'panne' ? 'panne' : aFaire.some((x) => x.famille === f.nom) ? 'faire' : f.etat === 'inconnu' ? 'inconnu' : ''])))
   const centre = $derived(!e ? null
-    : pannes.length ? { rang: 'panne', grand: `${pannes.length} en panne`, petit: aFaire.length ? `${aFaire.length} chose${aFaire.length > 1 ? 's' : ''} à faire` : '' }
-    : { rang: aFaire.length ? 'faire' : '', grand: 'Tout va bien', petit: aFaire.length ? `${aFaire.length} chose${aFaire.length > 1 ? 's' : ''} à faire quand tu veux` : '' })
+    : pannes.length ? { rang: 'panne', grand: `${pannes.length} en panne`, petit: nbChoses ? `${nbChoses} chose${nbChoses > 1 ? 's' : ''} à faire` : '' }
+    : { rang: aFaire.length ? 'faire' : '', grand: 'Tout va bien', petit: nbChoses ? `${nbChoses} chose${nbChoses > 1 ? 's' : ''} à faire quand tu veux` : '' })
   const familleOuverte = $derived(familles.find((f) => f.cle === ouverte))
   const familleDuService = $derived(service ? familles.find((f) => f.cle === service.famille) : null)
   const leService = $derived(familleDuService?.services.find((s) => s.cle === service.cle) || null)
@@ -170,7 +172,20 @@
           <ul>{#each aFaire as x (x.cle)}<li><span>{x.phrase}{#if x.famille}<small>{x.famille}</small>{/if}</span></li>{/each}</ul>
         </section>
       {/if}
-      {#if !pannes.length && !aFaire.length && e.fraicheur.sonde}
+      {#if aTraiter.length}
+        <section class="rang traiter" aria-label="À traiter">
+          <h2><span>À traiter</span><span>{aTraiter.length}</span></h2>
+          <ul>
+            {#each aTraiter as x (x.cle)}
+              <li>
+                <span>{x.phrase}{#if x.detail}<small>{x.detail}</small>{/if}</span>
+                <button type="button" class="lien" onclick={() => onreglages?.()} aria-label={'Voir : ' + x.phrase}>Voir</button>
+              </li>
+            {/each}
+          </ul>
+        </section>
+      {/if}
+      {#if !pannes.length && !aFaire.length && !aTraiter.length && e.fraicheur.sonde}
         <p class="text-sm text-muted-foreground">Rien à signaler. Touche une famille pour voir ses services.</p>
       {/if}
     </div>
@@ -202,6 +217,8 @@
   .rang h2 { display: flex; justify-content: space-between; margin: 0 0 0.55rem; font-size: 0.74rem; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; }
   .rang.panne h2 { color: var(--lave); }
   .rang.faire h2 { color: var(--spectre); }
+  .rang.traiter { border-color: color-mix(in srgb, var(--app) 45%, var(--border)); }
+  .rang.traiter h2 { color: var(--app); }
   .rang ul { display: grid; gap: 0.65rem; margin: 0; padding: 0; list-style: none; }
   .rang li { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; }
   .rang li span { min-width: 0; }

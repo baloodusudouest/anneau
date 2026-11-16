@@ -21,13 +21,13 @@ class Config:
     periode: int = 60                # secondes entre deux tours de sonde
     atlas_depot: str = ""            # 0.5 : dépôt GitHub d'Atlas (« propriétaire/atlas ») ; vide : pas d'Atlas
     github_jeton: str = ""           # 0.5 : jeton GitHub en lecture seule sur ce dépôt (contenu), jamais montré
+    sauvegarde_auto: bool = True     # 0.8 : collecte quotidienne des réglages des applis ; coupée dans les tests
 
 
 def charger() -> Config:
-    mot_de_passe = maison.mot_de_passe("ANNEAU_PASSWORD")      # 0.7 : MAISON_PASSWORD, repli sur l'ancien nom
+    mot_de_passe = maison.mot_de_passe()      # 0.8 : MAISON_PASSWORD seul (ANNEAU_PASSWORD n'est plus lu)
     if len(mot_de_passe) < 12:
-        raise SystemExit("MAISON_PASSWORD (ou ANNEAU_PASSWORD) est absent ou trop court (12 caractères au moins) : "
-                         "l'Anneau ne démarre pas.")
+        raise SystemExit("MAISON_PASSWORD est absent ou trop court (12 caractères au moins) : l'Anneau ne démarre pas.")
     return Config(
         password=mot_de_passe,
         data=Path(os.environ.get("ANNEAU_DATA", "/data")),

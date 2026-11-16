@@ -43,6 +43,7 @@ class Service:
     cadre: bool | None = None   # affiché dans l'Anneau : oui, non, ou vide = essayer (sauf si le service l'interdit)
     machine: str = ""           # si cette machine ne répond pas, la panne est la sienne
     arret_attendu: bool = False  # un service qu'on éteint exprès (PC de calcul) n'est jamais « en panne »
+    sauvegarde: bool = True     # 0.8 : « sauvegarde: false » retire de la collecte une tuile dont la sonde finit par /health sans être une appli maison
 
     @property
     def a_sonder(self) -> str:
@@ -170,7 +171,8 @@ def comprendre(texte: str, exemple: bool = False, modifie_le: str = "") -> Fichi
         services.append(Service(nom=nom, cle=cle(nom), famille=famille, locale=locale,
                                 privee=_adresse(s.get("privee"), nom, erreurs), sonde=_adresse(s.get("sonde"), nom, erreurs),
                                 icone=str(s.get("icone", "")).strip(), cadre=_cadre(s.get("cadre")),
-                                machine=machine, arret_attendu=bool(s.get("arret_attendu", False))))
+                                machine=machine, arret_attendu=bool(s.get("arret_attendu", False)),
+                                sauvegarde=s.get("sauvegarde", True) is not False))
     reglages = brut.get("reglages") or {}
     try:
         seuil = float(reglages.get("seuil_disque", 99.8))

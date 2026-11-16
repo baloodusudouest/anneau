@@ -1,5 +1,15 @@
 # Journal des versions
 
+## 0.8.0 — 16 novembre 2026
+- **Sauvegarde des réglages des applis maison.** Chaque jour à l'heure choisie (03:30 au départ), l'Anneau demande ses réglages à chaque appli maison du fichier des services et les range dans son dossier, un fichier par jour (les 30 derniers jours, plus le premier de chaque mois). Une appli qui ne répond pas, ou qui enverrait un secret, est notée « ratée » sans gêner les autres. Bouton « Sauvegarder maintenant ».
+- **Tuile « Sauvegarde ratée »**, en or, dans un nouveau rang « À traiter » de l'écran d'accueil, quand la dernière collecte a raté une appli, quand le fichier n'a pas pu être écrit, ou quand rien n'a réussi depuis 36 heures. Ce n'est pas une panne, et rien ne part vers Home Assistant.
+- **Réglages › Sauvegarde** : l'heure, la dernière collecte (applis lues, ratées et pourquoi), les fichiers à télécharger, la clé publique où Atlas chiffre l'export des variables, et les exports chiffrés reçus. Une clé privée est refusée dès le navigateur. **Réglages › Restaurer** : remettre les réglages de l'Anneau d'une sauvegarde.
+- Les applis maison relisent leurs sauvegardes chez l'Anneau pour leur bouton « Restaurer » (jeton commun).
+- Atlas peut déposer un export **chiffré** des variables (jamais de texte clair accepté) ; les 30 derniers sont gardés et partent avec Hyper Backup.
+- Une tuile peut se retirer de la collecte par `sauvegarde: false` dans le fichier des services.
+- **Ancien nom retiré** : `ANNEAU_PASSWORD` n'est plus lu, seulement `MAISON_PASSWORD`.
+- Tests : 53 du serveur, 24 d'écran.
+
 ## 0.7.0 — 16 novembre 2026
 - **Annuaire pour les applis maison** : `GET /externe/services` (jeton commun `MAISON_JETON` ; vide : adresse fermée ; `MAISON_JETON_ANCIEN` accepté pendant un changement) rend le nom, la famille, l'adresse locale et l'adresse privée de chaque tuile. Les applis y lisent les liens vers les autres au lieu d'une IP et d'un port codés chez elles (module commun du socle 0.5.0). Rien d'autre n'en sort : ni sonde, ni état, ni secret.
 - Module commun `app/maison.py` (contrat 1) ; le mot de passe se lit dans `MAISON_PASSWORD`, avec repli sur `ANNEAU_PASSWORD`.

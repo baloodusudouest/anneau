@@ -280,3 +280,50 @@ def test_8_reglages_importer_le_fichier(page, monde):
     assert "services.precedent.yaml" in page.locator("#message").inner_text()
     page.get_by_role("link", name="Revenir à l'anneau").click()
     page.locator("svg.anneau").wait_for()
+
+
+def test_9_reglages_sauvegarde_et_tuile_a_traiter(page, monde):
+    """0.8 : Réglages › Sauvegarde (heure, collecte, fichiers, clé publique, exports), Restaurer, et la tuile « Sauvegarde ratée »."""
+    page.get_by_role("button", name="Réglages").first.click()
+    page.get_by_role("heading", level=1, name="Réglages").wait_for()
+    bloc = page.get_by_role("region", name="Sauvegarde")
+    page.get_by_label("Heure de la collecte").fill("04:10")
+    bloc.get_by_role("button", name="Enregistrer l'heure").click()
+    page.locator("#message-sauvegarde", has_text="Collecte chaque jour à 04:10.").wait_for()
+    bloc.get_by_role("button", name="Sauvegarder maintenant").click()
+    page.locator("#message-sauvegarde", has_text="Sauvegarde faite : 1 appli(s) lue(s), 2 ratée(s).").wait_for()
+    assert "anneau" in bloc.get_by_role("group", name="Dernière collecte").inner_text()
+    assert "MAISON_JETON est vide" in bloc.get_by_label("Applis non lues").inner_text()
+    assert bloc.get_by_label("Fichiers de sauvegarde").get_by_role("link", name="Télécharger").count() == 1
+    # une clé privée ne part jamais : refusée dans le navigateur
+    page.get_by_label("Nouvelle clé publique (age1…)").fill("AGE-SECRET-KEY-1" + "Q" * 58)
+    bloc.get_by_role("button", name="Enregistrer la clé").click()
+    page.locator("#message-cle", has_text="clé privée").wait_for()
+    page.get_by_label("Nouvelle clé publique (age1…)").fill("age1" + "q" * 58)
+    bloc.get_by_role("button", name="Enregistrer la clé").click()
+    page.locator("#message-cle", has_text="Clé publique enregistrée.").wait_for()
+    assert "age1qqqq" in bloc.get_by_label("Clé publique", exact=True).inner_text()
+    assert "Aucun export chiffré reçu." in bloc.inner_text()
+    # Restaurer : l'heure revient à celle de la sauvegarde
+    rest = page.get_by_role("region", name="Restaurer")
+    page.get_by_label("Heure de la collecte").fill("05:00")
+    bloc.get_by_role("button", name="Enregistrer l'heure").click()
+    page.locator("#message-sauvegarde", has_text="05:00").wait_for()
+    rest.get_by_role("button", name="Voir les différences").click()        # les dates sont relues après la collecte
+    rest.get_by_label("Différences").wait_for()
+    assert "05:00 → 04:10" in rest.get_by_label("Différences").inner_text()
+    rest.get_by_role("button", name="Restaurer", exact=True).click()
+    page.locator("#message-restaurer", has_text="restaurés").wait_for()
+    assert page.get_by_label("Heure de la collecte").input_value() == "04:10"
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    # la tuile « Sauvegarde ratée », en or, mène aux Réglages
+    page.get_by_role("link", name="Revenir à l'anneau").click()
+    page.locator("svg.anneau").wait_for()
+    tuile = page.get_by_role("region", name="À traiter")
+    assert "Sauvegarde ratée" in tuile.inner_text() and "2 appli(s) non lue(s) : Arbre, Répertoire" in tuile.inner_text()
+    assert "Tout va bien" in page.locator("svg.anneau").text_content()                # pas une panne
+    assert page.evaluate("document.documentElement.scrollWidth") <= ECRANS[page.ecran]["width"]
+    tuile.get_by_role("button", name="Voir : Sauvegarde ratée").click()
+    page.get_by_role("heading", level=1, name="Réglages").wait_for()
+    page.get_by_role("link", name="Revenir à l'anneau").click()
+    page.locator("svg.anneau").wait_for()

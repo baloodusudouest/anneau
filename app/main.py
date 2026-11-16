@@ -7,7 +7,9 @@ et ne détient aucun jeton d'un autre service — sauf, depuis la 0.5, un jeton 
 
 Routes : /health (publique), /api/session, /api/connexion, /api/deconnexion, /api/etat,
 /api/pannes/vue, /api/recharger, /api/services/importer (0.6), /api/ha/etat (ouverte par le secret de Home Assistant), /api/documents,
-/documents/atlas.html (0.5, derrière la session), puis l'interface.
+/documents/atlas.html (0.5, derrière la session), /externe/services (0.7, jeton commun),
+0.8 — sauvegarde des réglages : /api/reglages, /api/restaurer, /api/sauvegardes, /api/cle-publique,
+/api/variables-chiffrees (session) ; /externe/sauvegarde, /externe/sauvegardes/{appli} (jeton commun) ; puis l'interface.
 """
 from __future__ import annotations
 
@@ -22,7 +24,7 @@ from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 import time
 
-from . import documents, maison
+from . import documents, maison, sauvegardes
 
 from . import __version__
 from .auth import COMMUN, DUREE, Sessions
@@ -66,16 +68,31 @@ async def _relire_atlas(cfg: Config) -> None:
         await asyncio.sleep(3600)
 
 
+async def _sauvegarde_quotidienne(cfg: Config) -> None:
+    """0.8 : chaque jour à l'heure de Réglages › Sauvegarde (rattrapée au démarrage si elle est passée)."""
+    while True:
+        try:
+            if sauvegardes.a_lancer(cfg.data, ETAT["reglages"].get("heure_sauvegarde"), datetime.now().astimezone()):
+                await _collecter(automatique=True)
+        except Exception:
+            log.exception("Collecte des sauvegardes interrompue")
+        await asyncio.sleep(30)
+
+
 @asynccontextmanager
 async def cycle(app: FastAPI):
     cfg = ETAT.get("cfg") or charger()
     cfg.data.mkdir(parents=True, exist_ok=True)
     veille = ETAT.get("veille") or Veille(cfg.data, lire(cfg.data / "services.yaml"), ha_attendu=bool(cfg.secret_ha))
-    ETAT.update(cfg=cfg, sessions=Sessions(APPLI, cfg.password, _lire_generation(cfg)), veille=veille)
+    reglages = ETAT.get("reglages") or maison.Reglages(cfg.data / "reglages.json", sauvegardes.DEFAUTS, {})
+    sauvegardes.demarrer(cfg.data)
+    ETAT.update(cfg=cfg, sessions=Sessions(APPLI, cfg.password, _lire_generation(cfg)), veille=veille,
+                reglages=reglages, verrou_collecte=asyncio.Lock())
     ronde = asyncio.create_task(_ronde(veille, cfg.periode)) if cfg.veille else None
     atlas = asyncio.create_task(_relire_atlas(cfg)) if cfg.veille and cfg.atlas_depot else None
+    collecte = asyncio.create_task(_sauvegarde_quotidienne(cfg)) if cfg.veille and cfg.sauvegarde_auto else None
     yield
-    for t in (ronde, atlas):
+    for t in (ronde, atlas, collecte):
         if t:
             t.cancel()
             with suppress(asyncio.CancelledError):
@@ -160,7 +177,8 @@ def _https(request: Request) -> bool:
 
 @app.get("/api/etat")
 def etat(request: Request):
-    return {**ETAT["veille"].etat(prive=_prive(request), https=_https(request), hote=_hote(request)), "version": __version__}
+    return {**ETAT["veille"].etat(prive=_prive(request), https=_https(request), hote=_hote(request)),
+            "a_traiter": sauvegardes.a_traiter(ETAT["cfg"].data), "version": __version__}
 
 
 @app.post("/api/pannes/vue")
@@ -230,14 +248,180 @@ def annuaire(request: Request):
     """Adresses des services (nom, famille, adresse locale, adresse privée) pour les autres applis maison,
     qui y lisent les liens à montrer au lieu d'une IP et d'un port codés chez elles. Jeton commun MAISON_JETON ;
     vide : adresse fermée. Rien d'autre (ni sonde, ni état, ni secret)."""
+    _jeton_commun(request)
+    return {"contrat": maison.CONTRAT, "services": [
+        {"nom": s.nom, "cle": s.cle, "famille": s.famille, "locale": s.locale, "privee": s.privee}
+        for s in ETAT["veille"].fichier.services]}
+
+
+# ================================================================ sauvegarde des réglages (0.8 : contrat de sauvegarde 1)
+
+def _jeton_commun(request: Request) -> None:
+    """Portes des applis maison : jeton commun seulement ; vide = porte fermée (404)."""
     acceptes = maison.jetons()
     if not acceptes:
         raise HTTPException(404, "Adresse fermée : MAISON_JETON est vide.")
     if not maison.jeton_valide(maison.jeton_propose(request.headers), acceptes):
         raise HTTPException(401, "Jeton refusé.")
-    return {"contrat": maison.CONTRAT, "services": [
-        {"nom": s.nom, "cle": s.cle, "famille": s.famille, "locale": s.locale, "privee": s.privee}
-        for s in ETAT["veille"].fichier.services]}
+
+
+def _propre() -> dict:
+    return maison.sauvegarde(APPLI, __version__, ETAT["reglages"].tout(), exclus=sauvegardes.EXCLUS)
+
+
+async def _collecter(automatique: bool = False) -> dict:
+    async with ETAT["verrou_collecte"]:
+        return await sauvegardes.collecter(ETAT["cfg"].data, ETAT["veille"].fichier, _propre(),
+                                           lire=ETAT.get("lire_sauvegarde"), automatique=automatique)
+
+
+@app.get("/api/reglages")
+def lire_reglages():
+    return {"reglages": ETAT["reglages"].tout()}
+
+
+@app.put("/api/reglages")
+def changer_reglages(corps: dict = Body(...)):
+    try:
+        propres = sauvegardes.valider(corps.get("reglages", corps) if isinstance(corps, dict) else corps)
+        return {"reglages": ETAT["reglages"].changer(propres)}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.get("/api/cle-publique")
+def lire_cle():
+    """La clé publique age où Atlas chiffre l'export des variables (ce n'est pas un secret)."""
+    return {"cle_publique": ETAT["reglages"].get("cle_publique")}
+
+
+@app.put("/api/cle-publique")
+def changer_cle(corps: dict = Body(...)):
+    try:
+        cle_age = sauvegardes.valider_cle(str(corps.get("cle_publique", "")))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"cle_publique": ETAT["reglages"].changer({"cle_publique": cle_age})["cle_publique"]}
+
+
+@app.get("/externe/sauvegarde")
+def ma_sauvegarde(request: Request):
+    """La sauvegarde de l'Anneau lui-même (la clé publique en est exclue)."""
+    _jeton_commun(request)
+    return _propre()
+
+
+@app.get("/externe/sauvegardes/{appli}")
+def sauvegardes_d_une_appli(appli: str, request: Request, le: str = ""):
+    """Pour « Restaurer » dans chaque appli : ses dates, ou ses réglages d'un jour."""
+    _jeton_commun(request)
+    if not sauvegardes.RE_APPLI.match(appli):
+        raise HTTPException(400, "Nom d'appli invalide.")
+    data = ETAT["cfg"].data
+    if not le:
+        return {"dates": sauvegardes.dates_de(data, appli)}
+    if not sauvegardes.date_valide(le):
+        raise HTTPException(400, "Date invalide (AAAA-MM-JJ).")
+    r = sauvegardes.reglages_de(data, appli, le)
+    if r is None:
+        raise HTTPException(404, f"Aucune sauvegarde de {appli} le {le}.")
+    return r
+
+
+@app.get("/api/sauvegardes")
+def liste_sauvegardes():
+    data = ETAT["cfg"].data
+    e = sauvegardes.lire_etat(data)
+    return {"heure": ETAT["reglages"].get("heure_sauvegarde"), "derniere": e.get("derniere"),
+            "derniere_reussie": e.get("derniere_reussie", ""), "historique": (e.get("historique") or [])[:10],
+            "fichiers": sauvegardes.liste(data), "a_traiter": sauvegardes.a_traiter(data)}
+
+
+@app.post("/api/sauvegardes")
+async def sauvegarder_maintenant():
+    return {"derniere": await _collecter()}
+
+
+@app.get("/api/sauvegardes/{le}")
+def une_sauvegarde(le: str, telecharger: bool = False):
+    if not sauvegardes.date_valide(le):
+        raise HTTPException(400, "Date invalide (AAAA-MM-JJ).")
+    d = sauvegardes.fichier_du_jour(ETAT["cfg"].data, le)
+    if d is None:
+        raise HTTPException(404, f"Aucune sauvegarde le {le}.")
+    entetes = {"Content-Disposition": f'attachment; filename="sauvegarde-{le}.json"'} if telecharger else {}
+    return JSONResponse(d, headers=entetes)
+
+
+@app.get("/api/restaurer")
+def restaurer_voir(le: str = ""):
+    """Les réglages de l'Anneau lui-même, lus dans ses propres fichiers (pas de réseau)."""
+    data = ETAT["cfg"].data
+    if not le:
+        dates = sauvegardes.dates_de(data, APPLI)
+        if not dates:
+            raise HTTPException(404, "Aucune sauvegarde à restaurer pour l'instant.")
+        return {"dates": dates}
+    if not sauvegardes.date_valide(le):
+        raise HTTPException(400, "Date invalide (AAAA-MM-JJ).")
+    r = sauvegardes.reglages_de(data, APPLI, le)
+    if r is None:
+        raise HTTPException(404, f"Aucune sauvegarde de l'Anneau le {le}.")
+    return {"le": le, "version": r["version"],
+            "differences": maison.differences(ETAT["reglages"].tout(), r["reglages"], sauvegardes.EXCLUS)}
+
+
+@app.post("/api/restaurer")
+def restaurer(corps: dict = Body(...)):
+    le = str(corps.get("le", ""))
+    vu = restaurer_voir(le) if le else None
+    if not vu:
+        raise HTTPException(400, "Date à restaurer manquante.")
+    valeurs = {d["cle"]: d["sauve"] for d in vu["differences"]}
+    try:
+        reglages = ETAT["reglages"].changer(sauvegardes.valider(valeurs))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    log.info("Réglages de l'Anneau restaurés depuis la sauvegarde du %s : %s", le, ", ".join(valeurs) or "rien à changer")
+    return {"reglages": reglages, "restaures": sorted(valeurs)}
+
+
+@app.get("/api/variables-chiffrees")
+def liste_variables():
+    return {"exports": sauvegardes.liste_variables(ETAT["cfg"].data)}
+
+
+@app.post("/api/variables-chiffrees")
+async def ranger_variables(request: Request):
+    """L'export des variables, chiffré par Atlas dans le navigateur avec la clé publique. Jamais de texte clair."""
+    try:
+        if int(request.headers.get("content-length") or 0) > sauvegardes.TAILLE_VARIABLES:
+            raise HTTPException(413, "Fichier trop gros (1 Mo au plus).")
+    except ValueError:
+        raise HTTPException(400, "Longueur illisible.") from None
+    brut = b""
+    async for morceau in request.stream():
+        brut += morceau
+        if len(brut) > sauvegardes.TAILLE_VARIABLES:
+            raise HTTPException(413, "Fichier trop gros (1 Mo au plus).")
+    try:
+        texte = brut.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(400, "Seul un fichier chiffré par age, en texte, est accepté.") from None
+    try:
+        return sauvegardes.ranger_variables(ETAT["cfg"].data, texte)
+    except sauvegardes.Refus as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(500, f"Le dossier de l'Anneau n'accepte pas l'écriture : {exc}") from exc
+
+
+@app.get("/api/variables-chiffrees/{nom}")
+def telecharger_variables(nom: str):
+    f = sauvegardes.chemin_variables(ETAT["cfg"].data, nom)
+    if f is None:
+        raise HTTPException(404, "Export introuvable.")
+    return FileResponse(f, media_type="application/octet-stream", filename=nom)
 
 
 # ================================================================ documents (0.5 : Atlas)
