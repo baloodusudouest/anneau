@@ -80,8 +80,10 @@ def jetons(*anciens: str) -> tuple[str, ...]:
 
 
 def jeton_a_envoyer(*anciens: str) -> str:
-    """Le jeton qu'une appli joint à ses demandes : MAISON_JETON, sinon l'ancienne variable."""
-    for nom in ("MAISON_JETON", *anciens):
+    """Le jeton qu'une appli joint à ses demandes. Pendant la transition, l'ancienne variable de la paire passe
+    d'abord (l'appli d'en face ne connaît peut-être pas encore MAISON_JETON) ; une fois les anciennes retirées
+    de la stack, c'est MAISON_JETON."""
+    for nom in (*anciens, "MAISON_JETON"):
         if _env(nom):
             return _env(nom)
     return ""
@@ -174,4 +176,4 @@ def empreinte_calculee(chemin: str | Path | None = None) -> str:
 def empreinte_ecrite(chemin: str | Path | None = None) -> str:
     texte = Path(chemin or __file__).read_text(encoding="utf-8")
     return texte.rsplit("\n# empreinte: ", 1)[-1].strip() if "\n# empreinte: " in texte else ""
-# empreinte: afb17fc4d2e324b3
+# empreinte: b7c1d8273b5b4173
