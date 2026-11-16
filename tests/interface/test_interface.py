@@ -290,11 +290,13 @@ def test_9_reglages_sauvegarde_et_tuile_a_traiter(page, monde):
     page.get_by_label("Heure de la collecte").fill("04:10")
     bloc.get_by_role("button", name="Enregistrer l'heure").click()
     page.locator("#message-sauvegarde", has_text="Collecte chaque jour à 04:10.").wait_for()
+    avant = bloc.get_by_label("Fichiers de sauvegarde").get_by_role("link", name="Télécharger").count()
     bloc.get_by_role("button", name="Sauvegarder maintenant").click()
     page.locator("#message-sauvegarde", has_text="Sauvegarde faite : 1 appli(s) lue(s), 2 ratée(s).").wait_for()
     assert "anneau" in bloc.get_by_role("group", name="Dernière collecte").inner_text()
     assert "MAISON_JETON est vide" in bloc.get_by_label("Applis non lues").inner_text()
-    assert bloc.get_by_label("Fichiers de sauvegarde").get_by_role("link", name="Télécharger").count() == 1
+    # chaque « Sauvegarder maintenant » ajoute son fichier (le lien « Télécharger » par fichier)
+    assert bloc.get_by_label("Fichiers de sauvegarde").get_by_role("link", name="Télécharger").count() == avant + 1
     # une clé privée ne part jamais : refusée dans le navigateur
     page.get_by_label("Nouvelle clé publique (age1…)").fill("AGE-SECRET-KEY-1" + "Q" * 58)
     bloc.get_by_role("button", name="Enregistrer la clé").click()

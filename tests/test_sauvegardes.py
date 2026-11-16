@@ -189,23 +189,26 @@ def test_sauvegarder_maintenant(client, env, faux, tmp_path):
     assert "secret" in d["ratees"]["Bavard"] and "contrat" in d["ratees"]["Ancien"] and "injoignable" in d["ratees"]["Muet"]
     assert all(j == JETON for _, j in faux.demandes) and len(faux.demandes) == 5
     assert {u for u, _ in faux.demandes} >= {"http://exemple.invalid:1/externe/sauvegarde"}
-    f = tmp_path / "sauvegardes" / f"{jour()}.json"
+    f = next((tmp_path / "sauvegardes").glob("*-manuelle.json"))           # à la demande : fichier à part
+    assert not (tmp_path / "sauvegardes" / f"{jour()}.json").exists()
     contenu = json.loads(f.read_text(encoding="utf-8"))
     assert contenu["contrat"] == 1 and set(contenu["applis"]) == {"anneau", "carnet", "millesime"}
     assert contenu["applis"]["carnet"]["reglages"] == {"tri": "nom", "par_page": 50}
     assert "ne-doit-jamais-sortir" not in f.read_text(encoding="utf-8")      # rien n'est écrit pour une réponse refusée
     assert not list((tmp_path / "sauvegardes").glob("*.tmp"))
-    # même jour : remplacé ; le journal garde une ligne par collecte
+    # chaque sauvegarde à la demande a son fichier ; le journal garde une ligne par collecte
     client.post("/api/sauvegardes")
-    assert len(list((tmp_path / "sauvegardes").glob("2*.json"))) == 1
+    assert len(list((tmp_path / "sauvegardes").glob("*-manuelle.json"))) == 2
     l = client.get("/api/sauvegardes").json()
     assert len(l["historique"]) == 2 and "3 ratée(s)" in l["historique"][0]
-    assert l["fichiers"][0]["date"] == jour() and l["fichiers"][0]["applis"] == ["anneau", "carnet", "millesime"]
+    recente = l["fichiers"][0]["date"]
+    assert recente.endswith("-manuelle") and l["fichiers"][0]["applis"] == ["anneau", "carnet", "millesime"]
     assert l["a_traiter"][0]["phrase"] == "Sauvegarde ratée"
-    complet = client.get(f"/api/sauvegardes/{jour()}").json()
+    complet = client.get(f"/api/sauvegardes/{recente}").json()
     assert complet["applis"]["millesime"]["reglages"] == {"seuil": 0.8}
-    assert "attachment" in client.get(f"/api/sauvegardes/{jour()}?telecharger=true").headers["content-disposition"]
+    assert "attachment" in client.get(f"/api/sauvegardes/{recente}?telecharger=true").headers["content-disposition"]
     assert client.get("/api/sauvegardes/2026-13-40").status_code == 400
+    assert client.get("/api/sauvegardes/2026-13-40-101010-manuelle").status_code == 400
     assert client.get("/api/sauvegardes/2020-01-01").status_code == 404
 
 
@@ -274,6 +277,35 @@ def test_heure_de_la_collecte_automatique(tmp_path, fichier):
     assert sauvegardes.a_lancer(tmp_path, "03:30", t + timedelta(days=1, minutes=1))
 
 
+def test_retention_manuelles_et_automatiques(tmp_path):
+    d = tmp_path / "sauvegardes"
+    d.mkdir()
+    debut = datetime(2026, 8, 20)
+    autos = [(debut + timedelta(days=i)).date().isoformat() for i in range(90)]
+    for x in autos:
+        (d / f"{x}.json").write_text("{}")
+    manuelles = [f"2026-11-{j:02d}-100000-manuelle" for j in range(1, 9)]          # 8 à la demande
+    for x in manuelles:
+        (d / f"{x}.json").write_text("{}")
+    sauvegardes.retention(tmp_path)
+    restent = {f.stem for f in d.glob("*.json")}
+    assert restent == set(autos[-30:]) | {"2026-08-20", "2026-09-01", "2026-10-01", "2026-11-01"} | set(manuelles[-5:])
+
+
+def test_une_collecte_a_la_demande_ne_remplace_pas_l_automatique(tmp_path, fichier):
+    t = datetime(2026, 11, 16, 3, 30).astimezone()
+    asyncio.run(sauvegardes.collecter(tmp_path, dataclasses_remplace(fichier, []), {}, jeton=JETON,
+                                      maintenant=t, automatique=True))
+    asyncio.run(sauvegardes.collecter(tmp_path, dataclasses_remplace(fichier, []), {}, jeton=JETON,
+                                      maintenant=t + timedelta(hours=2)))
+    asyncio.run(sauvegardes.collecter(tmp_path, dataclasses_remplace(fichier, []), {}, jeton=JETON,
+                                      maintenant=t + timedelta(hours=2)))              # même seconde : suffixe
+    noms = sorted(f.stem for f in (tmp_path / "sauvegardes").glob("*.json") if f.stem != "etat")
+    assert noms == ["2026-11-16", "2026-11-16-053000-2-manuelle", "2026-11-16-053000-manuelle"]
+    assert sauvegardes.identifiant_valide("2026-11-16-053000-2-manuelle")
+    assert not sauvegardes.identifiant_valide("2026-11-16-05300-manuelle")
+
+
 def test_retention(tmp_path):
     d = tmp_path / "sauvegardes"
     d.mkdir()
@@ -293,10 +325,11 @@ def test_portes_restaurer(client, env):
     env.setenv("MAISON_JETON", JETON)
     client.post("/api/sauvegardes")
     h = {"Authorization": f"Bearer {JETON}"}
-    assert client.get("/externe/sauvegardes/carnet", headers=h).json() == {"dates": [jour()]}
+    dates = client.get("/externe/sauvegardes/carnet", headers=h).json()["dates"]
+    assert len(dates) == 1 and dates[0].startswith(jour())
     assert client.get("/externe/sauvegardes/muet", headers=h).json() == {"dates": []}
-    r = client.get(f"/externe/sauvegardes/carnet?le={jour()}", headers=h).json()
-    assert r == {"le": jour(), "version": "1.0.0", "reglages": {"tri": "nom", "par_page": 50}}
+    r = client.get(f"/externe/sauvegardes/carnet?le={dates[0]}", headers=h).json()
+    assert r == {"le": dates[0], "version": "1.0.0", "reglages": {"tri": "nom", "par_page": 50}}
     assert client.get("/externe/sauvegardes/carnet?le=2020-01-01", headers=h).status_code == 404
     for faux in ("/externe/sauvegardes/..%2Fetat", "/externe/sauvegardes/Carnet", "/externe/sauvegardes/carnet?le=../etat",
                  "/externe/sauvegardes/carnet?le=2026-02-30"):
@@ -305,8 +338,9 @@ def test_portes_restaurer(client, env):
     def lire(adresse, jeton):
         chemin = adresse.split("8094", 1)[1]
         return client.get(chemin, headers={"Authorization": f"Bearer {jeton}"}).json()
-    assert maison.lire_sauvegarde("millesime", url="http://anneau:8094", lire=lire) == {"dates": [jour()]}
-    assert maison.lire_sauvegarde("millesime", le=jour(), url="http://anneau:8094", lire=lire)["reglages"] == {"seuil": 0.8}
+    dates = maison.lire_sauvegarde("millesime", url="http://anneau:8094", lire=lire)["dates"]
+    assert len(dates) == 1 and dates[0].startswith(jour())
+    assert maison.lire_sauvegarde("millesime", le=dates[0], url="http://anneau:8094", lire=lire)["reglages"] == {"seuil": 0.8}
 
 
 def test_restaurer_l_anneau(client):
@@ -314,10 +348,11 @@ def test_restaurer_l_anneau(client):
     assert client.get("/api/restaurer").status_code == 404 and client.get("/api/restaurer").json()["detail"]
     client.post("/api/sauvegardes")                                  # l'Anneau se sauvegarde lui-même, même sans jeton
     client.put("/api/reglages", json={"reglages": {"heure_sauvegarde": "05:00"}})
-    assert client.get("/api/restaurer").json() == {"dates": [jour()]}
-    r = client.get(f"/api/restaurer?le={jour()}").json()
+    dates = client.get("/api/restaurer").json()["dates"]
+    assert len(dates) == 1 and dates[0].startswith(jour())
+    r = client.get(f"/api/restaurer?le={dates[0]}").json()
     assert r["differences"] == [{"cle": "heure_sauvegarde", "actuel": "05:00", "sauve": "03:30"}]
-    r = client.post("/api/restaurer", json={"le": jour()})
+    r = client.post("/api/restaurer", json={"le": dates[0]})
     assert r.status_code == 200 and r.json()["reglages"]["heure_sauvegarde"] == "03:30"
     assert client.post("/api/restaurer", json={"le": "2020-01-01"}).status_code == 404
     assert client.post("/api/restaurer", json={}).status_code == 400

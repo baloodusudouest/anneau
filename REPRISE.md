@@ -4,6 +4,7 @@ Fichier à lire en premier dans une nouvelle session, et à mettre à jour à ch
 
 ## État (16/11/2026)
 
+- **0.9.0** (16/11/2026) : deux familles de sauvegardes (décision du 16/11 : garder les 5 dernières à la demande et les 30 dernières automatiques). `sauvegardes/AAAA-MM-JJ.json` (automatique, remplacée le même jour) et `sauvegardes/AAAA-MM-JJ-HHMMSS-manuelle.json` (« Sauvegarder maintenant », jamais écrasée). `identifiant_valide` remplace `date_valide` pour les routes de lecture et de restauration ; `retention` range les deux familles. Tests : 79.
 - **0.8.0** (16/11/2026) : sauvegarde des réglages (contrat de sauvegarde 1, module commun contrat 2 copié tel quel).
   - `app/sauvegardes.py` : collecte (`collecter`, `applis_maison`, `base`, `examiner_reponse`), rétention, état et journal (`sauvegardes/etat.json`, gardé en mémoire si le disque refuse), tuile `a_traiter`, exports chiffrés (`ranger_variables`). Réglages de l'Anneau : `maison.Reglages(<données>/reglages.json)` — `heure_sauvegarde` (« HH:MM », 03:30), `cle_publique` (« age1… », vide) ; aucune ancienne variable à reprendre.
   - `app/main.py` : tâche `_sauvegarde_quotidienne` (toutes les 30 s, lance si l'heure est passée et pas encore faite ce jour : rattrapée au démarrage) ; routes `/api/reglages`, `/api/cle-publique`, `/api/sauvegardes[/{date}]`, `/api/restaurer`, `/api/variables-chiffrees[/{nom}]` (session) ; `/externe/sauvegarde`, `/externe/sauvegardes/{appli}` (jeton commun, `_jeton_commun`). `/api/etat` rend `a_traiter`.

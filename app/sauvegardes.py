@@ -12,7 +12,11 @@ rien n'est écrit pour elle et les autres continuent.
 
 Fichiers, dans <données>/sauvegardes/ :
   AAAA-MM-JJ.json            {"contrat": 1, "le", "applis": {<id>: <réponse>}, "ratees": {<tuile>: <raison>}}
-                             (un par jour, remplacé le même jour ; 30 derniers jours + le premier de chaque mois)
+                             sauvegarde automatique (une par jour, remplacée le même jour ; 30 dernières
+                             + la première de chaque mois)
+  AAAA-MM-JJ-HHMMSS-manuelle.json
+                             même contenu, pour « Sauvegarder maintenant » (jamais remplacée ni touchée par
+                             la collecte automatique ; 5 dernières gardées)
   etat.json                  dernière collecte, dernière réussie, journal court des collectes
   variables/AAAA-MM-JJ-HHMMSS.age   exports chiffrés des variables, fabriqués par Atlas dans le navigateur
                              (l'Anneau ne voit jamais le texte clair ; 30 derniers gardés)
@@ -38,7 +42,8 @@ from . import maison
 log = logging.getLogger("anneau.sauvegardes")
 
 DOSSIER = "sauvegardes"
-GARDES_JOURS = 30            # derniers fichiers quotidiens gardés (plus le premier de chaque mois)
+GARDES_JOURS = 30            # dernières sauvegardes automatiques gardées (plus la première de chaque mois)
+GARDES_MANUELLES = 5         # dernières sauvegardes « Sauvegarder maintenant » gardées
 GARDES_VARIABLES = 30        # derniers exports chiffrés gardés
 DELAI = 10                   # secondes au plus par appli
 SILENCE = 36 * 3600          # sans collecte réussie depuis 36 h : « Sauvegarde ratée »
@@ -56,6 +61,7 @@ RE_APPLI = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 RE_HEURE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 RE_CLE_AGE = re.compile(r"^age1[02-9ac-hj-np-z]{58}$")       # clé publique age : bech32, 62 caractères
 RE_EXPORT = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{6}(-\d{1,3})?\.age$")
+RE_MANUELLE = re.compile(r"^(\d{4}-\d{2}-\d{2})-\d{6}(-\d{1,3})?-manuelle$")
 
 
 class Refus(ValueError):
@@ -110,6 +116,23 @@ def date_valide(le: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+def identifiant_valide(le: str) -> bool:
+    """Une sauvegarde : « AAAA-MM-JJ » (automatique) ou « AAAA-MM-JJ-HHMMSS-manuelle » (à la demande)."""
+    if date_valide(le):
+        return True
+    m = RE_MANUELLE.match(le) if isinstance(le, str) else None
+    return bool(m) and date_valide(m.group(1))
+
+
+def _nom_manuel(data: Path, t: datetime) -> str:
+    base = t.strftime("%Y-%m-%d-%H%M%S")
+    nom, n = f"{base}-manuelle", 1
+    while (dossier(data) / f"{nom}.json").exists():
+        n += 1
+        nom = f"{base}-{n}-manuelle"
+    return nom
 
 
 def _ecrire_atomique(chemin: Path, contenu: str | bytes) -> None:
@@ -268,22 +291,26 @@ async def _une(nom: str, b: str, jeton: str, lire: Lecteur) -> tuple[str, dict |
 
 
 def retention(data: Path) -> list[str]:
-    """Garde les 30 derniers fichiers quotidiens et le premier de chaque mois ; rend les dates retirées."""
-    dates = sorted(f.stem for f in dossier(data).glob("*.json") if date_valide(f.stem))
-    garder = set(dates[-GARDES_JOURS:])
+    """Garde les 30 dernières sauvegardes automatiques (et la première de chaque mois) et les 5 dernières
+    « à la demande » ; rend les noms retirés."""
+    noms = [f.stem for f in dossier(data).glob("*.json")]
+    autos = sorted(n for n in noms if date_valide(n))
+    manuelles = sorted(n for n in noms if RE_MANUELLE.match(n) and date_valide(n[:10]))
+    garder = set(autos[-GARDES_JOURS:]) | set(manuelles[-GARDES_MANUELLES:])
     premiers: dict[str, str] = {}
-    for d in dates:
+    for d in autos:
         premiers.setdefault(d[:7], d)
     garder |= set(premiers.values())
-    retirees = [d for d in dates if d not in garder]
-    for d in retirees:
-        (dossier(data) / f"{d}.json").unlink(missing_ok=True)
+    retirees = [n for n in autos + manuelles if n not in garder]
+    for n in retirees:
+        (dossier(data) / f"{n}.json").unlink(missing_ok=True)
     return retirees
 
 
 async def collecter(data: Path, fichier, propre: dict, jeton: str | None = None, lire: Lecteur | None = None,
                     maintenant: datetime | None = None, automatique: bool = False) -> dict:
-    """Une collecte : toutes les applis maison en même temps, puis le fichier du jour (remplacé s'il existe).
+    """Une collecte : toutes les applis maison en même temps, puis un fichier (automatique : celui du jour, remplacé
+    s'il existe ; à la demande : un fichier neuf, horodaté).
     `propre` est la sauvegarde de l'Anneau lui-même (sans passer par le réseau)."""
     t = maintenant or datetime.now().astimezone()
     jeton = maison.jeton_a_envoyer() if jeton is None else jeton
@@ -302,16 +329,17 @@ async def collecter(data: Path, fichier, propre: dict, jeton: str | None = None,
             elif corps["appli"] != (propre or {}).get("appli"):     # la tuile d'Atlas peut renvoyer l'Anneau lui-même
                 applis[corps["appli"]] = corps
     jour = t.date().isoformat()
+    nom = jour if automatique else _nom_manuel(data, t)
     contenu = {"contrat": maison.CONTRAT_SAUVEGARDE, "le": t.isoformat(timespec="seconds"),
                "applis": applis, "ratees": ratees}
     erreur = ""
     try:
-        _ecrire_atomique(dossier(data) / f"{jour}.json", json.dumps(contenu, ensure_ascii=False, indent=1))
+        _ecrire_atomique(dossier(data) / f"{nom}.json", json.dumps(contenu, ensure_ascii=False, indent=1))
         retention(data)
     except OSError as exc:
         erreur = str(exc) or exc.__class__.__name__
     e = lire_etat(data)
-    derniere = {"le": contenu["le"], "fichier": f"{jour}.json", "applis": sorted(applis), "ratees": ratees,
+    derniere = {"le": contenu["le"], "fichier": f"{nom}.json", "applis": sorted(applis), "ratees": ratees,
                 "erreur": erreur, "automatique": automatique}
     e["derniere"] = derniere
     if automatique:
@@ -337,7 +365,7 @@ def a_lancer(data: Path, heure: str, maintenant: datetime) -> bool:
 # ---------------------------------------------------------------- lecture des fichiers
 
 def _lire_jour(data: Path, le: str) -> dict | None:
-    if not date_valide(le):
+    if not identifiant_valide(le):
         return None
     try:
         d = json.loads((dossier(data) / f"{le}.json").read_text(encoding="utf-8"))
@@ -350,7 +378,7 @@ def liste(data: Path) -> list[dict]:
     """Pour Atlas et Réglages : chaque fichier, la plus récente d'abord."""
     sortie = []
     for f in sorted(dossier(data).glob("*.json"), reverse=True):
-        if not date_valide(f.stem):
+        if not identifiant_valide(f.stem):
             continue
         d = _lire_jour(data, f.stem) or {}
         sortie.append({"date": f.stem, "le": d.get("le", ""), "applis": sorted((d.get("applis") or {})),

@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 0.9.0 — 16 novembre 2026
+- **Deux familles de sauvegardes.** « Sauvegarder maintenant » écrit désormais son propre fichier, horodaté (`AAAA-MM-JJ-HHMMSS-manuelle.json`) : il n'écrase plus la sauvegarde automatique du jour. On garde les **5 dernières sauvegardes à la demande** et les **30 dernières automatiques** (plus la première de chaque mois, comme avant).
+- Les routes `/api/sauvegardes/{...}`, `/api/restaurer` et `/externe/sauvegardes/{appli}` acceptent les deux formes d'identifiant ; une restauration se fait à partir de l'une ou l'autre.
+- Tests : 79 (dont la rétention des deux familles et le non-écrasement de l'automatique).
+
 ## 0.8.0 — 16 novembre 2026
 - **Sauvegarde des réglages des applis maison.** Chaque jour à l'heure choisie (03:30 au départ), l'Anneau demande ses réglages à chaque appli maison du fichier des services et les range dans son dossier, un fichier par jour (les 30 derniers jours, plus le premier de chaque mois). Une appli qui ne répond pas, ou qui enverrait un secret, est notée « ratée » sans gêner les autres. Bouton « Sauvegarder maintenant ».
 - **Tuile « Sauvegarde ratée »**, en or, dans un nouveau rang « À traiter » de l'écran d'accueil, quand la dernière collecte a raté une appli, quand le fichier n'a pas pu être écrit, ou quand rien n'a réussi depuis 36 heures. Ce n'est pas une panne, et rien ne part vers Home Assistant.

@@ -320,8 +320,8 @@ def sauvegardes_d_une_appli(appli: str, request: Request, le: str = ""):
     data = ETAT["cfg"].data
     if not le:
         return {"dates": sauvegardes.dates_de(data, appli)}
-    if not sauvegardes.date_valide(le):
-        raise HTTPException(400, "Date invalide (AAAA-MM-JJ).")
+    if not sauvegardes.identifiant_valide(le):
+        raise HTTPException(400, "Sauvegarde invalide (AAAA-MM-JJ ou AAAA-MM-JJ-HHMMSS-manuelle).")
     r = sauvegardes.reglages_de(data, appli, le)
     if r is None:
         raise HTTPException(404, f"Aucune sauvegarde de {appli} le {le}.")
@@ -344,8 +344,8 @@ async def sauvegarder_maintenant():
 
 @app.get("/api/sauvegardes/{le}")
 def une_sauvegarde(le: str, telecharger: bool = False):
-    if not sauvegardes.date_valide(le):
-        raise HTTPException(400, "Date invalide (AAAA-MM-JJ).")
+    if not sauvegardes.identifiant_valide(le):
+        raise HTTPException(400, "Sauvegarde invalide (AAAA-MM-JJ ou AAAA-MM-JJ-HHMMSS-manuelle).")
     d = sauvegardes.fichier_du_jour(ETAT["cfg"].data, le)
     if d is None:
         raise HTTPException(404, f"Aucune sauvegarde le {le}.")
@@ -362,8 +362,8 @@ def restaurer_voir(le: str = ""):
         if not dates:
             raise HTTPException(404, "Aucune sauvegarde à restaurer pour l'instant.")
         return {"dates": dates}
-    if not sauvegardes.date_valide(le):
-        raise HTTPException(400, "Date invalide (AAAA-MM-JJ).")
+    if not sauvegardes.identifiant_valide(le):
+        raise HTTPException(400, "Sauvegarde invalide (AAAA-MM-JJ ou AAAA-MM-JJ-HHMMSS-manuelle).")
     r = sauvegardes.reglages_de(data, APPLI, le)
     if r is None:
         raise HTTPException(404, f"Aucune sauvegarde de l'Anneau le {le}.")
