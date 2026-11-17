@@ -45,6 +45,12 @@ def _fichier_generation(cfg: Config) -> Path:
     return cfg.data / "session_generation"
 
 
+def _generation_commune() -> int | None:
+    """0.10.5 : génération du cookie commun = génération des sessions de l'Anneau (None avant le démarrage)."""
+    s = ETAT.get("sessions")
+    return s.generation if s is not None else None
+
+
 def _lire_generation(cfg: Config) -> int:
     try:
         return int(_fichier_generation(cfg).read_text().strip())
@@ -102,6 +108,9 @@ async def cycle(app: FastAPI):
     sauvegardes.demarrer(cfg.data)
     ETAT.update(cfg=cfg, sessions=Sessions(APPLI, cfg.password, _lire_generation(cfg)), veille=veille,
                 reglages=reglages, verrou_collecte=asyncio.Lock())
+    # 0.10.5 : la génération des sessions de l'Anneau sert aussi au cookie commun ; « Se déconnecter » l'augmente
+    # et les autres applis la lisent dans /externe/services : les cookies communs d'avant ne valent plus nulle part
+    maison.definir_generation_commune(_generation_commune)
     ronde = asyncio.create_task(_ronde(veille, cfg.periode)) if cfg.veille else None
     atlas = asyncio.create_task(_relire_atlas(cfg)) if cfg.veille and cfg.atlas_depot else None
     collecte = asyncio.create_task(_sauvegarde_quotidienne(cfg)) if cfg.veille and cfg.sauvegarde_auto else None
@@ -274,7 +283,7 @@ def annuaire(request: Request):
     qui y lisent les liens à montrer au lieu d'une IP et d'un port codés chez elles. Jeton commun MAISON_JETON ;
     vide : adresse fermée. Rien d'autre (ni sonde, ni état, ni secret)."""
     _jeton_commun(request)
-    return {"contrat": maison.CONTRAT, "services": [
+    return {"contrat": maison.CONTRAT, "generation_commune": ETAT["sessions"].generation, "services": [
         {"nom": s.nom, "cle": s.cle, "famille": s.famille, "locale": s.locale, "privee": s.privee}
         for s in ETAT["veille"].fichier.services]}
 

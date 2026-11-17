@@ -489,3 +489,21 @@ def test_annuaire_des_services(client, monkeypatch):
     s = r.json()["services"]
     assert s and set(s[0]) == {"nom", "cle", "famille", "locale", "privee"}
     assert not any("sonde" in x or "etat" in x for x in s)
+
+
+def test_se_deconnecter_change_la_generation_commune_publiee(client, monkeypatch):
+    """0.10.5 (audit du 17/11/2026) : « Se déconnecter » augmente la génération publiée dans /externe/services ;
+    le cookie commun d'avant ne vaut plus, ni ici ni dans les autres applis qui la lisent."""
+    from app import maison
+    from app.auth import COMMUN
+    monkeypatch.setenv("MAISON_JETON", "jeton-commun-essai")
+    entete = {"Authorization": "Bearer jeton-commun-essai"}
+    avant = client.get("/externe/services", headers=entete).json()["generation_commune"]
+    assert client.post("/api/connexion", json={"mot_de_passe": MDP}).status_code == 200
+    ancien = client.cookies.get(COMMUN)
+    assert ancien and ancien.split(".")[0] == str(avant) and maison.generation_commune() == avant
+    client.post("/api/deconnexion")
+    assert client.get("/externe/services", headers=entete).json()["generation_commune"] == avant + 1
+    client.cookies.clear()
+    client.cookies.set(COMMUN, ancien)
+    assert client.get("/api/session").json().get("connecte") is not True
