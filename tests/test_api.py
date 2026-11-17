@@ -507,3 +507,12 @@ def test_se_deconnecter_change_la_generation_commune_publiee(client, monkeypatch
     client.cookies.clear()
     client.cookies.set(COMMUN, ancien)
     assert client.get("/api/session").json().get("connecte") is not True
+
+
+def test_cookies_secure_en_https(client):
+    """Audit du 17/11/2026 : derrière Tailscale Serve (https), les deux cookies portent « Secure »."""
+    r = client.post("/api/connexion", json={"mot_de_passe": MDP}, headers={"X-Forwarded-Proto": "https"})
+    poses = r.headers.get_list("set-cookie")
+    assert len(poses) == 2 and all("secure" in c.lower() for c in poses)
+    r = client.post("/api/connexion", json={"mot_de_passe": MDP})
+    assert not any("secure" in c.lower() for c in r.headers.get_list("set-cookie"))

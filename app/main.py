@@ -31,7 +31,7 @@ import time
 from . import documents, maison, sauvegardes, stack
 
 from . import __version__
-from .auth import COMMUN, DUREE, Sessions
+from .auth import COMMUN, DUREE, Sessions, en_https
 from .config import APPLI, Config, charger
 from .services import PRECEDENT, FichierInvalide, adresse_https, importer, lire
 from .veille import Veille
@@ -155,16 +155,16 @@ def session(request: Request):
 
 
 @app.post("/api/connexion")
-async def connexion(corps: dict = Body(...)):
+async def connexion(request: Request, corps: dict = Body(...)):
     s = ETAT["sessions"]
     if ETAT["cfg"].attente_connexion:
         await asyncio.sleep(s.attente())
     if not s.verifier_mot_de_passe(str(corps.get("mot_de_passe", ""))):
         raise HTTPException(401, "Mot de passe incorrect.")
     r = JSONResponse({"ok": True})
-    r.set_cookie(s.cookie, s.creer(), max_age=DUREE, httponly=True, samesite="strict")
+    r.set_cookie(s.cookie, s.creer(), max_age=DUREE, httponly=True, samesite="strict", secure=en_https(request))
     # La connexion commune : les applis de la maison servies par la même adresse s'ouvrent sans rien demander.
-    r.set_cookie(COMMUN, s.creer_commun(), max_age=DUREE, httponly=True, samesite="strict")
+    r.set_cookie(COMMUN, s.creer_commun(), max_age=DUREE, httponly=True, samesite="strict", secure=en_https(request))
     return r
 
 
