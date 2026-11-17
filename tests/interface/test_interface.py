@@ -283,29 +283,20 @@ def test_8_reglages_importer_le_fichier(page, monde):
 
 
 def test_9_reglages_sauvegarde_et_tuile_a_traiter(page, monde):
-    """0.8 : Réglages › Sauvegarde (heure, collecte, fichiers, clé publique, exports), Restaurer, et la tuile « Sauvegarde ratée »."""
+    """0.8 : Réglages › Sauvegarde (heure, collecte), Restaurer, et la tuile « Sauvegarde ratée ».
+    0.10 : la liste des fichiers et la clé passent dans les pages Sauvegardes et Variables (tests 10 et 11)."""
     page.get_by_role("button", name="Réglages").first.click()
     page.get_by_role("heading", level=1, name="Réglages").wait_for()
     bloc = page.get_by_role("region", name="Sauvegarde")
     page.get_by_label("Heure de la collecte").fill("04:10")
     bloc.get_by_role("button", name="Enregistrer l'heure").click()
     page.locator("#message-sauvegarde", has_text="Collecte chaque jour à 04:10.").wait_for()
-    avant = bloc.get_by_label("Fichiers de sauvegarde").get_by_role("link", name="Télécharger").count()
     bloc.get_by_role("button", name="Sauvegarder maintenant").click()
     page.locator("#message-sauvegarde", has_text="Sauvegarde faite : 1 appli(s) lue(s), 2 ratée(s).").wait_for()
     assert "anneau" in bloc.get_by_role("group", name="Dernière collecte").inner_text()
     assert "MAISON_JETON est vide" in bloc.get_by_label("Applis non lues").inner_text()
-    # chaque « Sauvegarder maintenant » ajoute son fichier (le lien « Télécharger » par fichier)
-    assert bloc.get_by_label("Fichiers de sauvegarde").get_by_role("link", name="Télécharger").count() == avant + 1
-    # une clé privée ne part jamais : refusée dans le navigateur
-    page.get_by_label("Nouvelle clé publique (age1…)").fill("AGE-SECRET-KEY-1" + "Q" * 58)
-    bloc.get_by_role("button", name="Enregistrer la clé").click()
-    page.locator("#message-cle", has_text="clé privée").wait_for()
-    page.get_by_label("Nouvelle clé publique (age1…)").fill("age1" + "q" * 58)
-    bloc.get_by_role("button", name="Enregistrer la clé").click()
-    page.locator("#message-cle", has_text="Clé publique enregistrée.").wait_for()
-    assert "age1qqqq" in bloc.get_by_label("Clé publique", exact=True).inner_text()
-    assert "Aucun export chiffré reçu." in bloc.inner_text()
+    assert "sauvegarde(s) gardée(s)" in bloc.inner_text() and "Export chiffré des variables" in bloc.inner_text()
+    assert bloc.get_by_role("link", name="Voir les sauvegardes").count() == 1
     # Restaurer : l'heure revient à celle de la sauvegarde
     rest = page.get_by_role("region", name="Restaurer")
     page.get_by_label("Heure de la collecte").fill("05:00")
@@ -327,5 +318,96 @@ def test_9_reglages_sauvegarde_et_tuile_a_traiter(page, monde):
     assert page.evaluate("document.documentElement.scrollWidth") <= ECRANS[page.ecran]["width"]
     tuile.get_by_role("button", name="Voir : Sauvegarde ratée").click()
     page.get_by_role("heading", level=1, name="Réglages").wait_for()
+    page.get_by_role("link", name="Revenir à l'anneau").click()
+    page.locator("svg.anneau").wait_for()
+
+
+def test_10_page_sauvegardes(page):
+    """0.10 : chaque sauvegarde se déplie (versions, réglages, différences, ratées) ; le seul endroit qui les liste."""
+    page.goto(page.url.split("#")[0] + "#/sauvegardes")
+    page.get_by_role("heading", level=1, name="Sauvegardes").wait_for()
+    liste = page.get_by_label("Liste des sauvegardes")
+    liste.get_by_role("button").first.click()
+    region = page.get_by_role("region", name=re.compile("^Sauvegarde du "))
+    region.get_by_label("Réglages de L'Anneau").wait_for()
+    assert "heure_sauvegarde" in region.inner_text()
+    assert "2 appli(s) ratée(s)" in region.get_by_role("alert", name="Applis ratées").inner_text()
+    assert region.get_by_role("link", name="Télécharger").count() == 1
+    page.get_by_label("Seulement les applis qui ont changé").check()
+    page.get_by_label("Seulement les applis qui ont changé").uncheck()
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.get_by_role("link", name="Revenir à l'anneau").click()
+    page.locator("svg.anneau").wait_for()
+
+
+STACK = """services:
+  repertoire:
+    image: essai
+    environment:
+      - TZ=${TZ}
+      - MAISON_PASSWORD=${MAISON_PASSWORD}
+      - VEILLE=${VEILLE_HEURE:-03:00}
+"""
+
+
+def test_11_page_variables(page, monde, tmp_path):
+    """0.10 : homelab.yml importé, paire de clés (privée montrée une fois, jamais gardée), chiffrer et ranger l'export,
+    l'ouvrir avec la clé privée, copie pour Portainer ; compatible avec l'outil age ; aucun débordement."""
+    page.goto(page.url.split("#")[0] + "#/variables")
+    page.get_by_role("heading", level=1, name="Variables").wait_for()
+    assert page.evaluate("window.isSecureContext")                              # 127.0.0.1 compte comme sûr
+    assert page.get_by_role("alert", name="Page non sûre").count() == 0
+    # un homelab.yml avec une valeur en clair est refusé, le bon est accepté
+    page.get_by_label("Choisir homelab.yml").set_input_files({"name": "homelab.yml", "mimeType": "text/yaml",
+        "buffer": STACK.replace("${MAISON_PASSWORD}", "motdepasse-en-clair").encode()})
+    page.locator("#message-variables", has_text="valeur écrite en clair").wait_for()
+    page.get_by_label("Choisir homelab.yml").set_input_files({"name": "homelab.yml", "mimeType": "text/yaml", "buffer": STACK.encode()})
+    page.locator("#message-variables", has_text="1 service(s), 3 variable(s)").wait_for()
+    # paire de clés : la privée est montrée, puis effacée une fois la paire adoptée
+    page.get_by_role("button", name="Générer une paire de clés").click()
+    privee = page.get_by_label("Clé privée neuve").input_value()
+    assert privee.startswith("AGE-SECRET-KEY-1")
+    page.get_by_role("button", name="Utiliser cette paire").click()
+    page.locator("#message-variables", has_text="Range d'abord").wait_for()
+    page.get_by_label("Je l'ai rangée hors de la maison").check()
+    page.get_by_role("button", name="Utiliser cette paire").click()
+    page.locator("#message-variables", has_text="Nouvelle clé publique enregistrée").wait_for()
+    assert privee not in page.content()
+    assert "Empreinte" in page.get_by_label("Clé publique", exact=True).inner_text()
+    # chiffrer et ranger : seul du texte chiffré part
+    envois = []
+    page.on("request", lambda r: envois.append(r.post_data or "") if r.method in ("POST", "PUT") else None)
+    page.get_by_label("Export de Portainer à chiffrer").fill("TZ=Europe/Paris\nMAISON_PASSWORD=secret-de-test-123456\nANCIENNE=1\n")
+    page.get_by_role("button", name="Chiffrer et ranger").click()
+    page.locator("#message-variables", has_text="Export chiffré et rangé").wait_for()
+    assert envois and all("secret-de-test" not in e for e in envois) and any("BEGIN AGE ENCRYPTED FILE" in e for e in envois)
+    assert page.get_by_label("Export de Portainer à chiffrer").input_value() == ""
+    # le fichier rangé s'ouvre avec l'outil age et la clé privée
+    nom = page.get_by_label("Liste des exports").locator("label").first.inner_text().split(" · ")[0].strip()
+    rangé = next((monde[1] / "data" / "sauvegardes" / "variables").glob(nom))
+    (tmp_path / "cle.txt").write_text(privee + "\n")
+    clair = subprocess.run(["age", "-d", "-i", str(tmp_path / "cle.txt"), str(rangé)], capture_output=True, text=True)
+    assert clair.returncode == 0 and "MAISON_PASSWORD=secret-de-test-123456" in clair.stdout
+    # l'ouvrir dans la page : valeurs masquées, manquantes, inconnues, copie pour Portainer
+    page.get_by_label("Clé privée (jamais gardée ni envoyée)").fill(privee)
+    page.get_by_role("button", name="Ouvrir", exact=True).click()
+    page.locator("#message-variables", has_text="ouvert : 3 variable(s)").wait_for()
+    assert page.get_by_label("Clé privée (jamais gardée ni envoyée)").input_value() == ""
+    groupe = page.get_by_role("group", name="Valeurs ouvertes")
+    assert "ANCIENNE" in groupe.inner_text() and "Toutes les variables à remplir ont une valeur." in groupe.inner_text()
+    page.get_by_label("Chercher une variable").fill("MAISON")
+    assert "secret-de-test" not in page.get_by_label("Liste des variables").inner_text()
+    page.get_by_role("button", name="Afficher la valeur de MAISON_PASSWORD").click()
+    assert "secret-de-test-123456" in page.get_by_label("Liste des variables").inner_text()
+    assert "obsidian://open?vault=Maison" in page.get_by_role("link", name="Note dans Obsidian").first.get_attribute("href")
+    groupe.get_by_role("button", name="Voir le texte").click()
+    texte = page.get_by_label("Texte à recoller dans Portainer").input_value()
+    assert texte == "TZ=Europe/Paris\nMAISON_PASSWORD=secret-de-test-123456\n"           # ANCIENNE omise, VEILLE_HEURE facultative absente
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    # rien n'est gardé par le navigateur, et « Oublier » efface tout
+    garde = page.evaluate("JSON.stringify(localStorage) + JSON.stringify(sessionStorage)")
+    assert privee not in garde and "secret-de-test" not in garde
+    groupe.get_by_role("button", name="Oublier les valeurs").click()
+    assert "secret-de-test" not in page.content()
     page.get_by_role("link", name="Revenir à l'anneau").click()
     page.locator("svg.anneau").wait_for()

@@ -9,7 +9,10 @@ Routes : /health (publique), /api/session, /api/connexion, /api/deconnexion, /ap
 /api/pannes/vue, /api/recharger, /api/services/importer (0.6), /api/ha/etat (ouverte par le secret de Home Assistant), /api/documents,
 /documents/atlas.html (0.5, derrière la session), /externe/services (0.7, jeton commun),
 0.8 — sauvegarde des réglages : /api/reglages, /api/restaurer, /api/sauvegardes, /api/cle-publique,
-/api/variables-chiffrees (session) ; /externe/sauvegarde, /externe/sauvegardes/{appli} (jeton commun) ; puis l'interface.
+/api/variables-chiffrees (session) ; /externe/sauvegarde, /externe/sauvegardes/{appli} (jeton commun) ;
+0.10 — la sauvegarde regroupée dans l'Anneau : /api/stack, /api/stack/fichier, /api/services/fichier (session) ;
+puis l'interface. Le chiffrement et le déchiffrement de l'export des variables se font dans la page (HTTPS seulement) :
+le serveur ne reçoit jamais que la clé publique et du texte déjà chiffré.
 """
 from __future__ import annotations
 
@@ -24,7 +27,7 @@ from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 import time
 
-from . import documents, maison, sauvegardes
+from . import documents, maison, sauvegardes, stack
 
 from . import __version__
 from .auth import COMMUN, DUREE, Sessions
@@ -175,10 +178,14 @@ def _https(request: Request) -> bool:
     return (request.headers.get("x-forwarded-proto") or request.url.scheme) == "https"
 
 
+def _a_traiter() -> list[dict]:
+    return sauvegardes.a_traiter(ETAT["cfg"].data, cle_publique=ETAT["reglages"].get("cle_publique"))
+
+
 @app.get("/api/etat")
 def etat(request: Request):
     return {**ETAT["veille"].etat(prive=_prive(request), https=_https(request), hote=_hote(request)),
-            "a_traiter": sauvegardes.a_traiter(ETAT["cfg"].data), "version": __version__}
+            "a_traiter": _a_traiter(), "version": __version__}
 
 
 @app.post("/api/pannes/vue")
@@ -334,7 +341,7 @@ def liste_sauvegardes():
     e = sauvegardes.lire_etat(data)
     return {"heure": ETAT["reglages"].get("heure_sauvegarde"), "derniere": e.get("derniere"),
             "derniere_reussie": e.get("derniere_reussie", ""), "historique": (e.get("historique") or [])[:10],
-            "fichiers": sauvegardes.liste(data), "a_traiter": sauvegardes.a_traiter(data)}
+            "fichiers": sauvegardes.liste(data), "a_traiter": _a_traiter()}
 
 
 @app.post("/api/sauvegardes")
@@ -422,6 +429,43 @@ def telecharger_variables(nom: str):
     if f is None:
         raise HTTPException(404, "Export introuvable.")
     return FileResponse(f, media_type="application/octet-stream", filename=nom)
+
+
+# ================================================================ la stack et le fichier des services (0.10)
+
+@app.get("/api/stack")
+def lire_stack():
+    """homelab.yml déposé dans l'Anneau : ses services et ses variables (noms, défaut, services qui les lisent)."""
+    return {**stack.etat(ETAT["cfg"].data), "coffre": ETAT["reglages"].get("coffre_obsidian")}
+
+
+@app.post("/api/stack")
+async def importer_stack(corps: dict = Body(...)):
+    """Importer homelab.yml (fichier choisi dans la page Variables). Refusé en entier s'il porte une valeur en clair."""
+    try:
+        e = await asyncio.to_thread(stack.importer, ETAT["cfg"].data, corps.get("texte"))
+    except stack.StackInvalide as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(500, f"Le dossier de l'Anneau n'accepte pas l'écriture : {exc}") from exc
+    log.info("homelab.yml importé : %d service(s), %d variable(s)", len(e["services"]), len(e["variables"]))
+    return {**e, "coffre": ETAT["reglages"].get("coffre_obsidian")}
+
+
+@app.get("/api/stack/fichier")
+def telecharger_stack():
+    f = stack.chemin(ETAT["cfg"].data)
+    if not f.is_file():
+        raise HTTPException(404, "homelab.yml n'a pas encore été importé dans l'Anneau.")
+    return FileResponse(f, media_type="text/yaml; charset=utf-8", filename=stack.NOM)
+
+
+@app.get("/api/services/fichier")
+def telecharger_services():
+    f = ETAT["cfg"].data / "services.yaml"
+    if not f.is_file():
+        raise HTTPException(404, "Aucun fichier des services : l'Anneau montre l'exemple inventé.")
+    return FileResponse(f, media_type="text/yaml; charset=utf-8", filename="services.yaml")
 
 
 # ================================================================ documents (0.5 : Atlas)

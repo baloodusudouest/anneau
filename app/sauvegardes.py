@@ -18,7 +18,7 @@ Fichiers, dans <données>/sauvegardes/ :
                              même contenu, pour « Sauvegarder maintenant » (jamais remplacée ni touchée par
                              la collecte automatique ; 5 dernières gardées)
   etat.json                  dernière collecte, dernière réussie, journal court des collectes
-  variables/AAAA-MM-JJ-HHMMSS.age   exports chiffrés des variables, fabriqués par Atlas dans le navigateur
+  variables/AAAA-MM-JJ-HHMMSS.age   exports chiffrés des variables, fabriqués dans le navigateur (page Variables de l'Anneau depuis la 0.10)
                              (l'Anneau ne voit jamais le texte clair ; 30 derniers gardés)
 
 Ces fichiers partent avec le dossier de l'Anneau dans Hyper Backup. Bibliothèque standard et httpx seulement.
@@ -48,13 +48,14 @@ GARDES_MANUELLES = 5         # dernières sauvegardes « Sauvegarder maintenant 
 GARDES_VARIABLES = 30        # derniers exports chiffrés gardés
 DELAI = 10                   # secondes au plus par appli
 SILENCE = 36 * 3600          # sans collecte réussie depuis 36 h : « Sauvegarde ratée »
+VIEIL_EXPORT = 30 * 86400    # 0.10 : le dernier export chiffré des variables a plus de 30 jours : « Export des variables ancien »
 HISTORIQUE = 60              # lignes du journal des collectes gardées
 TAILLE_VARIABLES = 1024 * 1024
 DEBUT_AGE = "-----BEGIN AGE ENCRYPTED FILE-----"
 FIN_AGE = "-----END AGE ENCRYPTED FILE-----"
 
 # Réglages d'usage de l'Anneau (maison.Reglages dans <données>/reglages.json). Aucune ancienne variable à reprendre.
-DEFAUTS = {"heure_sauvegarde": "03:30", "cle_publique": ""}
+DEFAUTS = {"heure_sauvegarde": "03:30", "cle_publique": "", "coffre_obsidian": "Maison"}   # 0.10 : nom du coffre pour les liens obsidian://
 EXCLUS = ("cle_publique",)   # jamais dans la sauvegarde de l'Anneau (est_secret l'écarte déjà : « cle »)
 
 RE_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -86,6 +87,8 @@ def valider(valeurs: dict) -> dict:
             raise Refus("heure_sauvegarde : une heure « HH:MM » est attendue (par exemple 03:30).")
         if k == "cle_publique":
             v = valider_cle(v)
+        if k == "coffre_obsidian" and (not v or len(v) > 80 or any(c in v for c in "/\\\n")):
+            raise Refus("coffre_obsidian : le nom du coffre tel qu'Obsidian l'affiche (80 caractères au plus, sans /).")
         propres[k] = v
     return propres
 
@@ -185,10 +188,13 @@ def demarrer(data: Path, maintenant: datetime | None = None) -> dict:
     return e
 
 
-def a_traiter(data: Path, maintenant: datetime | None = None) -> list[dict]:
+def a_traiter(data: Path, maintenant: datetime | None = None, cle_publique: str = "") -> list[dict]:
     """La tuile « Sauvegarde ratée » de l'écran : dernière collecte avec des ratées, écriture ratée,
-    ou aucune collecte réussie depuis 36 h. Rien n'est envoyé à Home Assistant."""
+    ou aucune collecte réussie depuis 36 h ; 0.10 : la tuile « Export des variables ancien » quand une clé
+    publique est posée et que le dernier export chiffré a plus de 30 jours (ou qu'il n'y en a aucun).
+    Rien n'est envoyé à Home Assistant."""
     t = maintenant or datetime.now().astimezone()
+    tuiles = _tuile_export(data, t) if cle_publique else []
     e = lire_etat(data)
     d = e.get("derniere") or {}
     raisons = []
@@ -205,9 +211,26 @@ def a_traiter(data: Path, maintenant: datetime | None = None) -> list[dict]:
     if ecoule > SILENCE:
         raisons.append("aucune collecte réussie depuis plus de 36 h")
     if not raisons:
-        return []
+        return tuiles
     return [{"cle": "sauvegarde", "sorte": "sauvegarde", "phrase": "Sauvegarde ratée",
-             "detail": " ; ".join(raisons), "le": d.get("le", "")}]
+             "detail": " ; ".join(raisons), "le": d.get("le", "")}] + tuiles
+
+
+def _tuile_export(data: Path, t: datetime) -> list[dict]:
+    exports = liste_variables(data)
+    if not exports:
+        return [{"cle": "export-variables", "sorte": "sauvegarde", "phrase": "Export des variables ancien",
+                 "detail": "aucun export chiffré des variables : à faire dans Variables", "le": ""}]
+    try:   # la date est celle du nom (AAAA-MM-JJ-HHMMSS.age), qui survit à une copie ou une restauration
+        fait = datetime.strptime(exports[0]["nom"][:17], "%Y-%m-%d-%H%M%S").replace(tzinfo=t.tzinfo)
+        ecoule = (t - fait).total_seconds()
+    except (TypeError, ValueError):
+        return []
+    if ecoule <= VIEIL_EXPORT:
+        return []
+    return [{"cle": "export-variables", "sorte": "sauvegarde", "phrase": "Export des variables ancien",
+             "detail": f"le dernier export chiffré date de {int(ecoule // 86400)} jours : refaire l'export dans Variables",
+             "le": exports[0]["le"]}]
 
 
 # ---------------------------------------------------------------- collecte
@@ -376,7 +399,7 @@ def _lire_jour(data: Path, le: str) -> dict | None:
 
 
 def liste(data: Path) -> list[dict]:
-    """Pour Atlas et Réglages : chaque fichier, la plus récente d'abord."""
+    """Pour la page Sauvegardes et Réglages : chaque fichier, la plus récente d'abord."""
     sortie = []
     for f in sorted(dossier(data).glob("*.json"), reverse=True):
         if not identifiant_valide(f.stem):
@@ -403,7 +426,7 @@ def reglages_de(data: Path, appli: str, le: str) -> dict | None:
     return {"le": le, "version": a.get("version", ""), "reglages": a.get("reglages") or {}}
 
 
-# ---------------------------------------------------------------- exports chiffrés des variables (Atlas)
+# ---------------------------------------------------------------- exports chiffrés des variables (page Variables, 0.10 ; Atlas avant)
 
 def ranger_variables(data: Path, texte: str, maintenant: datetime | None = None) -> dict:
     """Range un export chiffré par age (armure texte). Tout autre contenu est refusé : jamais de texte clair."""

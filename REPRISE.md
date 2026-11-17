@@ -2,7 +2,15 @@
 
 Fichier à lire en premier dans une nouvelle session, et à mettre à jour à chaque fin de session, dans le même commit que le code.
 
-## État (16/11/2026)
+## État (17/11/2026)
+
+- **0.10.0** (17/11/2026) : la sauvegarde regroupée dans l'Anneau (décision du 17/11 ; dossier et conseil dans le projet Claude, `anneau-regroupement-*.md`).
+  - `app/stack.py` : `homelab.yml` déposé dans le dossier (`verifier` refuse valeur en clair, balisage Markdown, absence de services ; `services_et_variables` rend défaut `None` = à remplir) ; routes `/api/stack`, `/api/stack/fichier`, `/api/services/fichier` dans `main.py`.
+  - `sauvegardes.py` : réglage `coffre_obsidian` (DEFAUTS, `valider`) ; `a_traiter(..., cle_publique=)` ajoute la tuile `export-variables` (date lue dans le nom du `.age`, 30 jours) ; `main._a_traiter()` la passe.
+  - Interface : `pages/Sauvegardes.svelte`, `pages/Variables.svelte` ; `lib/chiffre.js` (repris d'Atlas ; `sur()` = `isSecureContext`, `empreinte`), `lib/environnement.js` (valeurs en mémoire de page seulement, `pourPortainer`, `lienNote`), `lib/sauvegardes.js` (`normaliser`, `differences`, `libelle`) ; dépendance `age-encryption` 0.3.1 (exacte).
+  - Réglages allégé : plus de liste des fichiers ni de saisie de clé (liens vers les pages).
+  - **Jamais essayé sur la vraie installation** : la page en https://…:9094 (contexte sûr), la génération de paire sur iPhone, l'ouverture d'un export rangé par Atlas avec la clé actuelle (même format age : doit marcher), l'import de `homelab.yml` exporté d'Obsidian.
+  - **Bascule** (après 7 jours sans écart avec Atlas) : retirer `app/documents.py`, la section Atlas de Réglages, la tuile Atlas, `ANNEAU_ATLAS_DEPOT` et `ANNEAU_GITHUB_JETON` ; critère d'abandon : un export existant ne s'ouvre pas.
 
 - **0.9.1** (16/11/2026) : rétention révisée. `retention` garde les 30 dernières automatiques, la première automatique de chacun des 3 derniers trimestres (`GARDES_TRIMESTRES`), et les 5 dernières « à la demande » (`GARDES_MANUELLES`). Le premier de chaque mois est retiré. Tests : 80.
 - **0.9.0** (16/11/2026) : deux familles de sauvegardes (décision du 16/11 : garder les 5 dernières à la demande et les 30 dernières automatiques). `sauvegardes/AAAA-MM-JJ.json` (automatique, remplacée le même jour) et `sauvegardes/AAAA-MM-JJ-HHMMSS-manuelle.json` (« Sauvegarder maintenant », jamais écrasée). `identifiant_valide` remplace `date_valide` pour les routes de lecture et de restauration ; `retention` range les deux familles. Tests : 79.
@@ -61,11 +69,12 @@ Fichier à lire en premier dans une nouvelle session, et à mettre à jour à ch
 
 - Temps 1 et 2 sans aucun jeton : ni Portainer, ni Home Assistant (c'est lui qui envoie). Le jeton commun `MAISON_JETON` (0.7) sert seulement entre applis maison.
 - Sauvegarde (0.8) : jamais de secret dans une sauvegarde ; l'export des variables n'arrive que chiffré (age, clé publique ici, clé privée hors de la maison) ; pas de notification Home Assistant pour une sauvegarde ratée.
+- Sauvegarde (0.10) : tout dans l'Anneau, rien dans Atlas ; générer, chiffrer et ouvrir seulement en contexte sûr (HTTPS) ; liste des variables = noms seuls (pas de jeton sur le coffre), note dans Obsidian par lien.
 - Disques : seuil fixe, 99,8 % par défaut, dans le fichier.
 - Cadre si le service l'accepte, sinon fenêtre réutilisée.
 - L'anneau porte les familles en texte seul ; rouge lave pour une panne, bleu spectral pour une action ; l'état est aussi dit en mots.
 - Sombre seulement, pour l'instant.
-- La liste des services est un fichier tenu hors de l'Anneau (Atlas fait foi) ; pas d'éditeur dans l'interface. Depuis la 0.6 il s'importe en entier depuis Réglages (demande du 15/11/2026).
+- La liste des services est un fichier tenu hors de l'Anneau (le coffre fait foi, note « Tuiles de l'Anneau ») ; pas d'éditeur dans l'interface. Depuis la 0.6 il s'importe en entier depuis Réglages (demande du 15/11/2026).
 
 ## Limites connues
 

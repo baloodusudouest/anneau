@@ -1,5 +1,6 @@
 <script>
-  // « Réglages » : le fichier des services, Atlas, la sauvegarde (0.8), le seuil des disques,
+  // « Réglages » : le fichier des services, Atlas (jusqu'à la bascule), la sauvegarde (0.8 ; listes et clés dans
+  // les pages Sauvegardes et Variables depuis la 0.10), le seuil des disques,
   // ce que Home Assistant a envoyé, puis la version et la déconnexion.
   import { onMount } from 'svelte'
   import { api } from '$lib/api.js'
@@ -61,14 +62,11 @@
   let heure = $state('03:30')
   let msgSv = $state('')
   let attenteSv = $state(false)
-  let cle = $state('')
-  let cleSaisie = $state('')
   let exports = $state([])
   async function lireSv() {
     try {
       sv = await api.get('/api/sauvegardes')
       heure = sv.heure
-      cle = (await api.get('/api/cle-publique')).cle_publique
       exports = (await api.get('/api/variables-chiffrees')).exports
     } catch (x) { msgSv = x.message }
   }
@@ -88,14 +86,6 @@
       msgSv = d.erreur ? `Fichier non écrit : ${d.erreur}` : `Sauvegarde faite : ${d.applis.length} appli(s) lue(s)` + (n ? `, ${n} ratée(s).` : '.')
     } catch (x) { msgSv = x.message }
     attenteSv = false
-  }
-  let msgCle = $state('')
-  async function changerCle() {
-    msgCle = ''
-    const v = cleSaisie.trim()
-    // une clé privée ne quitte jamais le navigateur : refusée ici, avant tout envoi
-    if (/^AGE-SECRET-KEY-/i.test(v)) { msgCle = 'C\'est une clé privée : elle ne doit jamais être donnée à l\'Anneau. Garde-la hors de la maison.'; cleSaisie = ''; return }
-    try { cle = (await api.put('/api/cle-publique', { cle_publique: v })).cle_publique; cleSaisie = ''; msgCle = cle ? 'Clé publique enregistrée.' : 'Clé publique retirée.' } catch (x) { msgCle = x.message }
   }
   let dates = $state([])
   let choix = $state('')
@@ -141,7 +131,7 @@
       {#if e.fraicheur.erreurs.length}
         <ul class="mt-2 list-disc pl-5 text-sm" aria-label="Lignes écartées">{#each e.fraicheur.erreurs as l}<li>{l}</li>{/each}</ul>
       {/if}
-      <p class="mt-2 text-sm text-muted-foreground">Importe le <code>services.yaml</code> téléchargé depuis Atlas (Fichiers) : il est vérifié, puis remplace l'actuel, gardé en secours. Il peut aussi se poser à la main dans le dossier de données, puis « Recharger ».</p>
+      <p class="mt-2 text-sm text-muted-foreground">Importe le <code>services.yaml</code> exporté de la note <em>Tuiles de l'Anneau</em> du coffre : il est vérifié, puis remplace l'actuel, gardé en secours. Il peut aussi se poser à la main dans le dossier de données, puis « Recharger ». L'actuel se télécharge depuis <a class="underline underline-offset-4" href="#/variables">Variables</a>.</p>
       <input bind:this={champ} id="fichier-services" class="sr-only" type="file" accept=".yaml,.yml,text/yaml,text/plain" aria-label="Choisir un fichier services.yaml" onchange={choisir} />
       {#if choisi}
         <div class="mt-3 flex flex-wrap items-center gap-3 rounded-xl border p-3" role="group" aria-label="Import à confirmer">
@@ -205,41 +195,11 @@
             {/if}
           {/if}
         </div>
-        {#if sv.fichiers.length}
-          <h3 class="mt-4 text-sm font-semibold">Fichiers</h3>
-          <ul class="mt-1 divide-y text-sm" aria-label="Fichiers de sauvegarde">
-            {#each sv.fichiers as f (f.date)}
-              <li class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-1.5">
-                <span>{f.date} · {f.applis.length} appli(s){Object.keys(f.ratees).length ? ` · ${Object.keys(f.ratees).length} ratée(s)` : ''}</span>
-                <a class="underline underline-offset-4" href={`/api/sauvegardes/${f.date}?telecharger=true`} download={`sauvegarde-${f.date}.json`}>Télécharger</a>
-              </li>
-            {/each}
-          </ul>
-        {/if}
+        <p class="mt-3 text-sm">{sv.fichiers.length} sauvegarde(s) gardée(s). <a class="underline underline-offset-4" href="#/sauvegardes">Voir les sauvegardes</a> : réglages de chaque appli et ce qui a changé.</p>
       {/if}
 
       <h3 class="mt-5 text-sm font-semibold">Export chiffré des variables</h3>
-      <p class="mt-1 text-sm text-muted-foreground">Atlas chiffre le fichier des variables dans ton navigateur avec cette clé publique, puis l'envoie ici. L'Anneau ne garde que le fichier chiffré ; la clé privée reste hors de la maison.</p>
-      <p class="mt-2 text-sm" aria-label="Clé publique">
-        {#if cle}Clé publique : <code class="break-all">{cle}</code>{:else}Pas de clé publique : Atlas ne peut pas encore chiffrer.{/if}
-      </p>
-      <div class="mt-2 flex flex-wrap items-end gap-3">
-        <label class="grid min-w-0 flex-1 basis-60 gap-1 text-sm" for="cle-publique">Nouvelle clé publique (age1…)
-          <input id="cle-publique" type="text" autocomplete="off" spellcheck="false" bind:value={cleSaisie} placeholder="age1…" class="h-11 min-w-0 rounded-xl border bg-background px-3 text-base" />
-        </label>
-        <Button variant="outline" onclick={changerCle}>Enregistrer la clé</Button>
-      </div>
-      {#if msgCle}<p class="mt-2 text-sm" role="status" id="message-cle">{msgCle}</p>{/if}
-      {#if exports.length}
-        <ul class="mt-3 divide-y text-sm" aria-label="Exports chiffrés">
-          {#each exports as x (x.nom)}
-            <li class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-1.5"><span class="break-all">{x.nom} · {ko(x.taille)}</span>
-              <a class="underline underline-offset-4" href={`/api/variables-chiffrees/${x.nom}`} download={x.nom}>Télécharger</a></li>
-          {/each}
-        </ul>
-      {:else}
-        <p class="mt-2 text-sm text-muted-foreground">Aucun export chiffré reçu.</p>
-      {/if}
+      <p class="mt-1 text-sm">{exports.length ? `${exports.length} export(s) chiffré(s) rangé(s).` : 'Aucun export chiffré rangé.'} Clé, chiffrement, ouverture et copie pour Portainer : <a class="underline underline-offset-4" href="#/variables">Variables</a>.</p>
     </section>
 
     <section class="mt-3 rounded-2xl border bg-card p-5" aria-label="Restaurer">

@@ -1,5 +1,20 @@
 # Journal des versions
 
+## 0.10.0 — 17 novembre 2026
+**Toute la sauvegarde dans l'Anneau** (décision du 17/11, après le conseil) : ce qu'Atlas faisait pour la sauvegarde passe ici.
+- **Page Sauvegardes** (`#/sauvegardes`, lien depuis Réglages) : chaque sauvegarde se déplie — par appli, version et réglages, ce qui a changé depuis la précédente, applis ratées ; « Seulement les applis qui ont changé » ; Télécharger. Réglages ne garde que l'heure, « Sauvegarder maintenant », la dernière collecte et un lien.
+- **Page Variables** (`#/variables`) :
+  - **Fichiers de la stack** : importer `homelab.yml` (refusé en entier s'il porte une valeur en clair ou du balisage Markdown), le télécharger, télécharger le `services.yaml` actuel.
+  - **Clé de chiffrement** : générer une paire age dans la page (clé privée montrée une fois, à cocher « rangée hors de la maison », jamais gardée ni envoyée) ; empreinte de la clé publique à comparer avec la copie du coffre.
+  - **Chiffrer l'export de Portainer** (coller ou choisir un fichier) puis le ranger ; seul le texte chiffré part ; le texte clair est effacé.
+  - **Exports chiffrés** : ouvrir un export avec la clé privée (déchiffré dans la page, compatible avec l'outil `age`) ; valeurs masquées avec « Afficher », variables à remplir manquantes, variables que la stack n'utilise plus ; « Copier toutes les variables (avec valeurs) », « Télécharger homelab.env », « Voir le texte », « Oublier ».
+  - **Variables de la stack** : liste pliable avec recherche, défaut ou « à remplir », services qui la lisent, lien vers sa note dans Obsidian (nom du coffre réglable, « Maison » au départ).
+- **HTTPS seulement pour les secrets** : générer, chiffrer et ouvrir sont désactivés quand la page n'est pas en contexte sûr (http par l'adresse locale) ; la page renvoie à l'adresse https (Tailscale, :9094) ou à `age` en ligne de commande.
+- **Tuile « Export des variables ancien »** (À traiter) quand une clé publique est posée et que le dernier export a plus de 30 jours, ou qu'il n'y en a aucun ; « Voir » mène à Variables.
+- Serveur : routes `/api/stack` (lire, importer), `/api/stack/fichier`, `/api/services/fichier` ; réglage `coffre_obsidian`. Aucune variable nouvelle.
+- Atlas et sa relecture restent en service jusqu'à la bascule (après 7 jours d'essai sans écart) ; `ANNEAU_ATLAS_DEPOT` et `ANNEAU_GITHUB_JETON` partiront à ce moment-là.
+- Tests : 96 (dont l'aller-retour de chiffrement avec l'outil `age`, clé privée et texte clair jamais envoyés ni gardés).
+
 ## 0.9.1 — 16 novembre 2026
 - **Rétention des sauvegardes** (décision du 16/11 au soir) : fini le premier de chaque mois. On garde les **30 dernières sauvegardes automatiques**, la **première de chaque trimestre pour les 3 derniers trimestres**, et les **5 dernières sauvegardes à la demande**.
 - Tests : 80.

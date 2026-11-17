@@ -179,7 +179,7 @@
             {#each aTraiter as x (x.cle)}
               <li>
                 <span>{x.phrase}{#if x.detail}<small>{x.detail}</small>{/if}</span>
-                <button type="button" class="lien" onclick={() => onreglages?.()} aria-label={'Voir : ' + x.phrase}>Voir</button>
+                <button type="button" class="lien" onclick={() => (x.cle === 'export-variables' ? (location.hash = '#/variables') : onreglages?.())} aria-label={'Voir : ' + x.phrase}>Voir</button>
               </li>
             {/each}
           </ul>
