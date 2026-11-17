@@ -32,7 +32,7 @@ from . import documents, maison, sauvegardes, stack
 from . import __version__
 from .auth import COMMUN, DUREE, Sessions
 from .config import APPLI, Config, charger
-from .services import PRECEDENT, FichierInvalide, importer, lire
+from .services import PRECEDENT, FichierInvalide, adresse_https, importer, lire
 from .veille import Veille
 
 log = logging.getLogger("anneau")
@@ -172,6 +172,13 @@ def _prive(request: Request) -> bool:
     """L'Anneau est-il ouvert par son adresse du réseau privé ? Alors tous les liens le sont aussi."""
     hote = _hote(request)
     return any(hote == h or hote.endswith("." + h) for h in ETAT["veille"].fichier.hotes_prives)
+
+
+def _port(request: Request) -> int | None:
+    """Le port par lequel le navigateur a ouvert l'Anneau (en-tête Host), ou None."""
+    hote = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+    morceau = hote.rsplit(":", 1)[1] if ":" in hote and not hote.endswith("]") else ""
+    return int(morceau) if morceau.isdigit() else None
 
 
 def _https(request: Request) -> bool:
@@ -434,9 +441,11 @@ def telecharger_variables(nom: str):
 # ================================================================ la stack et le fichier des services (0.10)
 
 @app.get("/api/stack")
-def lire_stack():
-    """homelab.yml déposé dans l'Anneau : ses services et ses variables (noms, défaut, services qui les lisent)."""
-    return {**stack.etat(ETAT["cfg"].data), "coffre": ETAT["reglages"].get("coffre_obsidian")}
+def lire_stack(request: Request):
+    """homelab.yml déposé dans l'Anneau : ses services et ses variables (noms, défaut, services qui les lisent).
+    0.10.1 : avec l'adresse https de l'Anneau tirée des tuiles, pour le lien de l'avertissement « ouvert en http »."""
+    return {**stack.etat(ETAT["cfg"].data), "coffre": ETAT["reglages"].get("coffre_obsidian"),
+            "adresse_https": adresse_https(ETAT["veille"].fichier, _port(request))}
 
 
 @app.post("/api/stack")

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from app import sauvegardes, stack
+from app import sauvegardes, services, stack
 from tests.test_sauvegardes import ARMURE, CLE_AGE, client, connecter, env, faux, fichier  # noqa: F401  (fixtures)
 
 STACK = """# Stack d'essai
@@ -112,3 +112,32 @@ def test_tuile_export_dans_l_etat(client):
     assert client.post("/api/variables-chiffrees", content=ARMURE, headers={"Content-Type": "text/plain"}).status_code == 200
     phrases = [x["phrase"] for x in client.get("/api/etat").json()["a_traiter"]]
     assert "Export des variables ancien" not in phrases
+
+
+# ================================================================ 0.10.1 : l'adresse https tirée des tuiles
+
+TUILES = """
+reglages: {hote_local: "192.0.2.10"}
+familles: [{nom: Proches}, {nom: Médias}]
+services:
+  - {nom: Kit, famille: Proches, locale: "https://nas.exemple.ts.net:9095", sonde: "http://192.0.2.10:8095/health"}
+  - {nom: Livres, famille: Médias, locale: "https://nas.exemple.ts.net:9091", sonde: "http://192.0.2.10:8091/health"}
+  - {nom: Film, famille: Médias, locale: "http://192.0.2.10:32400/web"}
+  - {nom: Ailleurs, famille: Médias, locale: "https://autre.exemple:9999", sonde: "http://192.0.2.99:8999/health"}
+"""
+
+
+def test_adresse_https_tiree_des_tuiles():
+    f = services.comprendre(TUILES)
+    assert services.adresse_https(f, 8094) == "https://nas.exemple.ts.net:9094"
+    assert services.adresse_https(f, None) == ""
+    sans = services.comprendre('familles: [{nom: M}]\nservices: [{nom: Film, famille: M, locale: "http://192.0.2.10:32400"}]')
+    assert services.adresse_https(sans, 8094) == ""
+
+
+def test_adresse_https_dans_api_stack(client, tmp_path):
+    connecter(client)
+    (tmp_path / "services.yaml").write_text(TUILES, encoding="utf-8")
+    assert client.post("/api/recharger").status_code == 200
+    assert client.get("/api/stack", headers={"host": "192.0.2.10:8094"}).json()["adresse_https"] == "https://nas.exemple.ts.net:9094"
+    assert client.get("/api/stack", headers={"host": "192.0.2.10"}).json()["adresse_https"] == ""

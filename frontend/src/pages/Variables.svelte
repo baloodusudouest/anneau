@@ -20,7 +20,7 @@
   const echec = (x) => { if (x?.statut === 401) ondeconnecte?.(); else dire(x?.message || String(x)) }
 
   // ---------------------------------------------------------------- la stack
-  let pile = $state({ present: false, variables: [], services: [], coffre: 'Maison' })
+  let pile = $state({ present: false, variables: [], services: [], coffre: 'Maison', adresse_https: '' })
   let coffre = $state('Maison')
   let champStack = $state(null)
   async function lireStack() { try { pile = await api.get('/api/stack'); coffre = pile.coffre } catch (x) { echec(x) } }
@@ -150,7 +150,14 @@
   {#if !securise}
     <p class="mb-3 rounded-2xl border border-[var(--lave)]/60 bg-card p-4 text-sm" role="alert" aria-label="Page non sûre">
       L'Anneau est ouvert en <strong>http</strong> : chiffrer et ouvrir un export sont désactivés, car une page servie en clair sur le réseau
-      peut être modifiée en route et lire ce qu'on y colle. Ouvre l'Anneau par son adresse <strong>https</strong> (Tailscale, port 9094),
+      peut être modifiée en route et lire ce qu'on y colle.
+      {#if pile.adresse_https}
+        <!-- 0.10.1 : adresse tirée des tuiles https (Tailscale Serve) ; Tailscale doit être allumé sur l'appareil -->
+        <a class="font-semibold underline" href="{pile.adresse_https}/#/variables" id="lien-https">Ouvrir cette page en https</a>
+        (<code class="break-all">{pile.adresse_https}</code>, Tailscale allumé sur cet appareil),
+      {:else}
+        Ouvre l'Anneau par son adresse <strong>https</strong> (Tailscale, port 9094),
+      {/if}
       ou déchiffre sur le PC avec <code>age -d -i cle.txt export.age</code> (fiche « L'Anneau ne démarre plus » du coffre).
     </p>
   {/if}

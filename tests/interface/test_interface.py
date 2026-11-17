@@ -413,3 +413,4 @@ def test_11_page_variables(page, monde, tmp_path):
     assert "secret-de-test" not in page.content()
     page.get_by_role("link", name="Revenir à l'anneau").click()
     page.locator("svg.anneau").wait_for()
+

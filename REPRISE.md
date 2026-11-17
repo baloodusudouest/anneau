@@ -4,6 +4,7 @@ Fichier à lire en premier dans une nouvelle session, et à mettre à jour à ch
 
 ## État (17/11/2026)
 
+- **0.10.1** (17/11/2026) : lien « Ouvrir cette page en https » dans l'avertissement de la page Variables, adresse tirée des tuiles (`services.adresse_https`).
 - **0.10.0** (17/11/2026) : la sauvegarde regroupée dans l'Anneau (décision du 17/11 ; dossier et conseil dans le projet Claude, `anneau-regroupement-*.md`).
   - `app/stack.py` : `homelab.yml` déposé dans le dossier (`verifier` refuse valeur en clair, balisage Markdown, absence de services ; `services_et_variables` rend défaut `None` = à remplir) ; routes `/api/stack`, `/api/stack/fichier`, `/api/services/fichier` dans `main.py`.
   - `sauvegardes.py` : réglage `coffre_obsidian` (DEFAUTS, `valider`) ; `a_traiter(..., cle_publique=)` ajoute la tuile `export-variables` (date lue dans le nom du `.age`, 30 jours) ; `main._a_traiter()` la passe.

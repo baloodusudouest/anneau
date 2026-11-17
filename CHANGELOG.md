@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.10.1 — 17 novembre 2026
+- **Lien vers l'adresse https dans la page Variables.** Ouverte en http (adresse locale), la page Variables donne maintenant un lien cliquable « Ouvrir cette page en https ». L'adresse est tirée des tuiles : les applis du NAS dont la tuile ouvre en https et sonde en http sur l'hôte de la maison donnent le nom Tailscale et l'écart de port (+1000). Exemple : `http://192.0.2.90:8094` mène à `https://nas.exemple.ts.net:9094/#/variables`. Sans tuile qui le permette, le texte d'avant reste.
+- Serveur : `GET /api/stack` rend aussi `adresse_https`. Aucune variable nouvelle.
+- Vérifié le 17/11 sur le PC de Julien : en https, la page ne charge rien en http (ni ressource, ni image, ni cadre) et Edge la tient pour un contexte sûr. L'alerte « connexion non sécurisée » vue une fois venait de l'état d'avant le rechargement.
+- Tests : 99 (dont la page ouverte par un nom non sûr, avec et sans tuile https).
+
 ## 0.10.0 — 17 novembre 2026
 **Toute la sauvegarde dans l'Anneau** (décision du 17/11, après le conseil) : ce qu'Atlas faisait pour la sauvegarde passe ici.
 - **Page Sauvegardes** (`#/sauvegardes`, lien depuis Réglages) : chaque sauvegarde se déplie — par appli, version et réglages, ce qui a changé depuis la précédente, applis ratées ; « Seulement les applis qui ont changé » ; Télécharger. Réglages ne garde que l'heure, « Sauvegarder maintenant », la dernière collecte et un lien.

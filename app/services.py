@@ -9,9 +9,11 @@ from __future__ import annotations
 import os
 import re
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -72,6 +74,29 @@ class Fichier:
     modifie_le: str = ""
     exemple: bool = False
     erreurs: tuple[str, ...] = field(default=())
+
+
+def adresse_https(f: Fichier, port: int | None) -> str:
+    """0.10.1 : l'adresse https de l'Anneau, tirée des tuiles. Les applis du NAS dont la tuile ouvre en https et
+    sonde en http sur l'hôte de la maison donnent le nom https (Tailscale) et l'écart de port (Tailscale Serve :
+    +1000). Appliqués au port par lequel l'Anneau est ouvert : http://192.0.2.90:8094 → https://….ts.net:9094.
+    Vide si aucune tuile ne le permet ou si le port est inconnu."""
+    if not port:
+        return ""
+    vus: Counter = Counter()
+    for s in f.services:
+        try:
+            l, so = urlsplit(s.locale), urlsplit(s.sonde)
+            lp, sp = l.port, so.port
+        except ValueError:
+            continue
+        if l.scheme == "https" and so.scheme == "http" and l.hostname and lp and sp and lp > sp \
+                and (not f.hote_local or so.hostname == f.hote_local):
+            vus[(l.hostname, lp - sp)] += 1
+    if not vus:
+        return ""
+    (hote, ecart), _ = vus.most_common(1)[0]
+    return f"https://{hote}:{port + ecart}"
 
 
 def _adresse(valeur, quoi: str, erreurs: list[str]) -> str:
