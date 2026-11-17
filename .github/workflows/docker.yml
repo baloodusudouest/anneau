@@ -27,6 +27,7 @@ jobs:
       - name: Tests d'écran
         run: |
           pip install playwright==1.63.0
+          sudo apt-get install -y --no-install-recommends age   # 0.10 : un export chiffré par la page s'ouvre avec l'outil age
           python -m playwright install --with-deps chromium || python -m playwright install chromium
           python -m pytest -q tests/interface
       - uses: docker/setup-buildx-action@v3

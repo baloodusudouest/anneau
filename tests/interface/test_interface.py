@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -385,9 +386,10 @@ def test_11_page_variables(page, monde, tmp_path):
     # le fichier rangé s'ouvre avec l'outil age et la clé privée
     nom = page.get_by_label("Liste des exports").locator("label").first.inner_text().split(" · ")[0].strip()
     rangé = next((monde[1] / "data" / "sauvegardes" / "variables").glob(nom))
-    (tmp_path / "cle.txt").write_text(privee + "\n")
-    clair = subprocess.run(["age", "-d", "-i", str(tmp_path / "cle.txt"), str(rangé)], capture_output=True, text=True)
-    assert clair.returncode == 0 and "MAISON_PASSWORD=secret-de-test-123456" in clair.stdout
+    if shutil.which("age"):                                                   # installé par la construction sur GitHub
+        (tmp_path / "cle.txt").write_text(privee + "\n")
+        clair = subprocess.run(["age", "-d", "-i", str(tmp_path / "cle.txt"), str(rangé)], capture_output=True, text=True)
+        assert clair.returncode == 0 and "MAISON_PASSWORD=secret-de-test-123456" in clair.stdout
     # l'ouvrir dans la page : valeurs masquées, manquantes, inconnues, copie pour Portainer
     page.get_by_label("Clé privée (jamais gardée ni envoyée)").fill(privee)
     page.get_by_role("button", name="Ouvrir", exact=True).click()
