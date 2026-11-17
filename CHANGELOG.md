@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 0.10.4 — 17 novembre 2026 (corrections de l'audit, suite)
+- Import de `homelab.yml` : la détection d'une valeur en clair reconnaît aussi `PASSWD`, `PWD`, les clés (`TS_AUTHKEY`…), `WEBHOOK`, `DSN`, et les valeurs courtes ou avec ponctuation ; aucun faux positif sur le `homelab.yml` du coffre (vérifié).
+- Un pourcentage de disque `NaN` envoyé par Home Assistant ne casse plus `/api/etat`.
+
 ## 0.10.3 — 17 novembre 2026 (connexion plus sûre)
 - **Connexion plus sûre** (audit du 17/11/2026, même correctif dans toutes les applis maison) :
   - un cookie portant un caractère non ASCII donnait une erreur 500 sur toute l'API ; il est maintenant simplement refusé ;

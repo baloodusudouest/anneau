@@ -15,6 +15,7 @@ le NAS qui l'héberge est presque plein, il ne garde aucun historique de sondes.
 from __future__ import annotations
 
 import asyncio
+import math
 import json
 import logging
 import time
@@ -217,7 +218,10 @@ class Veille:
             if not isinstance(v, dict) or not str(v.get("nom", "")).strip():
                 continue
             try:
-                pourcentage = round(float(v.get("pourcentage")), 1)
+                pourcentage = float(v.get("pourcentage"))
+                if not math.isfinite(pourcentage):       # 0.10.4 : un NaN cassait /api/etat
+                    raise ValueError("pourcentage non fini")
+                pourcentage = round(pourcentage, 1)
             except (TypeError, ValueError):
                 pourcentage = None                 # « indisponible » : ni panne, ni vert
             volumes.append({"machine": str(v.get("machine", "")).strip(), "nom": str(v["nom"]).strip(),

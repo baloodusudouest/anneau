@@ -19,8 +19,9 @@ TAILLE = 512 * 1024
 RE_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?:(:?-)([^}]*))?\}")
 RE_SERVICE = re.compile(r"^  ([A-Za-z0-9_.-]+):\s*(?:#.*)?$")
 # Un nom qui dit mot de passe, secret, jeton ou clé, suivi d'une valeur écrite en clair (pas une référence ${…}).
-RE_SENSIBLE = re.compile(r"(?i)\b([A-Z0-9_]*(?:PASSWORD|SECRET|JETON|TOKEN|API_KEY|_CLE|ENCRYPTION_KEY|HASH)[A-Z0-9_]*)"
-                         r"\s*[:=]\s*[\"']?(?!\$\{)([A-Za-z0-9_+/=.-]{8,})")
+# 0.10.4 (audit du 17/11/2026) : aussi PASSWD, PWD, KEY (TS_AUTHKEY…), WEBHOOK, DSN ; toute valeur de 6 signes ou plus
+RE_SENSIBLE = re.compile(r"(?<![\w./:@-])([A-Z0-9_]*(?:PASSW|PWD|SECRET|JETON|TOKEN|KEY|_CLE|HASH|WEBHOOK|DSN)[A-Z0-9_]*)"
+                         r"\s*[:=]\s*[\"']?(?!\$\{)([^\s\"'#]{6,})")
 
 
 class StackInvalide(ValueError):
