@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.10.2 — 17 novembre 2026 (corrections de l'audit)
+- **Bug** : une seule tuile avec une adresse au port invalide (ex. `http://nas:80a/health`) arrêtait toute la veille, sans rien afficher. Le port est contrôlé à la lecture de `services.yaml` (la ligne est signalée et écartée), et une sonde qui plante compte comme « ne répond pas » sans priver les autres de leur résultat.
+- **Bug** : un `services.yaml` illisible (modifié à la main) empêchait l'Anneau de démarrer. L'exemple s'affiche alors à la place, avec l'erreur en tête des Réglages ; réimporter le bon fichier suffit.
+- Exemples d'adresses du journal remplacés par des adresses inventées (règle des dépôts publics).
+- Tests : 103 (dont `test_veille_robuste.py`).
+
 ## 0.10.1 — 17 novembre 2026
 - **Lien vers l'adresse https dans la page Variables.** Ouverte en http (adresse locale), la page Variables donne maintenant un lien cliquable « Ouvrir cette page en https ». L'adresse est tirée des tuiles : les applis du NAS dont la tuile ouvre en https et sonde en http sur l'hôte de la maison donnent le nom Tailscale et l'écart de port (+1000). Exemple : `http://192.0.2.90:8094` mène à `https://nas.exemple.ts.net:9094/#/variables`. Sans tuile qui le permette, le texte d'avant reste.
 - Serveur : `GET /api/stack` rend aussi `adresse_https`. Aucune variable nouvelle.

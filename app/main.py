@@ -17,6 +17,7 @@ le serveur ne reçoit jamais que la clé publique et du texte déjà chiffré.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import hmac
 import logging
 from contextlib import asynccontextmanager, suppress
@@ -82,11 +83,21 @@ async def _sauvegarde_quotidienne(cfg: Config) -> None:
         await asyncio.sleep(30)
 
 
+def _lire_au_demarrage(data: Path):
+    """0.10.2 : un services.yaml illisible n'empêche plus l'Anneau de démarrer ; l'exemple sert, l'erreur s'affiche."""
+    try:
+        return lire(data / "services.yaml")
+    except FichierInvalide as exc:
+        log.error("services.yaml illisible : %s", exc)
+        f = lire(data / "services.absent.yaml")
+        return dataclasses.replace(f, erreurs=(f"services.yaml illisible, exemple affiché à la place : {exc}",) + tuple(f.erreurs))
+
+
 @asynccontextmanager
 async def cycle(app: FastAPI):
     cfg = ETAT.get("cfg") or charger()
     cfg.data.mkdir(parents=True, exist_ok=True)
-    veille = ETAT.get("veille") or Veille(cfg.data, lire(cfg.data / "services.yaml"), ha_attendu=bool(cfg.secret_ha))
+    veille = ETAT.get("veille") or Veille(cfg.data, _lire_au_demarrage(cfg.data), ha_attendu=bool(cfg.secret_ha))
     reglages = ETAT.get("reglages") or maison.Reglages(cfg.data / "reglages.json", sauvegardes.DEFAUTS, {})
     sauvegardes.demarrer(cfg.data)
     ETAT.update(cfg=cfg, sessions=Sessions(APPLI, cfg.password, _lire_generation(cfg)), veille=veille,

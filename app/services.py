@@ -104,6 +104,11 @@ def _adresse(valeur, quoi: str, erreurs: list[str]) -> str:
     if v and not re.match(r"^https?://[^\s/]+", v):
         erreurs.append(f"{quoi} : « {v} » n'est pas une adresse http(s).")
         return ""
+    try:                      # 0.10.2 : « http://nas:80a » arrêtait toute la veille ; écartée dès la lecture
+        urlsplit(v).port
+    except ValueError:
+        erreurs.append(f"{quoi} : « {v} » a un port invalide.")
+        return ""
     return v[:-1] if v.endswith("/") and v.count("/") == 3 else v    # « http://hôte/ » → « http://hôte »
 
 

@@ -46,7 +46,7 @@ async def repond(adresse: str) -> tuple[bool, int | None]:
         async with httpx.AsyncClient(timeout=5, verify=False, follow_redirects=False) as c:
             r = await c.get(adresse, headers={"User-Agent": "anneau"})
         return r.status_code < 500, int((time.monotonic() - debut) * 1000)
-    except (httpx.HTTPError, OSError, ValueError):
+    except Exception:  # noqa: BLE001 — 0.10.2 : toute erreur (adresse invalide comprise) vaut « ne répond pas »
         return False, None
 
 
@@ -69,7 +69,7 @@ async def examiner(adresse: str) -> str | None:
         async with httpx.AsyncClient(timeout=5, verify=False, follow_redirects=True, max_redirects=5) as c:
             r = await c.get(adresse, headers={"User-Agent": "anneau", "Accept": "text/html"})
         return interdit_le_cadre(r.headers)
-    except (httpx.HTTPError, OSError, ValueError):
+    except Exception:  # noqa: BLE001 — 0.10.2 : on n'a pas pu le savoir
         return None
 
 
@@ -165,8 +165,9 @@ class Veille:
         f = self.fichier
         cibles = [("machine:" + m.cle, m.sonde, False) for m in f.machines if m.sonde] \
             + [("service:" + s.cle, s.a_sonder, s.arret_attendu) for s in f.services]
-        resultats = await asyncio.gather(*(self._sonder(adresse) for _, adresse, _ in cibles))
-        for (c, _, attendu), (vivant, delai) in zip(cibles, resultats):
+        resultats = await asyncio.gather(*(self._sonder(adresse) for _, adresse, _ in cibles), return_exceptions=True)
+        for (c, _, attendu), r in zip(cibles, resultats):
+            vivant, delai = (False, None) if isinstance(r, BaseException) else r   # 0.10.2 : une sonde en erreur ne prive pas les autres
             self._noter(c, vivant, delai, attendu)
         self.derniere_sonde = maintenant()
         await self._cadres()
@@ -179,8 +180,8 @@ class Veille:
         self._tours += 1
         adresses = {a for s in self.fichier.services if s.cadre is None for a in (s.locale, s.privee) if a}
         a_lire = sorted(adresses if self._tours % 10 == 1 else adresses - set(self.refus))
-        for adresse, raison in zip(a_lire, await asyncio.gather(*(self._examiner(a) for a in a_lire))):
-            if raison is not None:
+        for adresse, raison in zip(a_lire, await asyncio.gather(*(self._examiner(a) for a in a_lire), return_exceptions=True)):
+            if raison is not None and not isinstance(raison, BaseException):
                 self.refus[adresse] = raison
 
     def _pannes_de_sonde(self) -> None:
