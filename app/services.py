@@ -45,7 +45,8 @@ class Service:
     cadre: bool | None = None   # affiché dans l'Anneau : oui, non, ou vide = essayer (sauf si le service l'interdit)
     machine: str = ""           # si cette machine ne répond pas, la panne est la sienne
     arret_attendu: bool = False  # un service qu'on éteint exprès (PC de calcul) n'est jamais « en panne »
-    sauvegarde: bool = True     # 0.8 : « sauvegarde: false » retire de la collecte une tuile dont la sonde finit par /health sans être une appli maison
+    sauvegarde: bool | None = None  # 0.11.2 : « sauvegarde: true » désigne une appli maison à collecter ; « false » l'exclut ;
+                                    # vide : collectée si sa sonde finit par /health, tant qu'aucune tuile ne porte « true » (ancien fichier)
 
     @property
     def a_sonder(self) -> str:
@@ -110,6 +111,17 @@ def _adresse(valeur, quoi: str, erreurs: list[str]) -> str:
         erreurs.append(f"{quoi} : « {v} » a un port invalide.")
         return ""
     return v[:-1] if v.endswith("/") and v.count("/") == 3 else v    # « http://hôte/ » → « http://hôte »
+
+
+def _sauvegarde(v) -> bool | None:
+    """« sauvegarde: » de la tuile : oui, non, ou vide (rien d'écrit)."""
+    if v is True or v is False:
+        return v
+    if isinstance(v, str) and v.strip().lower() in ("oui", "true", "yes"):
+        return True
+    if isinstance(v, str) and v.strip().lower() in ("non", "false", "no"):
+        return False
+    return None
 
 
 def _cadre(valeur) -> bool | None:
@@ -202,7 +214,7 @@ def comprendre(texte: str, exemple: bool = False, modifie_le: str = "") -> Fichi
                                 privee=_adresse(s.get("privee"), nom, erreurs), sonde=_adresse(s.get("sonde"), nom, erreurs),
                                 icone=str(s.get("icone", "")).strip(), cadre=_cadre(s.get("cadre")),
                                 machine=machine, arret_attendu=bool(s.get("arret_attendu", False)),
-                                sauvegarde=s.get("sauvegarde", True) is not False))
+                                sauvegarde=_sauvegarde(s.get("sauvegarde"))))
     reglages = brut.get("reglages") or {}
     try:
         seuil = float(reglages.get("seuil_disque", 99.8))

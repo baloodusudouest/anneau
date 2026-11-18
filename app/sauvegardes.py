@@ -261,10 +261,16 @@ def base(sonde: str) -> str:
 
 
 def applis_maison(fichier) -> list[tuple[str, str]]:
-    """(nom de tuile, adresse de base) des tuiles qui sont des applis maison."""
+    """(nom de tuile, adresse de base) des tuiles qui sont des applis maison.
+
+    0.11.2 (audit M5) : dès qu'une tuile porte « sauvegarde: true », seules ces tuiles sont collectées (le jeton commun
+    ne part plus vers un service qui a seulement une sonde en /health). Sans aucun « true » (ancien fichier), on garde
+    l'ancienne règle : toute sonde en /health, sauf « sauvegarde: false »."""
     sortie = []
+    choisies = any(getattr(s, "sauvegarde", None) is True for s in fichier.services)
     for s in fichier.services:
-        if getattr(s, "sauvegarde", True) is False:
+        drapeau = getattr(s, "sauvegarde", None)
+        if drapeau is False or (choisies and drapeau is not True):
             continue
         b = base(s.sonde)
         if b:
@@ -428,12 +434,25 @@ def reglages_de(data: Path, appli: str, le: str) -> dict | None:
 
 # ---------------------------------------------------------------- exports chiffrés des variables (page Variables, 0.10 ; Atlas avant)
 
+def _entete_age(texte: str) -> bool:
+    """Le contenu de l'armure, décodé, commence par l'en-tête d'age « age-encryption.org/v1 »."""
+    import base64
+    lignes = [l.strip() for l in texte.strip().splitlines()[1:-1] if l.strip()]
+    try:
+        brut = base64.b64decode("".join(lignes), validate=False)
+    except (ValueError, TypeError):
+        return False
+    return brut.startswith(b"age-encryption.org/v1\n")
+
+
 def ranger_variables(data: Path, texte: str, maintenant: datetime | None = None) -> dict:
     """Range un export chiffré par age (armure texte). Tout autre contenu est refusé : jamais de texte clair."""
     if len(texte.encode("utf-8")) > TAILLE_VARIABLES:
         raise Refus("Fichier trop gros (1 Mo au plus).")
     if not texte.startswith(DEBUT_AGE) or not texte.rstrip().endswith(FIN_AGE):
         raise Refus("Seul un fichier chiffré par age (« -----BEGIN AGE ENCRYPTED FILE----- ») est accepté : rien n'a été rangé.")
+    if not _entete_age(texte):   # 0.11.2 (audit M7) : l'armure seule ne suffit pas, l'en-tête age doit être là
+        raise Refus("Ce fichier a l'enveloppe d'age mais pas son en-tête (« age-encryption.org/v1 ») : rien n'a été rangé.")
     t = maintenant or datetime.now().astimezone()
     base_nom = t.strftime("%Y-%m-%d-%H%M%S")
     nom, n = f"{base_nom}.age", 1

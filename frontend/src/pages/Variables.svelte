@@ -41,11 +41,14 @@
   let cleSaisie = $state('')
   let paire = $state(null)            // { privee, publique } : la privée n'existe que dans cette variable
   let rangee = $state(false)
+  let remplacer = $state(false)       // 0.11.2 (audit M7) : remplacer une clé déjà posée se confirme
   async function lireCle() { try { cle = (await api.get('/api/cle-publique')).cle_publique } catch (x) { echec(x) } }
   async function poserCle(v) {
     v = (v || '').trim()
     if (/^AGE-SECRET-KEY-/i.test(v)) { cleSaisie = ''; dire('C\'est une clé privée : elle ne doit jamais être donnée à l\'Anneau. Garde-la hors de la maison.'); return false }
-    try { cle = (await api.put('/api/cle-publique', { cle_publique: v })).cle_publique; return true } catch (x) { echec(x); return false }
+    if (cle && v !== cle && !remplacer) { dire(`Une clé est déjà posée (empreinte ${empreinte(cle)}). Coche « Remplacer la clé actuelle » : les exports déjà rangés resteront lisibles seulement avec l'ancienne clé privée.`); return false }
+    const corps = cle && v !== cle ? { cle_publique: v, actuelle: cle } : { cle_publique: v }
+    try { cle = (await api.put('/api/cle-publique', corps)).cle_publique; remplacer = false; return true } catch (x) { echec(x); return false }
   }
   async function enregistrerSaisie() { if (await poserCle(cleSaisie)) { cleSaisie = ''; dire(cle ? 'Clé publique enregistrée.' : 'Clé publique retirée.') } }
   async function generer() { rangee = false; paire = await genererPaire(); dire('') }
@@ -185,6 +188,9 @@
       {#if cle}Clé publique : <code class="break-all">{cle}</code><br /><span class="text-muted-foreground">Empreinte à comparer avec la copie du coffre : <strong class="text-foreground">{empreinte(cle)}</strong></span>
       {:else}Pas encore de clé publique : rien ne peut être chiffré.{/if}
     </p>
+    {#if cle}
+      <label class="mt-2 inline-flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" bind:checked={remplacer} class="size-4 accent-[var(--app)]" /> Remplacer la clé actuelle (les exports déjà rangés resteront lisibles seulement avec l'ancienne clé privée)</label>
+    {/if}
     {#if paire}
       <div class="mt-3 grid gap-2 rounded-xl border border-[var(--app)] p-3" role="group" aria-label="Nouvelle paire">
         <p class="text-sm"><strong>Clé privée, montrée une seule fois.</strong> Range-la dans le gestionnaire de mots de passe, hors du NAS. L'Anneau ne la garde pas : sans elle, les exports sont illisibles.</p>

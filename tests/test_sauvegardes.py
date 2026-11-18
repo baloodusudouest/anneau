@@ -402,3 +402,33 @@ def test_variables_chiffrees_gardees_30(tmp_path):
     noms = [x["nom"] for x in sauvegardes.liste_variables(tmp_path)]
     assert len(noms) == 30 and noms[0] == "2026-11-16-100032.age" and noms[-1] == "2026-11-16-100003.age"
     assert sauvegardes.ranger_variables(tmp_path, ARMURE, t + timedelta(seconds=32))["nom"] == "2026-11-16-100032-2.age"
+
+
+# ---------------------------------------------------------------- 0.11.2 (constats moyens de l'audit)
+
+def test_m5_accord_explicite_des_qu_une_tuile_porte_true(tmp_path):
+    texte = FICHIER.replace('sonde: "http://exemple.invalid:1/health" }', 'sonde: "http://exemple.invalid:1/health", sauvegarde: true }')
+    texte = texte.replace('sonde: "http://exemple.invalid:2/health" }', 'sonde: "http://exemple.invalid:2/health", sauvegarde: oui }')
+    (tmp_path / "services.yaml").write_text(texte, encoding="utf-8")
+    f = services.lire(tmp_path / "services.yaml")
+    assert [n for n, _ in sauvegardes.applis_maison(f)] == ["Carnet", "Millésime"]
+
+
+def test_m7_remplacer_la_cle_exige_la_cle_actuelle(client):
+    autre = "age1" + "p" * 58
+    connecter(client)
+    assert client.put("/api/cle-publique", json={"cle_publique": CLE_AGE}).status_code == 200
+    assert client.put("/api/cle-publique", json={"cle_publique": CLE_AGE}).status_code == 200   # même clé : rien ne change
+    assert client.put("/api/cle-publique", json={"cle_publique": autre}).status_code == 409
+    assert client.put("/api/cle-publique", json={"cle_publique": ""}).status_code == 409
+    assert client.put("/api/cle-publique", json={"cle_publique": autre, "actuelle": "age1faux"}).status_code == 409
+    assert client.get("/api/cle-publique").json() == {"cle_publique": CLE_AGE}
+    r = client.put("/api/cle-publique", json={"cle_publique": autre, "actuelle": CLE_AGE})
+    assert r.status_code == 200 and r.json() == {"cle_publique": autre}
+
+
+def test_m7_entete_age_verifie(tmp_path):
+    faux = "-----BEGIN AGE ENCRYPTED FILE-----\nYm9uam91cg==\n-----END AGE ENCRYPTED FILE-----\n"
+    with pytest.raises(sauvegardes.Refus):
+        sauvegardes.ranger_variables(tmp_path, faux)
+    assert sauvegardes.ranger_variables(tmp_path, ARMURE)

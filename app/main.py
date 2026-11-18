@@ -332,10 +332,15 @@ def lire_cle():
 
 @app.put("/api/cle-publique")
 def changer_cle(corps: dict = Body(...)):
+    """0.11.2 (audit M7) : remplacer ou retirer une clé déjà posée exige la clé actuelle (« actuelle ») ; sinon les
+    exports déjà rangés ne seraient plus lisibles qu'avec une clé que personne n'a vérifiée."""
     try:
         cle_age = sauvegardes.valider_cle(str(corps.get("cle_publique", "")))
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    actuelle = ETAT["reglages"].get("cle_publique")
+    if actuelle and cle_age != actuelle and str(corps.get("actuelle", "")).strip() != actuelle:
+        raise HTTPException(409, "Une clé publique est déjà posée : pour la remplacer, confirme la clé actuelle.")
     return {"cle_publique": ETAT["reglages"].changer({"cle_publique": cle_age})["cle_publique"]}
 
 

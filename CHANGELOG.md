@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.11.2 — 18 novembre 2026 (constats moyens de l'audit)
+- **Collecte des sauvegardes sur accord explicite** (M5) : dès qu'une tuile porte `sauvegarde: true` (ou `oui`), seules ces tuiles reçoivent le jeton commun à 03:30. Un fichier de tuiles sans aucun `true` garde l'ancienne règle (toute sonde finissant par `/health`, sauf `sauvegarde: false`) : rien ne casse avant la mise à jour du fichier.
+- **Remplacer la clé publique se confirme** (M7) : une fois une clé posée, la changer ou la retirer exige la clé actuelle (case « Remplacer la clé actuelle » dans Variables ; sinon 409). Un export rangé doit porter l'en-tête d'age (`age-encryption.org/v1`) sous son enveloppe, plus seulement les lignes BEGIN/END.
+- **Mémoire de l'ancien Atlas effacée** (M49) : au chargement, l'Anneau efface `atlas-environnement` de la mémoire du navigateur (là où Atlas avait été ouvert à l'adresse de l'Anneau).
+- `maison.py` du socle 0.8.2 (réglages secrets reconnus par mots, champ `ecartes` dans la sauvegarde).
+
 ## 0.11.1 — 18 novembre 2026 (voyants de la carte)
 - Les voyants de la carte retrouvent leur tuile quand la clé de la tuile a des tirets (« kit-d-urgence ») ou que le nom du service porte une parenthèse (« Éphéméride (vérification des dates) ») : comparaison sans accents, espaces ni tirets. Vu sur la vraie installation à la mise en service de la 0.11.0 (Kit d'urgence, Douze points, Chambre noire, Home Assistant, Éphéméride sans voyant).
 - « Tuiles hors carte » ne liste plus les machines (Synology, QNAP, PC de calcul).

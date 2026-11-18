@@ -371,6 +371,10 @@ def test_11_page_variables(page, monde, tmp_path):
     page.get_by_role("button", name="Utiliser cette paire").click()
     page.locator("#message-variables", has_text="Range d'abord").wait_for()
     page.get_by_label("Je l'ai rangée hors de la maison").check()
+    if page.get_by_label("Remplacer la clé actuelle", exact=False).count():     # 2e écran : une clé est déjà posée
+        page.get_by_role("button", name="Utiliser cette paire").click()
+        page.locator("#message-variables", has_text="Une clé est déjà posée").wait_for()
+        page.get_by_label("Remplacer la clé actuelle", exact=False).check()
     page.get_by_role("button", name="Utiliser cette paire").click()
     page.locator("#message-variables", has_text="Nouvelle clé publique enregistrée").wait_for()
     assert privee not in page.content()
@@ -411,6 +415,14 @@ def test_11_page_variables(page, monde, tmp_path):
     assert privee not in garde and "secret-de-test" not in garde
     groupe.get_by_role("button", name="Oublier les valeurs").click()
     assert "secret-de-test" not in page.content()
+    # 0.11.2 (audit M7) : remplacer une clé déjà posée se confirme
+    page.get_by_label("Ou poser une clé publique (age1…)").fill("age1" + "q" * 58)
+    page.get_by_role("button", name="Enregistrer la clé").click()
+    page.locator("#message-variables", has_text="Une clé est déjà posée").wait_for()
+    page.get_by_label("Remplacer la clé actuelle", exact=False).check()
+    page.get_by_role("button", name="Enregistrer la clé").click()
+    page.locator("#message-variables", has_text="Clé publique enregistrée.").wait_for()
+    assert "q" * 58 in page.get_by_label("Clé publique", exact=True).inner_text()
     page.get_by_role("link", name="Revenir à l'anneau").click()
     page.locator("svg.anneau").wait_for()
 
