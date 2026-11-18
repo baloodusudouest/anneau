@@ -5,10 +5,15 @@
 Le fichier <dossier>/morts.txt liste, une par ligne, les adresses qui ne répondent plus.
 La ronde tourne toutes les demi-secondes pour que les tests n'attendent pas.
 0.8 : MAISON_JETON n'est pas posé ici, donc « Sauvegarder maintenant » note ratées les deux applis maison (tuiles avec une sonde /health) (tuile « Sauvegarde ratée »),
-l'Anneau ne sauvegardant que lui-même."""
+l'Anneau ne sauvegardant que lui-même.
+0.12 : <dossier>/sante.json ({morceau d'adresse: corps du /health}) donne la santé des tâches de fond des tuiles ;
+<dossier>/arret.txt fait échouer chaque tour de veille et <dossier>/avance.txt avance l'horloge de la veille
+(en secondes) : ensemble, ils simulent une veille arrêtée depuis plus de 10 min."""
 from __future__ import annotations
 
+import json
 import sys
+import time
 from pathlib import Path
 
 import uvicorn
@@ -78,15 +83,36 @@ def main_() -> None:
     morts = racine / "morts.txt"
     morts.write_text("s=calcul\n")                      # le PC de calcul est éteint, comme souvent
 
-    async def sonder(adresse: str):
-        return (not any(m and m in adresse for m in morts.read_text().split()), 14)
+    sante = racine / "sante.json"
+    arret, avance = racine / "arret.txt", racine / "avance.txt"
+
+    async def sonder(adresse: str, jeton: str = ""):
+        try:
+            corps = json.loads(sante.read_text(encoding="utf-8")) if sante.is_file() else {}
+        except ValueError:
+            corps = {}
+        return (not any(m and m in adresse for m in morts.read_text().split()), 14,
+                next((c for m, c in corps.items() if m in adresse), None))
+
+    def horloge() -> float:
+        try:
+            return time.monotonic() + float(avance.read_text() or 0)
+        except (OSError, ValueError):
+            return time.monotonic()
+
+    class VeilleDemo(Veille):
+        async def tour(self):
+            if arret.exists():
+                raise RuntimeError("arrêt simulé de la veille")
+            await super().tour()
 
     async def examiner(adresse: str):
         return "X-Frame-Options : SAMEORIGIN" if "s=numerisation" in adresse else ""
 
     cfg = Config(password=MDP, data=data, static=Path(__file__).resolve().parents[2] / "app" / "static", secret_ha=SECRET,
                  attente_connexion=False, periode=0.5, sauvegarde_auto=False)   # la collecte se lance par le bouton
-    main.ETAT.update(cfg=cfg, veille=Veille(data, services.lire(data / "services.yaml"), ha_attendu=False, sonder=sonder, examiner=examiner))
+    main.ETAT.update(cfg=cfg, veille=VeilleDemo(data, services.lire(data / "services.yaml"), ha_attendu=False, sonder=sonder,
+                                                examiner=examiner, horloge=horloge))
     uvicorn.run(main.app, host="127.0.0.1", port=port, log_level="warning")
 
 

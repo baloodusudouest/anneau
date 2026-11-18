@@ -17,6 +17,7 @@
   .trait { flex: none; fill: none; stroke: var(--app); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
   .trait.panne { stroke: var(--lave); }
   .trait.faire { stroke: var(--spectre); }
+  .trait.surveiller { stroke: var(--braise); }
   .trait.inconnu, .trait.eteint { stroke: var(--or-sourd); }
   .trait.sourd { stroke: var(--or-sourd); }
   .trait.vif { stroke: var(--or-vif); }

@@ -445,3 +445,107 @@ def test_12_carte_de_la_maison_depuis_les_reglages(page):
         page.get_by_text("Rôle de Répertoire.").wait_for()
         assert page.locator("text=Grand NAS").count() >= 1
     page.screenshot(path=f"/tmp/carte-{page.ecran}.png", full_page=False)
+
+
+# ---------------------------------------------------------------- 0.12 : santé des tâches de fond
+
+def _iso(il_y_a_s):
+    from datetime import datetime, timedelta
+    return (datetime.now().astimezone() - timedelta(seconds=il_y_a_s)).isoformat(timespec="seconds")
+
+
+def _sante(monde, taches):
+    corps = {"ok": True, "version": "2.40.0", "version_socle": "0.9.0", "taches": taches,
+             "copie_base": {"le": _iso(3600), "ok": True, "bases": ["repertoire.db"], "taille": 40960}}
+    (monde[1] / "sante.json").write_text(json.dumps({"s=repertoire": corps}), encoding="utf-8")
+
+
+def _tache(nom, etat="ok", type_="reguliere", reussite=60, essai=60, erreur=None, message=None):
+    t = {"nom": nom, "type": type_, "periode_s": 3600 if type_ == "reguliere" else None, "etat": etat,
+         "derniere_reussite": _iso(reussite) if reussite else None, "dernier_essai": _iso(essai) if essai else None,
+         "derniere_erreur": _iso(erreur) if erreur else None}
+    return {**t, "message": message} if message else t
+
+
+def _attendre_rang(page, present, texte=""):
+    for _ in range(40):
+        page.reload()
+        page.locator("svg.anneau").wait_for()
+        rang = page.get_by_role("region", name="À surveiller")
+        if (rang.count() > 0 and texte in rang.inner_text()) if present else rang.count() == 0:
+            return rang
+        time.sleep(0.4)
+    pytest.fail("Le rang « À surveiller » n'est pas dans l'état attendu.")
+
+
+def test_13_tuile_a_surveiller_phrase_fiche_et_vu(page, monde):
+    """0.12 : une tâche régulière en retard rend la tuile orange, avec sa phrase écrite sur la tuile (PC et iPhone),
+    jamais « en panne » ; la fiche détaille ; « Vu » l'éteint jusqu'au prochain changement."""
+    page.goto(page.url.split("#")[0] + "#/")
+    synchro, nettoyage = f"synchro-{page.ecran}", f"nettoyage-{page.ecran}"   # noms propres à chaque écran (serveur partagé)
+    import_ = _tache("import-livres", type_="demande", etat="erreur", reussite=None, essai=600, erreur=600,
+                     message="ValueError: fichier illisible")
+    _sante(monde, [_tache(synchro, etat="en_retard", reussite=3 * 3600 + 200), import_])
+    rang = _attendre_rang(page, True, "Répertoire")
+    phrase = f"{synchro} n'a pas réussi depuis 3 h"
+    assert phrase in rang.inner_text()
+    assert page.get_by_role("region", name="En panne").count() == 0 and "Tout va bien" in page.locator("svg.anneau").text_content()
+    # la phrase écrite sur la tuile, sans survol
+    famille(page, "Proches").click()
+    if page.ecran == "pc":
+        assert "surveiller" in page.locator("text.service", has_text="Répertoire").get_attribute("class")
+        assert "à surveiller" in page.locator("text.phrase-service").text_content()   # la phrase entière : rang à côté
+        assert page.locator("text.phrase-service").is_visible() and phrase in page.locator("text.phrase-service title").text_content()
+    else:
+        tuile = page.locator(".dessous").get_by_role("button", name=re.compile("Répertoire"))
+        assert phrase in tuile.inner_text() and tuile.locator(".phrase-tuile").is_visible()
+    famille(page, "Proches").click()
+    # la fiche : tâches, dernière erreur d'une tâche à la demande, copie, socle
+    rang.get_by_role("button", name="Voir : Répertoire").click()
+    fiche = page.locator(".fiche-etat")
+    fiche.wait_for()
+    texte = fiche.inner_text()
+    assert synchro in texte and "en retard" in texte and "import-livres" in texte and "à la demande" in texte
+    assert "dernière erreur il y a" in texte and "ValueError: fichier illisible" in texte
+    assert "repertoire.db" in texte and "Socle 0.9.0" in texte
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.screenshot(path=f"/tmp/sante-{page.ecran}.png")
+    # « Vu »
+    fiche.get_by_role("button", name="Vu", exact=True).click()
+    fiche.get_by_text("Vu : la tuile redeviendra orange").wait_for()
+    assert page.locator(".pastilles .vu").count() == 1
+    page.get_by_role("button", name="Revenir à l'anneau").click()
+    _attendre_rang(page, False)
+    # autre chose casse : orange de nouveau
+    _sante(monde, [_tache(synchro, etat="en_retard", reussite=3 * 3600 + 200), _tache(nettoyage, etat="bloquee", essai=7300), import_])
+    rang = _attendre_rang(page, True, "(+1)")
+    # tout se répare : plus rien
+    _sante(monde, [_tache(synchro), import_])
+    _attendre_rang(page, False)
+
+
+def test_14_bandeau_veille_de_l_anneau_arretee(page, monde):
+    """0.12 : la veille de l'Anneau ne finit plus ses tours depuis plus de 10 min : bandeau orange en haut."""
+    page.goto(page.url.split("#")[0] + "#/")
+    (monde[1] / "avance.txt").write_text("700")
+    (monde[1] / "arret.txt").write_text("")
+    try:
+        for _ in range(40):
+            page.reload()
+            page.locator("svg.anneau").wait_for()
+            if page.get_by_role("alert").filter(has_text="La veille de l'Anneau est arrêtée depuis").count():
+                break
+            time.sleep(0.4)
+        else:
+            pytest.fail("Le bandeau de veille arrêtée n'est pas apparu.")
+        assert page.locator(".bandeau").is_visible()
+    finally:
+        (monde[1] / "arret.txt").unlink()
+        (monde[1] / "avance.txt").unlink()
+    for _ in range(40):
+        page.reload()
+        page.locator("svg.anneau").wait_for()
+        if not page.locator(".bandeau").count():
+            return
+        time.sleep(0.4)
+    pytest.fail("Le bandeau de veille arrêtée ne s'est pas effacé.")

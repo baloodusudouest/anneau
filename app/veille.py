@@ -11,10 +11,16 @@ Règles (dossier, décisions du 13/11/2026) :
 
 L'Anneau n'écrit que deux petits fichiers dans son dossier (pannes en cours, dernières pannes closes) :
 le NAS qui l'héberge est presque plein, il ne garde aucun historique de sondes.
+
+0.12 (santé des tâches de fond) : la réponse JSON d'une sonde /health est lue (`taches`, `copie_base`, `version_socle`,
+voir sante.py) ; une tuile peut être « à surveiller » (orange), jamais comptée comme en panne. Le jeton commun part
+avec la sonde des seules tuiles « sauvegarde: true » (les applis maison), jamais ailleurs. La veille note l'heure de sa
+dernière boucle : au-delà de 10 min, l'écran dit qu'elle est arrêtée. Troisième petit fichier : vus.json (« Vu »).
 """
 from __future__ import annotations
 
 import asyncio
+import inspect
 import math
 import json
 import logging
@@ -26,6 +32,8 @@ from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
+from . import maison, sante
+from .sauvegardes import base as base_maison
 from .services import Fichier, cle
 
 log = logging.getLogger("anneau.veille")
@@ -33,6 +41,8 @@ log = logging.getLogger("anneau.veille")
 ECHECS = 3          # échecs de suite avant d'ouvrir une panne
 REUSSITES = 3       # réussites de suite avant de la clore
 GARDEES = 30        # pannes closes gardées pour mémoire
+ARRETEE = 600       # 0.12 : secondes sans boucle de veille finie avant de dire « la veille est arrêtée »
+TAILLE_SANTE = 64 * 1024   # 0.12 : une réponse /health plus grosse n'est pas lue
 
 
 def maintenant() -> str:
@@ -49,6 +59,37 @@ async def repond(adresse: str) -> tuple[bool, int | None]:
         return r.status_code < 500, int((time.monotonic() - debut) * 1000)
     except Exception:  # noqa: BLE001 — 0.10.2 : toute erreur (adresse invalide comprise) vaut « ne répond pas »
         return False, None
+
+
+async def repond_avec_sante(adresse: str, jeton: str = "") -> tuple[bool, int | None, dict | None]:
+    """0.12 : la sonde de la veille. Comme `repond`, et rend en plus la réponse JSON (un /health) quand il y en a une.
+    Le jeton commun n'est joint que si la veille le donne (tuiles « sauvegarde: true » seulement)."""
+    debut = time.monotonic()
+    entetes = {"User-Agent": "anneau"}
+    if jeton:
+        entetes["Authorization"] = f"Bearer {jeton}"
+    try:
+        async with httpx.AsyncClient(timeout=5, verify=False, follow_redirects=False) as c:
+            r = await c.get(adresse, headers=entetes)
+    except Exception:  # noqa: BLE001 — toute erreur vaut « ne répond pas »
+        return False, None, None
+    delai = int((time.monotonic() - debut) * 1000)
+    corps = None
+    if r.status_code == 200 and "json" in r.headers.get("content-type", "") and len(r.content) <= TAILLE_SANTE:
+        try:
+            corps = r.json()
+        except ValueError:
+            corps = None
+    return r.status_code < 500, delai, corps if isinstance(corps, dict) else None
+
+
+def _accepte_jeton(sonder) -> bool:
+    """La sonde sait-elle recevoir le jeton ? (les fausses sondes des tests anciens n'ont que l'adresse)"""
+    try:
+        params = inspect.signature(sonder).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(p.name == "jeton" or p.kind is inspect.Parameter.VAR_KEYWORD for p in params)
 
 
 def interdit_le_cadre(entetes) -> str:
@@ -76,11 +117,17 @@ async def examiner(adresse: str) -> str | None:
 
 class Veille:
     def __init__(self, data: Path, fichier: Fichier, ha_attendu: bool = False,
-                 sonder: Callable[[str], Awaitable[tuple[bool, int | None]]] = repond,
+                 sonder: Callable[..., Awaitable[tuple]] = repond_avec_sante,
                  horloge: Callable[[], float] = time.monotonic,
-                 examiner: Callable[[str], Awaitable[str | None]] = examiner):
+                 examiner: Callable[[str], Awaitable[str | None]] = examiner,
+                 jeton: Callable[[], str] = maison.jeton_a_envoyer,
+                 instant: Callable[[], datetime] = lambda: datetime.now().astimezone()):
         self.data, self.fichier, self.ha_attendu = data, fichier, ha_attendu
         self._sonder, self._horloge, self._examiner = sonder, horloge, examiner
+        self._jeton, self._instant = jeton, instant          # 0.12 : jeton commun (applis maison), heure murale
+        self._sonder_jeton = _accepte_jeton(sonder)
+        self.sante: dict[str, dict] = {}        # 0.12 : clé de service → santé lue dans son /health (sante.lire)
+        self.vus = sante.Vus(data)              # 0.12 : les « Vu » des tuiles orange
         self.refus: dict[str, str] = {}         # adresse → raison pour laquelle le service interdit le cadre (vide : il l'accepte)
         self._tours = 0
         self.suivi: dict[str, dict] = {}        # clé de sonde → échecs, réussites, état, depuis, délai
@@ -90,6 +137,7 @@ class Veille:
         self.derniere_sonde: str = ""
         self.machines: dict = {"volumes": [], "mises_a_jour": [], "recu_le": "", "recu_a": None}
         self.demarrage = horloge()
+        self.boucle_a, self.boucle_le = self.demarrage, maintenant()   # 0.12 : dernière boucle de veille finie
         self._relire()
 
     # ------------------------------------------------------------ mémoire sur disque
@@ -161,19 +209,60 @@ class Veille:
             s["depuis"] = maintenant()
         return s["etat"]
 
+    def _jeton_pour(self, s) -> str:
+        """0.12 : le jeton commun ne part qu'avec la sonde /health d'une tuile « sauvegarde: true » (appli maison)."""
+        if s.sauvegarde is not True or not base_maison(s.sonde):
+            return ""
+        return self._jeton() or ""
+
+    def _sonde(self, adresse: str, jeton: str = ""):
+        if self._sonder_jeton:
+            return self._sonder(adresse, jeton=jeton)
+        return self._sonder(adresse)
+
     async def tour(self) -> None:
         """Un tour : toutes les machines et tous les services, en même temps."""
         f = self.fichier
-        cibles = [("machine:" + m.cle, m.sonde, False) for m in f.machines if m.sonde] \
-            + [("service:" + s.cle, s.a_sonder, s.arret_attendu) for s in f.services]
-        resultats = await asyncio.gather(*(self._sonder(adresse) for _, adresse, _ in cibles), return_exceptions=True)
-        for (c, _, attendu), r in zip(cibles, resultats):
-            vivant, delai = (False, None) if isinstance(r, BaseException) else r   # 0.10.2 : une sonde en erreur ne prive pas les autres
+        cibles = [("machine:" + m.cle, m.sonde, False, "") for m in f.machines if m.sonde] \
+            + [("service:" + s.cle, s.a_sonder, s.arret_attendu, self._jeton_pour(s)) for s in f.services]
+        resultats = await asyncio.gather(*(self._sonde(adresse, j) for _, adresse, _, j in cibles), return_exceptions=True)
+        for (c, _, attendu, _), r in zip(cibles, resultats):
+            r = (False, None) if isinstance(r, BaseException) else tuple(r)   # 0.10.2 : une sonde en erreur ne prive pas les autres
+            vivant, delai = r[0], r[1]
             self._noter(c, vivant, delai, attendu)
+            if c.startswith("service:") and vivant and len(r) > 2:          # 0.12 : la santé lue dans le /health
+                lue = sante.lire(r[2])
+                if lue is None:
+                    self.sante.pop(c[len("service:"):], None)               # appli sans ces champs : rien ne change
+                else:
+                    self.sante[c[len("service:"):]] = {**lue, "lu_le": maintenant()}
+        connues = {s.cle for s in f.services}
+        for k in [k for k in self.sante if k not in connues]:
+            del self.sante[k]
         self.derniere_sonde = maintenant()
         await self._cadres()
         self._pannes_de_sonde()
         self._silence_ha()
+        t = self._instant()
+        self.vus.menage({k: emp for k in connues if (emp := sante.empreinte(sante.defauts(self.sante.get(k), t)))})
+        self.boucle_a, self.boucle_le = self._horloge(), maintenant()
+
+    # ------------------------------------------------------------ « à surveiller » (0.12)
+    def defauts(self, cle_service: str) -> list[dict]:
+        return sante.defauts(self.sante.get(cle_service), self._instant())
+
+    def marquer_vu(self, cle_service: str) -> bool:
+        """« Vu » : la tuile n'est plus orange tant que ses défauts restent les mêmes."""
+        emp = sante.empreinte(self.defauts(cle_service))
+        if not emp:
+            return False
+        self.vus.marquer(cle_service, emp, maintenant())
+        return True
+
+    def veille_anneau(self) -> dict:
+        """L'Anneau se surveille : l'heure de sa dernière boucle de veille finie, et si elle est trop vieille."""
+        age = int(self._horloge() - self.boucle_a)
+        return {"derniere": self.boucle_le, "age": age, "arretee": age > ARRETEE}
 
     async def _cadres(self) -> None:
         """Quels services interdisent d'être affichés dans une autre page ? Relu tous les dix tours,
@@ -299,6 +388,7 @@ class Veille:
 
     def etat(self, prive: bool = False, https: bool = False, hote: str = "") -> dict:
         f = self.fichier
+        t = self._instant()
         en_panne = {m.nom for m in f.machines if self.suivi.get("machine:" + m.cle, {}).get("etat") == "panne"}
         familles = []
         for fam in f.familles:
@@ -306,11 +396,17 @@ class Veille:
             for s in (x for x in f.services if x.famille == fam["nom"]):
                 suivi = self.suivi.get("service:" + s.cle, {})
                 adresse = self._adresse(s, prive, https, hote)
+                d = sante.defauts(self.sante.get(s.cle), t)
+                vu = self.vus.est_vu(s.cle, sante.empreinte(d))
+                orange = bool(d) and not vu and suivi.get("etat") == "ok"   # le service en panne : la panne passe devant
                 services.append({
                     "nom": s.nom, "cle": s.cle, "icone": s.icone, "etat": suivi.get("etat", "inconnu"),
                     "depuis": suivi.get("depuis", ""), "delai": suivi.get("delai"), "adresse": adresse,
                     "cadre": not (pourquoi := self._hors_cadre(s, adresse, https, s.privee if adresse == s.privee else s.locale)), "hors_cadre": pourquoi,
-                    "machine": s.machine, "machine_en_panne": s.machine in en_panne})
+                    "machine": s.machine, "machine_en_panne": s.machine in en_panne,
+                    # 0.12 : santé des tâches de fond ; « surveiller » = orange, la phrase s'écrit sur la tuile
+                    "sante": self.sante.get(s.cle), "defauts": d, "surveiller": orange, "vu": bool(d) and vu,
+                    "phrase": sante.phrase(d) if orange else ""})
             etats = {x["etat"] for x in services}
             familles.append({**fam, "services": services,
                              "etat": "panne" if "panne" in etats else "ok" if etats & {"ok", "eteint"} else "inconnu"})
@@ -323,7 +419,10 @@ class Veille:
             if fam["nom"] in touchees:
                 fam["etat"] = "panne"
         ha_age = None if self.machines["recu_a"] is None else int(self._horloge() - self.machines["recu_a"])
+        surveiller = [{"cle": x["cle"], "nom": x["nom"], "famille": fam["nom"], "famille_cle": fam["cle"], "phrase": x["phrase"]}
+                      for fam in familles for x in fam["services"] if x["surveiller"]]
         return {"familles": familles, "pannes": pannes, "a_faire": a_faire, "closes": self.closes[:5],
+                "surveiller": surveiller, "veille": self.veille_anneau(),
                 "volumes": self.machines["volumes"],
                 "fraicheur": {"sonde": self.derniere_sonde, "ha_attendu": self.ha_attendu, "ha_recu_le": self.machines["recu_le"],
                               "ha_age": ha_age, "fichier_modifie_le": f.modifie_le, "fichier_lu_le": f.lu_le,

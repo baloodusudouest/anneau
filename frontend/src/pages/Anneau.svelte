@@ -4,9 +4,12 @@
   //  - la vue réduite, quand un service est ouvert : l'anneau d'or en haut à gauche (retour),
   //    une colonne d'icônes (une par famille ; en ligne sur téléphone), les services de la famille en pastilles, et le service.
   //    Le cadre laisse passer l'appareil photo (numérisation), le plein écran et la copie.
+  // 0.12 : une tuile « à surveiller » (orange braise) porte sa phrase écrite (tâche de fond en retard, copie vieille) ;
+  //    sa fiche (« État ») détaille les tâches, la dernière copie, la version du socle, avec le bouton « Vu ».
+  //    Bandeau orange en haut si la veille de l'Anneau ne tourne plus depuis 10 min.
   import { onMount } from 'svelte'
   import { api } from '$lib/api.js'
-  import { duree } from '$lib/temps.js'
+  import { duree, secondes } from '$lib/temps.js'
   import Cercle from '$lib/Cercle.svelte'
   import Icone from '$lib/Icone.svelte'
   import { Button } from '$lib/components/ui/button/index.js'
@@ -18,6 +21,7 @@
   let service = $state(null)         // { famille, cle } du service ouvert (vue réduite)
   let etroit = $state(false)
   let tic = $state(Date.now())       // pour que « il y a 40 s » avance tout seul
+  let etatOuvert = $state(false)     // 0.12 : la fiche « État » du service ouvert (à la place du cadre)
 
   async function lire() {
     try { e = await api.get('/api/etat'); erreur = '' } catch (x) { if (x.statut === 401) ondeconnecte?.(); else erreur = x.message }
@@ -35,6 +39,10 @@
   const pannes = $derived(e?.pannes || [])
   const aFaire = $derived(e?.a_faire || [])
   const aTraiter = $derived(e?.a_traiter || [])   // 0.8 : « Sauvegarde ratée » (rien vers Home Assistant)
+  const surveiller = $derived(e?.surveiller || [])  // 0.12 : tuiles orange (jamais comptées en panne)
+  // 0.12 : la veille de l'Anneau est-elle arrêtée ? Le serveur le dit ; si l'API ne répond plus, le navigateur le calcule
+  // à partir de la dernière boucle connue (pas avant : l'horloge du navigateur peut différer de celle du serveur).
+  const veilleArretee = $derived(!!e?.veille && (e.veille.arretee || (!!erreur && tic - new Date(e.veille.derniere).getTime() > 600000)))
   const nbChoses = $derived(aFaire.length + aTraiter.length)
   // l'état écrit sur l'anneau : la panne passe devant ce qui est à faire
   const etats = $derived(Object.fromEntries(familles.map((f) => [f.cle, f.etat === 'panne' ? 'panne' : aFaire.some((x) => x.famille === f.nom) ? 'faire' : f.etat === 'inconnu' ? 'inconnu' : ''])))
@@ -46,6 +54,10 @@
   const leService = $derived(familleDuService?.services.find((s) => s.cle === service.cle) || null)
 
   const PHRASES = { ok: 'répond', panne: 'ne répond plus', eteint: 'est éteint (arrêt attendu)', inconnu: 'pas encore vérifié' }
+  const ETATS_TACHE = { ok: 'ok', en_retard: 'en retard', bloquee: 'bloquée', jamais: 'pas encore passée', erreur: 'dernier essai en erreur' }
+  const octets = (n) => (n == null ? '' : n < 1048576 ? `${Math.max(1, Math.round(n / 1024))} Ko` : `${(n / 1048576).toFixed(1).replace('.', ',')} Mo`)
+  const periode = (n) => (!n ? '' : n % 86400 === 0 ? (n === 86400 ? 'chaque jour' : `tous les ${n / 86400} j`) : n % 3600 === 0 ? (n === 3600 ? 'chaque heure' : `toutes les ${n / 3600} h`) : n >= 60 ? `toutes les ${Math.round(n / 60)} min` : `toutes les ${n} s`)
+  const etatIcone = (s, ouvert = false) => (s.etat !== 'ok' ? s.etat : s.surveiller ? 'surveiller' : ouvert ? 'sombre' : '')
   const deplier = (cle) => (ouverte = ouverte === cle ? null : cle)
   // Les services déjà ouverts dans le cadre restent chargés quand on passe à un autre ou qu'on revient à l'anneau :
   // on les retrouve où on les avait laissés. Huit au plus, le plus ancien cède sa place.
@@ -59,8 +71,14 @@
     gardes = [...gardes.filter((g) => g.cle !== s.cle), { cle: s.cle, adresse: s.adresse, nom: s.nom, tour }].slice(-GARDES)
   }
   // Toucher le service déjà affiché le recharge.
-  const ouvrir = (f, s) => { garder(s, service?.cle === s.cle); service = { famille: f.cle, cle: s.cle }; ouverte = f.cle }
-  const fermer = () => (service = null)
+  const ouvrir = (f, s) => { garder(s, service?.cle === s.cle); service = { famille: f.cle, cle: s.cle }; ouverte = f.cle; etatOuvert = false }
+  const fermer = () => { service = null; etatOuvert = false }
+  // 0.12 : « Voir » d'une tuile orange ouvre le service sur sa fiche « État »
+  function voirEtat(x) {
+    const f = familles.find((g) => g.cle === x.famille_cle), s = f?.services.find((t) => t.cle === x.cle)
+    if (f && s) { ouvrir(f, s); etatOuvert = true }
+  }
+  async function marquerVu(s) { try { await api.post('/api/sante/vu', { cle: s.cle }); await lire() } catch (x) { erreur = x.message } }
   // « Ouvrir » réutilise toujours la même fenêtre pour un service : les onglets ne se multiplient pas.
   const dehors = (s) => window.open(s.adresse, 'anneau-' + s.cle)
   // Le bouton du milieu ouvre le service dans un nouvel onglet, sans quitter l'anneau.
@@ -75,6 +93,9 @@
 {#if !e}
   <p class="p-8 text-sm text-muted-foreground" role="status">{erreur || 'Lecture…'}</p>
 {:else}
+  {#if veilleArretee}
+    <p class="bandeau" role="alert">La veille de l'Anneau est arrêtée depuis {e.veille.arretee && !erreur ? secondes(e.veille.age) : duree(e.veille.derniere, tic)} : les états affichés ne sont plus vérifiés.</p>
+  {/if}
   <!-- ───────────── Vue réduite ─────────────
        Elle reste en place, cachée, quand on revient à l'anneau : ses cadres gardent leur page. -->
   {#if leService || gardes.length}
@@ -101,18 +122,54 @@
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M5 7.500h6M15 7.500h4M5 16.500h3M12 16.500h7" /><circle cx="13" cy="7.500" r="2" /><circle cx="10" cy="16.500" r="2" /></svg>
       </button>
     </nav>
-    <div class="pastilles" aria-label={'Services de ' + familleDuService.nom}>
+    <div class="pastilles" class:avec-etat={!!leService.sante} aria-label={'Services de ' + familleDuService.nom}>
       {#each familleDuService.services as s (s.cle)}
         <button type="button" aria-current={s.cle === service.cle ? 'true' : undefined} onclick={() => ouvrir(familleDuService, s)} {...milieu(s)}>
-          <Icone icone={s.icone} etat={s.cle === service.cle && s.etat === 'ok' ? 'sombre' : s.etat === 'ok' ? '' : s.etat} />{s.nom}{#if s.cle !== service.cle && gardes.some((g) => g.cle === s.cle)}<span class="garde" title="Resté ouvert"><span class="sr-only"> (resté ouvert)</span></span>{/if}</button>
+          <Icone icone={s.icone} etat={etatIcone(s, s.cle === service.cle)} />{s.nom}{#if s.surveiller}<span class="phrase-tuile">{s.phrase}</span>{:else if s.vu}<span class="vu" title="Vu : redevient orange au prochain changement">vu</span>{/if}{#if s.cle !== service.cle && gardes.some((g) => g.cle === s.cle)}<span class="garde" title="Resté ouvert"><span class="sr-only"> (resté ouvert)</span></span>{/if}</button>
       {/each}
+      {#if leService.sante}
+        <button type="button" class="bouton-etat" class:surveiller={leService.surveiller} aria-pressed={etatOuvert} onclick={() => (etatOuvert = !etatOuvert)}>État</button>
+      {/if}
     </div>
     {/if}
     <section class="contenu" aria-label={leService?.nom || 'Services ouverts'}>
       {#each gardes as g (g.cle + '#' + g.tour)}
-        <iframe src={g.adresse} title={g.nom} class:absente={!(leService && g.cle === leService.cle && affichable(leService))} allow="camera; fullscreen; clipboard-write"></iframe>
+        <iframe src={g.adresse} title={g.nom} class:absente={!(leService && g.cle === leService.cle && affichable(leService) && !etatOuvert)} allow="camera; fullscreen; clipboard-write"></iframe>
       {/each}
-      {#if leService && !affichable(leService)}
+      {#if leService && etatOuvert && leService.sante}
+        {@const sa = leService.sante}
+        <div class="fiche fiche-etat" aria-label={'État de ' + leService.nom}>
+          <h1 class="plume">{leService.nom}</h1>
+          {#if leService.surveiller}
+            <ul class="defauts">{#each leService.defauts as d (d.cle)}<li>{d.phrase}</li>{/each}</ul>
+            <Button onclick={() => marquerVu(leService)}>Vu</Button>
+            <p class="text-sm text-muted-foreground">« Vu » : la tuile redevient normale jusqu'au prochain changement.</p>
+          {:else if leService.vu}
+            <ul class="defauts vus">{#each leService.defauts as d (d.cle)}<li>{d.phrase}</li>{/each}</ul>
+            <p class="text-sm text-muted-foreground">Vu : la tuile redeviendra orange si autre chose casse.</p>
+          {/if}
+          <table class="taches">
+            <caption class="etiquette">Tâches de fond</caption>
+            <tbody>
+              {#each sa.taches as t (t.nom)}
+                <tr class:defaut={t.type === 'reguliere' && (t.etat === 'en_retard' || t.etat === 'bloquee')}>
+                  <th scope="row">{t.nom}<small>{t.type === 'demande' ? 'à la demande' : periode(t.periode_s)}</small></th>
+                  <td>{ETATS_TACHE[t.etat] || t.etat}
+                    <small>{t.derniere_reussite ? 'réussie il y a ' + duree(t.derniere_reussite, tic) : 'pas encore réussie'}{t.derniere_erreur ? ' · dernière erreur il y a ' + duree(t.derniere_erreur, tic) : ''}</small>
+                    {#if t.message}<small class="message">{t.message}</small>{/if}
+                  </td>
+                </tr>
+              {:else}
+                <tr><td colspan="2">Aucune tâche déclarée.</td></tr>
+              {/each}
+            </tbody>
+          </table>
+          <p class="text-sm">Copie des bases :
+            {#if !sa.copie_base}aucune base à copier{:else if !sa.copie_base.le}pas encore faite{:else}{sa.copie_base.ok ? 'faite' : 'ratée'} il y a {duree(sa.copie_base.le, tic)}{sa.copie_base.bases.length ? ' · ' + sa.copie_base.bases.join(', ') : ''}{sa.copie_base.taille ? ' · ' + octets(sa.copie_base.taille) : ''}{/if}
+          </p>
+          <p class="text-sm text-muted-foreground">Socle {sa.version_socle || 'inconnu'} · lu il y a {duree(sa.lu_le, tic)}</p>
+        </div>
+      {:else if leService && !affichable(leService)}
         <div class="fiche">
           <h1 class="plume" class:panne={leService.etat === 'panne'}>{leService.nom}</h1>
           <p role="status">{leService.nom} {PHRASES[leService.etat]}{leService.depuis ? ` depuis ${duree(leService.depuis, tic)}` : ''}{leService.etat === 'ok' && leService.delai != null ? ` · réponse en ${leService.delai} ms` : ''}.</p>
@@ -137,7 +194,7 @@
           <h2 class="plume">{familleOuverte.nom}</h2>
           <div class="pastilles libres">
             {#each familleOuverte.services as s, i (s.cle)}
-              <button type="button" style:animation-delay="{i * 28}ms" onclick={() => ouvrir(familleOuverte, s)} {...milieu(s)}><Icone icone={s.icone} etat={s.etat === 'ok' ? '' : s.etat} />{s.nom}</button>
+              <button type="button" style:animation-delay="{i * 28}ms" class:surveiller={s.surveiller} onclick={() => ouvrir(familleOuverte, s)} {...milieu(s)}><Icone icone={s.icone} etat={etatIcone(s)} />{s.nom}{#if s.surveiller}<span class="phrase-tuile">{s.phrase}</span>{:else if s.vu}<span class="vu" title="Vu : redevient orange au prochain changement">vu</span>{/if}</button>
             {/each}
           </div>
         </div>
@@ -166,6 +223,19 @@
           </ul>
         </section>
       {/if}
+      {#if surveiller.length}
+        <section class="rang surveiller" aria-label="À surveiller">
+          <h2><span>À surveiller</span><span>{surveiller.length}</span></h2>
+          <ul>
+            {#each surveiller as x (x.cle)}
+              <li>
+                <span><b>{x.nom}</b> : {x.phrase}<small>{x.famille}</small></span>
+                <button type="button" class="lien" onclick={() => voirEtat(x)} aria-label={'Voir : ' + x.nom}>Voir</button>
+              </li>
+            {/each}
+          </ul>
+        </section>
+      {/if}
       {#if aFaire.length}
         <section class="rang faire" aria-label="À faire quand tu veux">
           <h2><span>À faire quand tu veux</span><span>{aFaire.length}</span></h2>
@@ -185,7 +255,7 @@
           </ul>
         </section>
       {/if}
-      {#if !pannes.length && !aFaire.length && !aTraiter.length && e.fraicheur.sonde}
+      {#if !pannes.length && !surveiller.length && !aFaire.length && !aTraiter.length && e.fraicheur.sonde}
         <p class="text-sm text-muted-foreground">Rien à signaler. Touche une famille pour voir ses services.</p>
       {/if}
     </div>
@@ -217,6 +287,30 @@
   .rang h2 { display: flex; justify-content: space-between; margin: 0 0 0.55rem; font-size: 0.74rem; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; }
   .rang.panne h2 { color: var(--lave); }
   .rang.faire h2 { color: var(--spectre); }
+  .rang.surveiller { border-color: color-mix(in srgb, var(--braise) 50%, var(--border)); }
+  .rang.surveiller h2 { color: var(--braise); }
+  .rang.surveiller b { font-weight: 600; }
+  .bandeau { position: sticky; top: 0; z-index: 5; margin: 0; padding: calc(0.55rem + env(safe-area-inset-top)) 1rem 0.55rem; text-align: center; font-size: 0.9rem;
+             font-weight: 600; color: #1e1a16; background: var(--braise); }
+  .phrase-tuile { font-size: 0.78rem; color: var(--braise); white-space: normal; text-align: left; }
+  .pastilles.libres .phrase-tuile { flex-basis: 100%; }
+  .pastilles.libres button.surveiller { flex-wrap: wrap; justify-content: center; max-width: 100%; padding-block: 0.35rem; border-color: color-mix(in srgb, var(--braise) 55%, var(--border)); }
+  .pastilles button[aria-current='true'] .phrase-tuile { color: #6b3a00; }
+  .vu { font-size: 0.7rem; color: var(--muted-foreground); border: 1px solid var(--border); border-radius: 9999px; padding: 0 0.35rem; }
+  .bouton-etat { margin-left: auto; position: sticky; right: 0; box-shadow: -0.6rem 0 0.6rem var(--background); }   /* toujours visible, même quand la rangée défile */
+  .bouton-etat.surveiller { color: var(--braise) !important; border-color: color-mix(in srgb, var(--braise) 60%, var(--border)) !important; }
+  .bouton-etat[aria-pressed='true'] { color: #1e1a16 !important; background: var(--braise) !important; }
+  .fiche-etat { justify-content: flex-start; overflow-y: auto; }
+  .fiche-etat h1 { font-size: 2.6rem; }
+  .defauts { margin: 0; padding: 0; list-style: none; color: var(--braise); font-weight: 600; }
+  .defauts.vus { color: var(--muted-foreground); font-weight: 400; }
+  .taches { width: 100%; max-width: 34rem; border-collapse: collapse; text-align: left; font-size: 0.9rem; }
+  .taches caption { text-align: left; padding-bottom: 0.3rem; }
+  .taches th, .taches td { padding: 0.45rem 0.4rem; border-top: 1px solid var(--border); vertical-align: top; }
+  .taches th { font-weight: 600; }
+  .taches small { display: block; font-weight: 400; color: var(--muted-foreground); font-size: 0.8rem; }
+  .taches small.message { color: var(--foreground); overflow-wrap: anywhere; }
+  .taches tr.defaut td { color: var(--braise); }
   .rang.traiter { border-color: color-mix(in srgb, var(--app) 45%, var(--border)); }
   .rang.traiter h2 { color: var(--app); }
   .rang ul { display: grid; gap: 0.65rem; margin: 0; padding: 0; list-style: none; }

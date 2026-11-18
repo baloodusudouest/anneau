@@ -1,5 +1,14 @@
 # Journal des versions
 
+## 0.12.0 — 18 novembre 2026 (santé des tâches de fond)
+- **Tuile « à surveiller »** (orange braise, distincte de « en panne ») : la veille lit en plus `taches`, `copie_base` et `version_socle` dans le `/health` des applis (socle 0.9.1). Orange si une tâche régulière est « en retard » ou « bloquée », ou si la copie des bases a raté ou a plus de 36 h ; une tâche à la demande ne rend jamais orange ; une appli sans ces champs ne change rien. La phrase (« synchro-icloud n'a pas réussi depuis 3 h ») est écrite sur la pastille de la tuile et dans le nouveau rang « À surveiller » ; sur l'anneau, « à surveiller » au-dessus du nom.
+- **Fiche « État »** d'une tuile (vue réduite, bouton « État », ou « Voir » du rang) : chaque tâche (période, état, dernière réussite, dernière erreur et son message), la dernière copie des bases, la version du socle.
+- **Bouton « Vu »** : la tuile redevient normale (petit signe « vu ») jusqu'au prochain changement — une autre tâche qui casse, ou celle-ci qui se répare puis recasse. Gardé dans `vus.json` ; route `POST /api/sante/vu` (session).
+- **Jeton commun seulement vers les applis maison** : il part avec la sonde `/health` des seules tuiles `sauvegarde: true` (pour avoir les messages d'erreur), jamais ailleurs.
+- **L'Anneau se surveille** : sans boucle de veille finie depuis plus de 10 min, bandeau orange en haut « La veille de l'Anneau est arrêtée depuis … » (le serveur le calcule à chaque lecture de l'écran ; le navigateur aussi quand l'API ne répond plus).
+- **`/health` de l'Anneau** : `version_socle`, `taches` (veille, collecte de nuit, relecture de la carte, suivies par `maison.TACHES`) et `copie_base: null` ; messages d'erreur seulement avec le jeton commun ou une session. Passe par `maison.sante()` du socle 0.9.0 ; avec un `maison.py` plus ancien, l'Anneau tourne comme avant (tâches vides).
+- Tests : 107 (dont 21 dans `test_sante.py`) et 35 tests d'écran (4 de plus : PC et iPhone).
+
 ## 0.11.2 — 18 novembre 2026 (constats moyens de l'audit)
 - **Collecte des sauvegardes sur accord explicite** (M5) : dès qu'une tuile porte `sauvegarde: true` (ou `oui`), seules ces tuiles reçoivent le jeton commun à 03:30. Un fichier de tuiles sans aucun `true` garde l'ancienne règle (toute sonde finissant par `/health`, sauf `sauvegarde: false`) : rien ne casse avant la mise à jour du fichier.
 - **Remplacer la clé publique se confirme** (M7) : une fois une clé posée, la changer ou la retirer exige la clé actuelle (case « Remplacer la clé actuelle » dans Variables ; sinon 409). Un export rangé doit porter l'en-tête d'age (`age-encryption.org/v1`) sous son enveloppe, plus seulement les lignes BEGIN/END.

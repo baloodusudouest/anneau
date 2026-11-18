@@ -11,6 +11,9 @@ Routes : /health (publique), /api/session, /api/connexion, /api/deconnexion, /ap
 0.8 — sauvegarde des réglages : /api/reglages, /api/restaurer, /api/sauvegardes, /api/cle-publique,
 /api/variables-chiffrees (session) ; /externe/sauvegarde, /externe/sauvegardes/{appli} (jeton commun) ;
 0.10 — la sauvegarde regroupée dans l'Anneau : /api/stack, /api/stack/fichier, /api/services/fichier (session) ;
+0.12 — santé des tâches de fond : /health rend aussi version_socle, taches (veille, collecte de nuit, relecture de la
+carte ; messages seulement avec le jeton commun ou une session) et copie_base (null : l'Anneau n'a pas de base) ;
+/api/sante/vu (session) ;
 puis l'interface. Le chiffrement et le déchiffrement de l'export des variables se font dans la page (HTTPS seulement) :
 le serveur ne reçoit jamais que la clé publique et du texte déjà chiffré.
 """
@@ -58,10 +61,44 @@ def _lire_generation(cfg: Config) -> int:
         return 0
 
 
+# ---------------------------------------------------------------- 0.12 : les tâches de fond de l'Anneau lui-même
+# Registre commun du socle 0.9.0 (maison.TACHES). Écrit contre son API ; tant que le maison.py diffusé est plus ancien,
+# l'Anneau tourne comme avant et son /health n'a pas de tâches.
+TACHE_VEILLE, TACHE_COLLECTE, TACHE_CARTE = "veille", "collecte-de-nuit", "relecture-de-la-carte"
+
+
+def _registre():
+    return getattr(maison, "TACHES", None)
+
+
+@asynccontextmanager
+async def _rien():
+    yield
+
+
+def _tour(nom: str):
+    """`async with _tour(nom):` marque début, réussite ou erreur dans le registre commun (s'il existe)."""
+    r = _registre()
+    return r.tour_async(nom) if r is not None else _rien()
+
+
+def _declarer(cfg: Config) -> None:
+    r = _registre()
+    if r is None:
+        return
+    if cfg.veille:
+        r.declarer(TACHE_VEILLE, periode_s=max(int(cfg.periode), 1), type="reguliere")
+        if cfg.sauvegarde_auto:
+            r.declarer(TACHE_COLLECTE, periode_s=86400, type="reguliere")
+        if cfg.atlas_depot:
+            r.declarer(TACHE_CARTE, periode_s=3600, type="reguliere")
+
+
 async def _ronde(veille: Veille, periode: int) -> None:
     while True:
         try:
-            await veille.tour()
+            async with _tour(TACHE_VEILLE):
+                await veille.tour()
         except Exception:                          # une ronde ratée ne doit jamais arrêter la veille
             log.exception("Ronde de sonde interrompue")
         await asyncio.sleep(periode)
@@ -73,7 +110,10 @@ async def _relire_carte(cfg: Config) -> None:
     while True:
         try:
             if carte.a_relire(cfg.data, time.time()):
-                await asyncio.to_thread(carte.telecharger, cfg.data, cfg.atlas_depot, cfg.github_jeton)
+                async with _tour(TACHE_CARTE):
+                    e = await asyncio.to_thread(carte.telecharger, cfg.data, cfg.atlas_depot, cfg.github_jeton)
+                    if e.get("erreur"):            # 0.12 : une relecture ratée compte comme une erreur de la tâche
+                        raise RuntimeError(e["erreur"])
         except Exception:
             log.exception("Relecture de la carte interrompue")
         await asyncio.sleep(300)
@@ -84,7 +124,10 @@ async def _sauvegarde_quotidienne(cfg: Config) -> None:
     while True:
         try:
             if sauvegardes.a_lancer(cfg.data, ETAT["reglages"].get("heure_sauvegarde"), datetime.now().astimezone()):
-                await _collecter(automatique=True)
+                async with _tour(TACHE_COLLECTE):
+                    d = await _collecter(automatique=True)
+                    if d.get("erreur"):            # 0.12 : fichier non écrit = tâche en erreur (une appli ratée, non)
+                        raise RuntimeError(d["erreur"])
         except Exception:
             log.exception("Collecte des sauvegardes interrompue")
         await asyncio.sleep(30)
@@ -112,6 +155,7 @@ async def cycle(app: FastAPI):
     # 0.10.5 : la génération des sessions de l'Anneau sert aussi au cookie commun ; « Se déconnecter » l'augmente
     # et les autres applis la lisent dans /externe/services : les cookies communs d'avant ne valent plus nulle part
     maison.definir_generation_commune(_generation_commune)
+    _declarer(cfg)
     ronde = asyncio.create_task(_ronde(veille, cfg.periode)) if cfg.veille else None
     atlas = asyncio.create_task(_relire_carte(cfg)) if cfg.veille and cfg.atlas_depot else None
     collecte = asyncio.create_task(_sauvegarde_quotidienne(cfg)) if cfg.veille and cfg.sauvegarde_auto else None
@@ -143,8 +187,28 @@ async def garde(request: Request, appel):
 # ================================================================ public
 
 @app.get("/health")
-def sante():
-    return {"ok": True, "version": __version__}
+def sante(request: Request):
+    """Publique. 0.12 : avec la santé des tâches de fond (contrat commun du socle 0.9.0) ; les messages d'erreur
+    seulement si la demande porte le jeton commun ou une session de l'Anneau."""
+    return {"ok": True, "version": __version__, **_ma_sante(request)}
+
+
+def _autorise(request: Request) -> bool:
+    if maison.jeton_valide(maison.jeton_propose(request.headers), maison.jetons()):   # temps constant
+        return True
+    s = ETAT.get("sessions")
+    return bool(s and s.connecte(request.cookies))
+
+
+def _ma_sante(request: Request) -> dict:
+    s = ETAT.get("sessions")
+    commun = getattr(maison, "sante", None)          # socle 0.9.0 : maison.sante(request, jeton_commun, session_ok)
+    if commun is not None:
+        return commun(request, session_ok=bool(s and s.connecte(request.cookies)))
+    r = _registre()                                  # maison.py plus ancien : même contrat, fait ici
+    version_socle = getattr(maison, "VERSION_SOCLE", None) or getattr(maison, "VERSION", None)
+    taches = r.etat(avec_messages=_autorise(request)) if r is not None else []
+    return {"version_socle": version_socle, "taches": taches, "copie_base": None}   # l'Anneau n'a pas de base SQLite
 
 
 # ================================================================ connexion
@@ -221,6 +285,14 @@ def panne_vue(corps: dict = Body(...)):
     """« Pris en compte » : la panne reste affichée tant qu'elle dure, mais on sait que tu l'as vue."""
     if not ETAT["veille"].prendre_en_compte(str(corps.get("cle", ""))):
         raise HTTPException(404, "Cette panne n'est plus en cours.")
+    return {"ok": True}
+
+
+@app.post("/api/sante/vu")
+def sante_vue(corps: dict = Body(...)):
+    """0.12 : « Vu » sur la fiche d'une tuile orange : elle redevient normale jusqu'au prochain changement."""
+    if not ETAT["veille"].marquer_vu(str(corps.get("cle", ""))):
+        raise HTTPException(404, "Cette tuile n'a rien à surveiller.")
     return {"ok": True}
 
 

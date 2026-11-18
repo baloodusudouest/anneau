@@ -2,8 +2,14 @@
 
 Fichier à lire en premier dans une nouvelle session, et à mettre à jour à chaque fin de session, dans le même commit que le code.
 
-## État (17/11/2026)
+## État (18/11/2026)
 
+- **0.12.0** (18/11/2026) : santé des tâches de fond (E2 ; dossier et conseil « santé et copies » du 18/11).
+  - `app/sante.py` : `lire` (nettoie `taches`, `copie_base`, `version_socle` du /health), `defauts` (règle de l'orange), `phrase`, `empreinte`, `Vus` (`vus.json`).
+  - `app/veille.py` : sonde `repond_avec_sante` (JSON du /health, jeton commun seulement pour `sauvegarde: true` + sonde /health : `_jeton_pour`) ; une fausse sonde sans paramètre `jeton` marche encore (`_accepte_jeton`) ; `Veille.sante`, `marquer_vu`, `veille_anneau()` (`boucle_a`, 10 min) ; `etat()` rend par service `sante`, `defauts`, `surveiller`, `vu`, `phrase`, et au total `surveiller`, `veille`.
+  - `app/main.py` : `/health` (via `maison.sante()` s'il existe, sinon repli), `/api/sante/vu`, tâches `veille`, `collecte-de-nuit`, `relecture-de-la-carte` déclarées dans `maison.TACHES` (si présent : `getattr`).
+  - Écran : rang « À surveiller », phrase sur les pastilles, « à surveiller » sur l'anneau (`text.phrase-service`), fiche « État » (`.fiche-etat`), bandeau (`.bandeau`), couleur `--braise`.
+  - **Jamais essayé sur la vraie installation** : la lecture des vrais /health (taille, type `application/json`), le jeton envoyé aux vraies tuiles `sauvegarde: true`, le bandeau après un vrai arrêt de la veille. Le `maison.py` 0.9.0 n'est pas encore diffusé dans ce dépôt (tests passés aussi avec la copie du socle 0.9.0).
 - **0.11.0** (18/11/2026) : la carte de la maison (ex-Atlas) dans Réglages (`#/carte`, `frontend/src/lib/carte/`, `app/carte.py`) ; relue toutes les heures dans le dépôt atlas (carte.json fabriquée par le coffre, `.github/scripts/carte.py`), copie locale, voyants des tuiles ; page atlas.html et `documents.py` retirés.
 - **0.10.1** (17/11/2026) : lien « Ouvrir cette page en https » dans l'avertissement de la page Variables, adresse tirée des tuiles (`services.adresse_https`).
 - **0.10.0** (17/11/2026) : la sauvegarde regroupée dans l'Anneau (décision du 17/11 ; dossier et conseil dans le projet Claude, `anneau-regroupement-*.md`).

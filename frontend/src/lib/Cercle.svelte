@@ -1,7 +1,7 @@
 <script>
   // L'anneau : les familles écrites à la plume le long du cercle, en texte seul.
   // Toucher une famille la déplie : ses services montent de l'anneau et se rangent au-dessus du mot.
-  // Or : tout répond. Rouge lave : en panne. Bleu spectral : quelque chose à faire.
+  // Or : tout répond. Rouge lave : en panne. Bleu spectral : quelque chose à faire. Orange braise (0.12) : à surveiller.
   import { onMount } from 'svelte'
 
   let { familles = [], etats = {}, ouverte = null, etroit = false, centre = null, onfamille, onservice, onmilieu } = $props()
@@ -90,11 +90,17 @@
   {#each montes as m (m.s.cle)}
     <g transform="translate({C} {C}) rotate({m.angle})">
       <g class="monte" class:la={leve === ouverte} style:transform="translateY(-{leve === ouverte ? m.r : R}px)" style:transition-delay="{m.rangDansFile * 22}ms">
-        <text class="service {m.s.etat}" text-anchor="middle" font-size={CORPS_SERVICE} tabindex="0" role="link"
+        <text class="service {m.s.etat}" class:surveiller={m.s.surveiller} text-anchor="middle" font-size={CORPS_SERVICE} tabindex="0" role="link"
               transform="{m.bas ? 'rotate(180) ' : ''}translate(0 {CORPS_SERVICE * 0.3})"
-              aria-label={m.s.nom + (m.s.etat === 'panne' ? ', en panne' : '')}
+              aria-label={m.s.nom + (m.s.etat === 'panne' ? ', en panne' : m.s.surveiller ? ', à surveiller : ' + m.s.phrase : '')}
               onclick={() => onservice?.(m.s)} onmousedown={(e) => e.button === 1 && e.preventDefault()}
               onauxclick={(e) => { if (e.button === 1) { e.preventDefault(); onmilieu?.(m.s) } }} onkeydown={(e) => touche(e, () => onservice?.(m.s))}>{m.s.nom}</text>
+        {#if m.s.surveiller}
+          <!-- 0.12 : « à surveiller » écrit au-dessus du nom (la phrase entière déborderait sur les voisins : elle est
+               écrite dans la liste « À surveiller » à côté de l'anneau, et sur la pastille de la vue réduite) -->
+          <text class="phrase-service" text-anchor="middle" font-size="12.5" transform="{m.bas ? 'rotate(180) ' : ''}translate(0 {-CORPS_SERVICE * 0.62})">
+            <title>{m.s.phrase}</title>à surveiller</text>
+        {/if}
       </g>
     </g>
   {/each}
@@ -118,6 +124,8 @@
   .service { cursor: pointer; fill: var(--app); }
   .service:hover { fill: var(--or-vif); }
   .service.inconnu, .service.eteint { fill: var(--or-sourd); }
+  .service.surveiller { fill: var(--braise); }
+  .phrase-service { font-family: var(--font-sans); font-weight: 500; fill: var(--braise); pointer-events: none; }
   .famille.panne, .famille.panne.active, .service.panne, .centre-grand.panne {
     fill: url(#lave); filter: drop-shadow(0 0 5px rgb(255 80 20 / 0.85)) drop-shadow(0 0 14px rgb(255 60 0 / 0.45)); animation: braise 2.6s ease-in-out infinite; }
   .famille.faire, .famille.faire.active { fill: url(#spectre); filter: drop-shadow(0 0 5px rgb(90 200 255 / 0.85)) drop-shadow(0 0 14px rgb(60 170 255 / 0.45)); }

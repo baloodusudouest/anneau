@@ -36,6 +36,16 @@ Chaque jour à l'heure réglée (03:30 par défaut), ou par « Sauvegarder maint
 
 Le dossier de l'Anneau, et donc `sauvegardes/`, part avec Hyper Backup.
 
+## Santé des tâches de fond (0.12)
+
+La veille lit la réponse JSON de chaque sonde `/health`. Une appli maison à jour (socle 0.9.0) y ajoute `version_socle`, `taches` et `copie_base` ; une appli sans ces champs ne change rien.
+
+- Le jeton commun (`Authorization: Bearer <MAISON_JETON>`, pour avoir les messages d'erreur) ne part qu'avec la sonde des tuiles `sauvegarde: true` dont la sonde finit par `/health`, jamais ailleurs.
+- Tuile **« à surveiller »** (orange braise, jamais « en panne ») : une tâche régulière `en_retard` ou `bloquee`, ou une copie des bases `ok: false` ou de plus de 36 h (`le` vide : neutre, la tâche `copie-des-bases` le dira). Phrase écrite sur la pastille de la tuile et dans le rang « À surveiller » (sur l'anneau, « à surveiller » au-dessus du nom). Une tâche à la demande ne rend jamais orange : sa dernière erreur se lit dans la fiche.
+- Fiche « État » (bouton de la vue réduite, ou « Voir » du rang) : chaque tâche, la dernière copie, la version du socle. Bouton **« Vu »** (`POST /api/sante/vu`, session) : l'empreinte des défauts est gardée dans `vus.json` ; la tuile n'est plus orange tant qu'elle ne change pas (petit signe « vu »), et le « vu » est oublié dès que la tuile n'a plus de défaut ou que ses défauts changent.
+- L'Anneau se surveille : sans boucle de veille finie depuis 10 min, bandeau orange « La veille de l'Anneau est arrêtée depuis … » (calculé par le serveur, et par le navigateur si l'API ne répond plus).
+- `/health` de l'Anneau : `version_socle`, `taches` (`veille`, `collecte-de-nuit`, `relecture-de-la-carte`, registre `maison.TACHES` ; messages seulement avec le jeton commun ou une session), `copie_base: null` (pas de base SQLite). Un seul worker uvicorn (registre en mémoire).
+
 ## Home Assistant (facultatif)
 
 Avec `ANNEAU_SECRET_HA`, Home Assistant peut envoyer chaque minute l'état des machines :
