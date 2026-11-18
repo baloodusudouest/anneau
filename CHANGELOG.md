@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 0.11.1 — 18 novembre 2026 (voyants de la carte)
+- Les voyants de la carte retrouvent leur tuile quand la clé de la tuile a des tirets (« kit-d-urgence ») ou que le nom du service porte une parenthèse (« Éphéméride (vérification des dates) ») : comparaison sans accents, espaces ni tirets. Vu sur la vraie installation à la mise en service de la 0.11.0 (Kit d'urgence, Douze points, Chambre noire, Home Assistant, Éphéméride sans voyant).
+- « Tuiles hors carte » ne liste plus les machines (Synology, QNAP, PC de calcul).
+
 ## 0.11.0 — 18 novembre 2026 (la carte de la maison, Atlas basculé)
 - **Carte de la maison dans Réglages** (décision du 18/11/2026, avis du conseil) : la carte d'Atlas (machines, quartiers, services, flux) s'ouvre par Réglages › Carte de la maison (`#/carte`). Graphe sur les écrans larges (Svelte Flow + dagre, ordre stable), liste machine › services sur téléphone. Chaque service porte le **voyant de sa tuile** (en service, en panne, éteint, sans tuile) ; filtre « En panne » ; panneau d'un service : rôle, ce qui le nourrit, ce qu'il fournit, ce qu'il échange, lien vers sa note dans le coffre Obsidian.
 - La carte est **fabriquée par le coffre** à chaque envoi (action GitHub « carte » du coffre) et poussée dans le dépôt privé d'Atlas, réduit à `carte.json`. L'Anneau la relit **toutes les heures** et sur « Relire la carte », avec le jeton en lecture seule `ANNEAU_GITHUB_JETON` (côté serveur seulement, jamais envoyé au navigateur), vérifie son format (`schema` 1, flux vers des services connus) et garde la dernière carte valide dans `/data/documents/carte.json` : GitHub ou Internet en panne, la carte reste, avec son âge.

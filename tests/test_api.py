@@ -420,6 +420,13 @@ def test_voyants_par_nom_de_tuile():
     v = carte.avec_voyants(CARTE, tuiles)
     s = {x["id"]: x for x in v["services"]}
     assert s["lampe"]["voyant"] == "panne" and s["base"]["voyant"] == "" and v["hors_carte"][0]["nom"] == "Inconnue"
+    # vraies formes : clé de tuile avec tirets, nom de service avec sa parenthèse
+    c2 = {**CARTE, "services": [{**CARTE["services"][0], "id": "kit-urgence", "nom": "Kit d'urgence"},
+                                {**CARTE["services"][1], "id": "verif-dates-photos", "nom": "Éphéméride (vérification des dates)"}], "flux": []}
+    t2 = [{"nom": "Kit d'urgence", "cle": "kit-d-urgence", "etat": "ok", "famille": "Maison"},
+          {"nom": "Éphéméride", "cle": "ephemeride", "etat": "panne", "famille": "Maison"}]
+    v2 = {x["id"]: x["voyant"] for x in carte.avec_voyants(c2, t2)["services"]}
+    assert v2 == {"kit-urgence": "ok", "verif-dates-photos": "panne"}
 
 
 # ================================================================ 0.6 : importer services.yaml depuis Réglages

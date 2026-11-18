@@ -138,16 +138,24 @@ def lire(data: Path) -> dict | None:
 
 
 def avec_voyants(carte: dict, tuiles: list[dict]) -> dict:
-    """Ajoute à chaque service de la carte le voyant de sa tuile (même nom, ou même identifiant) : ok, panne,
+    """Ajoute à chaque service de la carte le voyant de sa tuile (même nom, nom sans sa parenthèse, ou même
+    identifiant ; comparés sans accents, espaces ni tirets) : ok, panne,
     eteint, inconnu ; « sans tuile » quand l'Anneau ne le suit pas. Les tuiles qui ne sont sur aucune carte
     sont rendues à part (« hors carte »)."""
-    par_cle = {t["cle"]: t for t in tuiles}
+    par_cle: dict[str, dict] = {}
+    for t in tuiles:                       # la clé d'une tuile s'écrit « kit-d-urgence » : on compare tout aplati
+        for k in (cle(t["nom"]), cle(t["cle"])):
+            par_cle.setdefault(k, t)
     vues = set()
     services = []
     for s in carte["services"]:
-        t = par_cle.get(cle(s.get("nom", ""))) or par_cle.get(cle(s["id"]))
+        nom = s.get("nom", "")
+        t = next((par_cle[k] for k in (cle(nom), cle(s["id"]), cle(nom.split(" (")[0])) if k in par_cle), None)
         if t:
             vues.add(t["cle"])
         services.append({**s, "voyant": t["etat"] if t else "", "tuile": t["nom"] if t else ""})
-    hors = [{"nom": t["nom"], "etat": t["etat"], "famille": t.get("famille", "")} for t in tuiles if t["cle"] not in vues]
+    machines = [cle(m.get("nom", "")) for m in carte.get("machines", [])]
+    est_machine = lambda t: any(m.startswith(cle(t["nom"])) for m in machines if cle(t["nom"]))   # « Synology » : une machine
+    hors = [{"nom": t["nom"], "etat": t["etat"], "famille": t.get("famille", "")} for t in tuiles
+            if t["cle"] not in vues and not est_machine(t)]
     return {**carte, "services": services, "hors_carte": hors}
