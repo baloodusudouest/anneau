@@ -8,11 +8,12 @@
   import Reglages from './pages/Reglages.svelte'
   import Sauvegardes from './pages/Sauvegardes.svelte'
   import Variables from './pages/Variables.svelte'
+  import Carte from './pages/Carte.svelte'
 
   let connecte = $state(null) // null : on ne sait pas encore
   let session = $state({ version: '' })
   // 0.10 : deux pages de plus, Sauvegardes et Variables (venues d'Atlas)
-  const PAGES = { '#/reglages': 'reglages', '#/sauvegardes': 'sauvegardes', '#/variables': 'variables' }
+  const PAGES = { '#/reglages': 'reglages', '#/sauvegardes': 'sauvegardes', '#/variables': 'variables', '#/carte': 'carte' }   // 0.11 : la carte (ex-Atlas)
   const lirePage = () => PAGES[location.hash] || 'anneau'
   let page = $state(lirePage())
 
@@ -37,6 +38,8 @@
     <Sauvegardes ondeconnecte={() => (connecte = false)} />
   {:else if page === 'variables'}
     <Variables ondeconnecte={() => (connecte = false)} />
+  {:else if page === 'carte'}
+    <Carte ondeconnecte={() => (connecte = false)} />
   {:else}
     <Anneau ondeconnecte={() => (connecte = false)} onreglages={() => (location.hash = '#/reglages')} />
   {/if}

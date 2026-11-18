@@ -1,5 +1,5 @@
 <script>
-  // « Réglages » : le fichier des services, Atlas (jusqu'à la bascule), la sauvegarde (0.8 ; listes et clés dans
+  // « Réglages » : le fichier des services, la carte de la maison (0.11, ex-Atlas), la sauvegarde (0.8 ; listes et clés dans
   // les pages Sauvegardes et Variables depuis la 0.10), le seuil des disques,
   // ce que Home Assistant a envoyé, puis la version et la déconnexion.
   import { onMount } from 'svelte'
@@ -46,16 +46,16 @@
     } catch (x) { message = x.message }
     attente = false
   }
-  // 0.5 : Atlas, la carte de la maison, relue chaque jour depuis sa publication GitHub
-  let doc = $state(null)
-  let msgAtlas = $state('')
-  let attenteAtlas = $state(false)
-  async function lireDocs() { try { doc = (await api.get('/api/documents')).atlas } catch (x) { msgAtlas = x.message } }
-  onMount(lireDocs)
-  async function relireAtlas() {
-    attenteAtlas = true; msgAtlas = ''
-    try { doc = (await api.post('/api/documents/atlas')).atlas; msgAtlas = doc.erreur ? '' : 'Atlas est à jour.' } catch (x) { msgAtlas = x.message }
-    attenteAtlas = false
+  // 0.11 : la carte de la maison (ex-Atlas), fabriquée par le coffre et relue toutes les heures
+  let carte = $state(null)
+  let msgCarte = $state('')
+  let attenteCarte = $state(false)
+  async function lireCarte() { try { carte = await api.get('/api/carte') } catch (x) { msgCarte = x.message } }
+  onMount(lireCarte)
+  async function relireCarte() {
+    attenteCarte = true; msgCarte = ''
+    try { carte = await api.post('/api/carte/relire'); msgCarte = carte.etat.erreur ? '' : 'Carte relue.' } catch (x) { msgCarte = x.message }
+    attenteCarte = false
   }
   // 0.8 : sauvegarde des réglages des applis maison, clé publique de l'export chiffré, restauration de l'Anneau
   let sv = $state(null)
@@ -148,24 +148,23 @@
       {#if message}<p class="mt-3 text-sm" role="status" id="message">{message}</p>{/if}
     </section>
 
-    <section class="mt-3 rounded-2xl border bg-card p-5" aria-label="Atlas">
-      <h2 class="text-lg font-semibold">Atlas</h2>
-      {#if !doc}<p class="mt-1 text-sm text-muted-foreground">Lecture…</p>
-      {:else if !doc.regle}
-        <p class="mt-1 text-sm">Pas réglé : ajoute <code>ANNEAU_ATLAS_DEPOT</code> et <code>ANNEAU_GITHUB_JETON</code> dans la stack, puis redéploie.</p>
+    <section class="mt-3 rounded-2xl border bg-card p-5" aria-label="Carte de la maison">
+      <h2 class="text-lg font-semibold">Carte de la maison</h2>
+      {#if !carte}<p class="mt-1 text-sm text-muted-foreground">Lecture…</p>
+      {:else if !carte.etat.regle && !carte.carte}
+        <p class="mt-1 text-sm">Pas réglée : ajoute <code>ANNEAU_ATLAS_DEPOT</code> et <code>ANNEAU_GITHUB_JETON</code> dans la stack, puis redéploie.</p>
       {:else}
         <p class="mt-1 text-sm">
-          {#if doc.present}La carte de la maison est là{doc.recu_le ? `, reçue il y a ${duree(doc.recu_le)}` : ''}. Ouvre-la par sa tuile, dans la famille Machines.
+          {#if carte.carte}Machines, services et flux de la maison, avec le voyant de chaque tuile : {carte.carte.services.length} services, {carte.carte.flux.length} flux{carte.carte.genere_le ? `, fabriquée par le coffre il y a ${duree(carte.carte.genere_le)}` : ''}.
           {:else}Pas encore reçue.{/if}
-          {#if doc.essaye_le} Dernier essai il y a {duree(doc.essaye_le)}.{/if}
+          {#if carte.etat.essaye_le} Relue il y a {duree(carte.etat.essaye_le)}.{/if}
         </p>
-        {#if doc.note}<p class="mt-1 text-sm text-muted-foreground">{doc.note}</p>{/if}
-        {#if doc.erreur}<p class="mt-1 text-sm text-destructive" role="alert">{doc.erreur}</p>{/if}
-        <p class="mt-2 text-sm text-muted-foreground">Relue chaque jour depuis la publication « derniere » du dépôt d'Atlas ; un échec garde l'ancienne.</p>
+        {#if carte.etat.erreur}<p class="mt-1 text-sm text-destructive" role="alert">{carte.etat.erreur}</p>{/if}
+        <p class="mt-2 text-sm text-muted-foreground">Fabriquée depuis le coffre Obsidian à chaque envoi, relue ici toutes les heures ; GitHub injoignable, la dernière carte reste.</p>
         <div class="mt-3 flex flex-wrap items-center gap-3">
-          <Button variant="outline" onclick={relireAtlas} disabled={attenteAtlas}>{attenteAtlas ? 'Lecture…' : 'Relire Atlas maintenant'}</Button>
-          {#if doc.present}<a class="text-sm underline underline-offset-4" href="/documents/atlas.html" target="_blank" rel="noopener">Ouvrir Atlas à côté</a>{/if}
-          {#if msgAtlas}<span class="text-sm" role="status">{msgAtlas}</span>{/if}
+          <Button href="#/carte">Ouvrir la carte</Button>
+          <Button variant="outline" onclick={relireCarte} disabled={attenteCarte}>{attenteCarte ? 'Lecture…' : 'Relire la carte'}</Button>
+          {#if msgCarte}<span class="text-sm" role="status">{msgCarte}</span>{/if}
         </div>
       {/if}
     </section>

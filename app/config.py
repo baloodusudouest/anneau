@@ -19,8 +19,8 @@ class Config:
     attente_connexion: bool = True   # délai anti-essais ; coupé dans les tests
     veille: bool = True              # la sonde tourne toute seule ; coupée dans les tests
     periode: int = 60                # secondes entre deux tours de sonde
-    atlas_depot: str = ""            # 0.5 : dépôt GitHub d'Atlas (« propriétaire/atlas ») ; vide : pas d'Atlas
-    github_jeton: str = ""           # 0.5 : jeton GitHub en lecture seule sur ce dépôt (contenu), jamais montré
+    atlas_depot: str = ""            # 0.11 : dépôt GitHub de la carte de la maison (« propriétaire/atlas », réduit à carte.json) ; vide : pas de carte
+    github_jeton: str = ""           # jeton GitHub en lecture seule sur ce dépôt (contenu), jamais montré ni envoyé au navigateur
     sauvegarde_auto: bool = True     # 0.8 : collecte quotidienne des réglages des applis ; coupée dans les tests
 
 

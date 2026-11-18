@@ -6,8 +6,8 @@ Temps 1 : la vue. L'Anneau lit (une demande HTTP par service, chaque minute) et 
 et ne détient aucun jeton d'un autre service — sauf, depuis la 0.5, un jeton GitHub en lecture seule pour relire Atlas.
 
 Routes : /health (publique), /api/session, /api/connexion, /api/deconnexion, /api/etat,
-/api/pannes/vue, /api/recharger, /api/services/importer (0.6), /api/ha/etat (ouverte par le secret de Home Assistant), /api/documents,
-/documents/atlas.html (0.5, derrière la session), /externe/services (0.7, jeton commun),
+/api/pannes/vue, /api/recharger, /api/services/importer (0.6), /api/ha/etat (ouverte par le secret de Home Assistant), /api/carte,
+/api/carte (0.11 : la carte de la maison, ex-Atlas, derrière la session), /externe/services (0.7, jeton commun),
 0.8 — sauvegarde des réglages : /api/reglages, /api/restaurer, /api/sauvegardes, /api/cle-publique,
 /api/variables-chiffrees (session) ; /externe/sauvegarde, /externe/sauvegardes/{appli} (jeton commun) ;
 0.10 — la sauvegarde regroupée dans l'Anneau : /api/stack, /api/stack/fichier, /api/services/fichier (session) ;
@@ -25,10 +25,10 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import Body, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse
 import time
 
-from . import documents, maison, sauvegardes, stack
+from . import carte, maison, sauvegardes, stack
 
 from . import __version__
 from .auth import COMMUN, DUREE, Sessions, en_https
@@ -67,15 +67,16 @@ async def _ronde(veille: Veille, periode: int) -> None:
         await asyncio.sleep(periode)
 
 
-async def _relire_atlas(cfg: Config) -> None:
-    """0.5 : Atlas est relu au démarrage puis une fois par jour (le bouton de Réglages le relit tout de suite)."""
+async def _relire_carte(cfg: Config) -> None:
+    """0.11 : la carte de la maison est relue au démarrage puis toutes les heures (le bouton de Réglages la relit
+    tout de suite)."""
     while True:
         try:
-            if documents.a_relire(cfg.data, time.time()):
-                await asyncio.to_thread(documents.telecharger_atlas, cfg.data, cfg.atlas_depot, cfg.github_jeton)
+            if carte.a_relire(cfg.data, time.time()):
+                await asyncio.to_thread(carte.telecharger, cfg.data, cfg.atlas_depot, cfg.github_jeton)
         except Exception:
-            log.exception("Relecture d'Atlas interrompue")
-        await asyncio.sleep(3600)
+            log.exception("Relecture de la carte interrompue")
+        await asyncio.sleep(300)
 
 
 async def _sauvegarde_quotidienne(cfg: Config) -> None:
@@ -112,7 +113,7 @@ async def cycle(app: FastAPI):
     # et les autres applis la lisent dans /externe/services : les cookies communs d'avant ne valent plus nulle part
     maison.definir_generation_commune(_generation_commune)
     ronde = asyncio.create_task(_ronde(veille, cfg.periode)) if cfg.veille else None
-    atlas = asyncio.create_task(_relire_atlas(cfg)) if cfg.veille and cfg.atlas_depot else None
+    atlas = asyncio.create_task(_relire_carte(cfg)) if cfg.veille and cfg.atlas_depot else None
     collecte = asyncio.create_task(_sauvegarde_quotidienne(cfg)) if cfg.veille and cfg.sauvegarde_auto else None
     yield
     for t in (ronde, atlas, collecte):
@@ -497,31 +498,32 @@ def telecharger_services():
     return FileResponse(f, media_type="text/yaml; charset=utf-8", filename="services.yaml")
 
 
-# ================================================================ documents (0.5 : Atlas)
+# ================================================================ la carte de la maison (0.11 : Atlas basculé dans l'Anneau)
 
-@app.get("/api/documents")
-def lire_documents():
+def _tuiles() -> list[dict]:
+    return [{"nom": s["nom"], "cle": s["cle"], "etat": s["etat"], "famille": f["nom"]}
+            for f in ETAT["veille"].etat()["familles"] for s in f["services"]]
+
+
+def _vue_carte() -> dict:
     cfg = ETAT["cfg"]
-    return {"atlas": {**documents.etat(cfg.data), "regle": bool(cfg.atlas_depot and cfg.github_jeton)}}
+    c = carte.lire(cfg.data)
+    return {"etat": {**carte.etat(cfg.data), "regle": bool(cfg.atlas_depot and cfg.github_jeton)},
+            "carte": carte.avec_voyants(c, _tuiles()) if c else None}
 
 
-@app.post("/api/documents/atlas")
-async def relire_atlas():
-    """Relit Atlas tout de suite (bouton de Réglages)."""
+@app.get("/api/carte")
+def lire_carte():
+    """La carte (machines, quartiers, services, flux) avec le voyant de chaque tuile ; derrière la session."""
+    return _vue_carte()
+
+
+@app.post("/api/carte/relire")
+async def relire_carte():
+    """Relit la carte tout de suite (bouton de Réglages)."""
     cfg = ETAT["cfg"]
-    return {"atlas": {**await asyncio.to_thread(documents.telecharger_atlas, cfg.data, cfg.atlas_depot, cfg.github_jeton),
-                      "regle": bool(cfg.atlas_depot and cfg.github_jeton)}}
-
-
-@app.get("/documents/atlas.html")
-def atlas(request: Request):
-    """La carte de la maison : privée, donc seulement avec une session de l'Anneau (ou le cookie commun)."""
-    if not ETAT["sessions"].connecte(request.cookies):
-        return RedirectResponse("/", status_code=303)
-    f = documents.dossier(ETAT["cfg"].data) / documents.FICHIER
-    if not f.is_file():
-        return JSONResponse({"detail": "Atlas n'est pas encore là : voir Réglages › Atlas."}, status_code=404)
-    return FileResponse(f, media_type="text/html", headers={"Cache-Control": "no-cache"})
+    await asyncio.to_thread(carte.telecharger, cfg.data, cfg.atlas_depot, cfg.github_jeton)
+    return _vue_carte()
 
 
 # ================================================================ interface

@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 0.11.0 — 18 novembre 2026 (la carte de la maison, Atlas basculé)
+- **Carte de la maison dans Réglages** (décision du 18/11/2026, avis du conseil) : la carte d'Atlas (machines, quartiers, services, flux) s'ouvre par Réglages › Carte de la maison (`#/carte`). Graphe sur les écrans larges (Svelte Flow + dagre, ordre stable), liste machine › services sur téléphone. Chaque service porte le **voyant de sa tuile** (en service, en panne, éteint, sans tuile) ; filtre « En panne » ; panneau d'un service : rôle, ce qui le nourrit, ce qu'il fournit, ce qu'il échange, lien vers sa note dans le coffre Obsidian.
+- La carte est **fabriquée par le coffre** à chaque envoi (action GitHub « carte » du coffre) et poussée dans le dépôt privé d'Atlas, réduit à `carte.json`. L'Anneau la relit **toutes les heures** et sur « Relire la carte », avec le jeton en lecture seule `ANNEAU_GITHUB_JETON` (côté serveur seulement, jamais envoyé au navigateur), vérifie son format (`schema` 1, flux vers des services connus) et garde la dernière carte valide dans `/data/documents/carte.json` : GitHub ou Internet en panne, la carte reste, avec son âge.
+- Routes `/api/carte` et `/api/carte/relire` (derrière la session). **Retirés** : la page `/documents/atlas.html`, `/api/documents`, le téléchargement de la publication d'Atlas (`app/documents.py`). Variables inchangées (`ANNEAU_ATLAS_DEPOT`, `ANNEAU_GITHUB_JETON`).
+
 ## 0.10.6 — 18 novembre 2026 (cookies Secure)
 - **Cookies `Secure` en https** (audit du 17/11/2026, même correctif dans toutes les applis maison) : ouverte en https (directement, derrière Tailscale Serve qui le dit par `X-Forwarded-Proto`, ou d'après l'origine de la page), l'appli pose ses cookies de session avec l'attribut `Secure` : ils ne partent jamais en clair. En http (adresse locale), rien ne change.
 - `entrypoint.sh` refuse de lancer l'appli en root quand `/data` appartient à root (dossier créé par Docker) et dit le remède ; dépannage seulement : `MAISON_ROOT_ACCEPTE=oui`.

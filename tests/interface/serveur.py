@@ -48,11 +48,33 @@ services:
 """
 
 
+def carte_demo(data: Path) -> None:
+    """0.11 : une carte de la maison inventée, comme si le coffre l'avait envoyée (les noms suivent les tuiles)."""
+    import json
+    s = lambda i, nom, q, fam="maison", **k: {"id": i, "nom": nom, "famille": fam, "machine": "grand", "quartier": q, "stack": True,
+                                             "role": f"Rôle de {nom}.", "couleur": "#b7c0cc", **k}
+    carte = {"schema": 1, "genere_le": "2026-11-18T08:00:00+00:00", "commit": "demo1234",
+             "machines": [{"id": "grand", "nom": "Grand NAS", "detail": ""}, {"id": "dehors", "nom": "En ligne", "detail": ""}],
+             "quartiers": [{"id": "proches", "nom": "Proches"}, {"id": "photos", "nom": "Photos"}],
+             "familles": {"maison": {"nom": "Applis maison", "detail": ""}, "stockage": {"nom": "Bases", "detail": ""},
+                          "tiers": {"nom": "Services tiers", "detail": ""}},
+             "services": [s("repertoire", "Répertoire", "proches", port="8096"), s("arbre", "Arbre", "proches", fam="tiers"),
+                          s("base-arbre", "Base de l'arbre", "proches", fam="stockage"), s("phototheque", "Photothèque", "photos", fam="tiers"),
+                          s("numerisation", "Numérisation", "photos"), {**s("nuage", "Nuage", "photos", fam="tiers"), "machine": "dehors"}],
+             "flux": [{"de": "arbre", "vers": "repertoire", "nature": "donnees", "infos": ["familles"], "retour": ["noms"], "echange": True},
+                      {"de": "arbre", "vers": "base-arbre", "nature": "donnees", "infos": ["arbre"]},
+                      {"de": "numerisation", "vers": "phototheque", "nature": "donnees", "infos": ["scans datés"]},
+                      {"de": "phototheque", "vers": "nuage", "nature": "maj", "infos": ["copie"]}]}
+    (data / "documents").mkdir(parents=True, exist_ok=True)
+    (data / "documents" / "carte.json").write_text(json.dumps(carte, ensure_ascii=False), encoding="utf-8")
+
+
 def main_() -> None:
     racine, port = Path(sys.argv[1]), int(sys.argv[2])
     data = racine / "data"
     data.mkdir(parents=True, exist_ok=True)
     (data / "services.yaml").write_text(fichier(f"http://127.0.0.1:{port}"), encoding="utf-8")
+    carte_demo(data)
     morts = racine / "morts.txt"
     morts.write_text("s=calcul\n")                      # le PC de calcul est éteint, comme souvent
 

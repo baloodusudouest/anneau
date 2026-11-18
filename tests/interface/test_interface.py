@@ -414,3 +414,22 @@ def test_11_page_variables(page, monde, tmp_path):
     page.get_by_role("link", name="Revenir à l'anneau").click()
     page.locator("svg.anneau").wait_for()
 
+
+def test_12_carte_de_la_maison_depuis_les_reglages(page):
+    """0.11 : la carte (ex-Atlas) s'ouvre depuis Réglages ; graphe sur PC, liste sur iPhone ; voyants des tuiles."""
+    page.goto(page.url.split("#")[0] + "#/reglages")
+    page.get_by_role("region", name="Carte de la maison").wait_for()
+    page.get_by_role("link", name="Ouvrir la carte").click()
+    page.get_by_role("heading", name="Carte de la maison").wait_for()
+    if page.ecran == "pc":
+        page.locator(".svelte-flow__node-service").first.wait_for()
+        assert page.locator(".svelte-flow__node-service").count() == 6
+        page.locator(".svelte-flow__node-service", has_text="Arbre").first.click()
+        panneau = page.get_by_role("complementary", name="Service Arbre")
+        panneau.wait_for()
+        assert "Répertoire" in panneau.text_content()
+    else:
+        page.get_by_role("button", name=re.compile("Répertoire")).click()
+        page.get_by_text("Rôle de Répertoire.").wait_for()
+        assert page.locator("text=Grand NAS").count() >= 1
+    page.screenshot(path=f"/tmp/carte-{page.ecran}.png", full_page=False)
