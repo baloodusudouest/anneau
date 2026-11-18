@@ -7,6 +7,7 @@
   // 0.12 : une tuile « à surveiller » (orange braise) porte sa phrase écrite (tâche de fond en retard, copie vieille) ;
   //    sa fiche (« État ») détaille les tâches, la dernière copie, la version du socle, avec le bouton « Vu ».
   //    Bandeau orange en haut si la veille de l'Anneau ne tourne plus depuis 10 min.
+  // 0.13 : la fiche dit aussi la version en service et la dernière publiée, en mots (jamais d'orange pour un retard).
   import { onMount } from 'svelte'
   import { api } from '$lib/api.js'
   import { duree, secondes } from '$lib/temps.js'
@@ -57,6 +58,7 @@
   const ETATS_TACHE = { ok: 'ok', en_retard: 'en retard', bloquee: 'bloquée', jamais: 'pas encore passée', erreur: 'dernier essai en erreur' }
   const octets = (n) => (n == null ? '' : n < 1048576 ? `${Math.max(1, Math.round(n / 1024))} Ko` : `${(n / 1048576).toFixed(1).replace('.', ',')} Mo`)
   const periode = (n) => (!n ? '' : n % 86400 === 0 ? (n === 86400 ? 'chaque jour' : `tous les ${n / 86400} j`) : n % 3600 === 0 ? (n === 3600 ? 'chaque heure' : `toutes les ${n / 3600} h`) : n >= 60 ? `toutes les ${Math.round(n / 60)} min` : `toutes les ${n} s`)
+  const aFiche = (s) => !!s && (!!s.sante || !!s.version_phrase)   // 0.13 : santé des tâches ou version connue
   const etatIcone = (s, ouvert = false) => (s.etat !== 'ok' ? s.etat : s.surveiller ? 'surveiller' : ouvert ? 'sombre' : '')
   const deplier = (cle) => (ouverte = ouverte === cle ? null : cle)
   // Les services déjà ouverts dans le cadre restent chargés quand on passe à un autre ou qu'on revient à l'anneau :
@@ -122,12 +124,12 @@
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M5 7.500h6M15 7.500h4M5 16.500h3M12 16.500h7" /><circle cx="13" cy="7.500" r="2" /><circle cx="10" cy="16.500" r="2" /></svg>
       </button>
     </nav>
-    <div class="pastilles" class:avec-etat={!!leService.sante} aria-label={'Services de ' + familleDuService.nom}>
+    <div class="pastilles" class:avec-etat={aFiche(leService)} aria-label={'Services de ' + familleDuService.nom}>
       {#each familleDuService.services as s (s.cle)}
         <button type="button" aria-current={s.cle === service.cle ? 'true' : undefined} onclick={() => ouvrir(familleDuService, s)} {...milieu(s)}>
           <Icone icone={s.icone} etat={etatIcone(s, s.cle === service.cle)} />{s.nom}{#if s.surveiller}<span class="phrase-tuile">{s.phrase}</span>{:else if s.vu}<span class="vu" title="Vu : redevient orange au prochain changement">vu</span>{/if}{#if s.cle !== service.cle && gardes.some((g) => g.cle === s.cle)}<span class="garde" title="Resté ouvert"><span class="sr-only"> (resté ouvert)</span></span>{/if}</button>
       {/each}
-      {#if leService.sante}
+      {#if aFiche(leService)}
         <button type="button" class="bouton-etat" class:surveiller={leService.surveiller} aria-pressed={etatOuvert} onclick={() => (etatOuvert = !etatOuvert)}>État</button>
       {/if}
     </div>
@@ -136,10 +138,11 @@
       {#each gardes as g (g.cle + '#' + g.tour)}
         <iframe src={g.adresse} title={g.nom} class:absente={!(leService && g.cle === leService.cle && affichable(leService) && !etatOuvert)} allow="camera; fullscreen; clipboard-write"></iframe>
       {/each}
-      {#if leService && etatOuvert && leService.sante}
+      {#if leService && etatOuvert && aFiche(leService)}
         {@const sa = leService.sante}
         <div class="fiche fiche-etat" aria-label={'État de ' + leService.nom}>
           <h1 class="plume">{leService.nom}</h1>
+          {#if leService.version_phrase}<p class="version-tuile text-sm">{leService.version_phrase}</p>{/if}
           {#if leService.surveiller}
             <ul class="defauts">{#each leService.defauts as d (d.cle)}<li>{d.phrase}</li>{/each}</ul>
             <Button onclick={() => marquerVu(leService)}>Vu</Button>
@@ -148,6 +151,7 @@
             <ul class="defauts vus">{#each leService.defauts as d (d.cle)}<li>{d.phrase}</li>{/each}</ul>
             <p class="text-sm text-muted-foreground">Vu : la tuile redeviendra orange si autre chose casse.</p>
           {/if}
+          {#if sa}
           <table class="taches">
             <caption class="etiquette">Tâches de fond</caption>
             <tbody>
@@ -168,10 +172,12 @@
             {#if !sa.copie_base}aucune base à copier{:else if !sa.copie_base.le}pas encore faite{:else}{sa.copie_base.ok ? 'faite' : 'ratée'} il y a {duree(sa.copie_base.le, tic)}{sa.copie_base.bases.length ? ' · ' + sa.copie_base.bases.join(', ') : ''}{sa.copie_base.taille ? ' · ' + octets(sa.copie_base.taille) : ''}{/if}
           </p>
           <p class="text-sm text-muted-foreground">Socle {sa.version_socle || 'inconnu'} · lu il y a {duree(sa.lu_le, tic)}</p>
+          {/if}
         </div>
       {:else if leService && !affichable(leService)}
         <div class="fiche">
           <h1 class="plume" class:panne={leService.etat === 'panne'}>{leService.nom}</h1>
+          {#if leService.version_phrase}<p class="version-tuile text-sm">{leService.version_phrase}</p>{/if}
           <p role="status">{leService.nom} {PHRASES[leService.etat]}{leService.depuis ? ` depuis ${duree(leService.depuis, tic)}` : ''}{leService.etat === 'ok' && leService.delai != null ? ` · réponse en ${leService.delai} ms` : ''}.</p>
           {#if leService.machine_en_panne}<p class="text-sm text-muted-foreground">{leService.machine} ne répond plus : c'est lui qui est en panne.</p>{/if}
           <Button onclick={() => dehors(leService)}>Ouvrir {leService.nom}</Button>

@@ -1,5 +1,15 @@
 # Journal des versions
 
+## 0.13.0 — 18 novembre 2026 (versions et nouveautés de la nuit)
+- **Versions publiées** (E1) : nouvelle tâche régulière horaire `versions-publiees` (registre `maison.TACHES`) qui lit les étiquettes Git de chaque dépôt donné par le nouveau champ de tuile `depot:` (ex. `depot: carnet`), sur l'API publique de GitHub, sans jeton, et garde la plus haute étiquette `v<semver>`. Dernière lecture gardée dans `/data/versions.json` ; GitHub injoignable ou limite atteinte (403/429) : l'ancienne reste, seule la tâche passe en erreur.
+- **Version en service** : lue dans le `/health` (`version`) comme avant ; pour une tuile tierce, nouveau champ `version_url:` (Immich : `/api/server/version`, `{"major", "minor", "patch"}` → « 3.x.y » ; accepte aussi `{"version": "…"}`), lu sans jeton.
+- **Fiche de la tuile** : « Version 0.12.0 — dernière publiée 0.12.0 (à jour) » ou « … dernière publiée 0.13.0 : pas encore en service » ; jamais d'orange pour un retard. Le bouton « État » apparaît aussi pour une tuile dont on ne connaît que la version.
+- **Réglages › Versions** : tableau tuile, en service, dernière publiée, mise à jour le.
+- **Journal des changements de version** : la veille ajoute chaque changement vu (tuile, de, vers, le) à `/data/journal-versions.json`, 200 entrées au plus ; la dernière version connue de chaque tuile est gardée dans `versions-en-service.json`, pour voir un changement fait pendant que l'Anneau redémarrait (Watchtower le met à jour aussi).
+- **Fenêtre « Mis à jour depuis votre dernière visite »** à l'ouverture de l'Anneau (après une connexion, ou premier chargement avec une session valide) quand des versions ont changé depuis le dernier « Vu » : « carnet 2.32.0 → 2.33.0 (cette nuit, 05:04) ». « Vu » enregistre l'heure côté Anneau (`versions-vues.json`), pas par navigateur. Routes `GET /api/versions`, `GET /api/versions/nouveautes`, `POST /api/versions/vues` (session).
+- Tests : 119 (dont 12 dans `test_versions.py`) et 37 tests d'écran (2 de plus : PC et iPhone).
+- La mise à jour de l'Anneau lui-même entre aussi au journal (au démarrage), même sans tuile qui le sonde.
+
 ## 0.12.0 — 18 novembre 2026 (santé des tâches de fond)
 - **Tuile « à surveiller »** (orange braise, distincte de « en panne ») : la veille lit en plus `taches`, `copie_base` et `version_socle` dans le `/health` des applis (socle 0.9.1). Orange si une tâche régulière est « en retard » ou « bloquée », ou si la copie des bases a raté ou a plus de 36 h ; une tâche à la demande ne rend jamais orange ; une appli sans ces champs ne change rien. La phrase (« synchro-icloud n'a pas réussi depuis 3 h ») est écrite sur la pastille de la tuile et dans le nouveau rang « À surveiller » ; sur l'anneau, « à surveiller » au-dessus du nom.
 - **Fiche « État »** d'une tuile (vue réduite, bouton « État », ou « Voir » du rang) : chaque tâche (période, état, dernière réussite, dernière erreur et son message), la dernière copie des bases, la version du socle.

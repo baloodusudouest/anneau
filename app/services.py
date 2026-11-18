@@ -17,6 +17,8 @@ from urllib.parse import urlsplit
 
 import yaml
 
+from .versions import DEPOT_VALIDE
+
 EXEMPLE = Path(__file__).parent / "services.exemple.yaml"
 NOM = "services.yaml"
 PRECEDENT = "services.precedent.yaml"     # 0.6 : le fichier d'avant le dernier import, gardé en secours
@@ -47,6 +49,8 @@ class Service:
     arret_attendu: bool = False  # un service qu'on éteint exprès (PC de calcul) n'est jamais « en panne »
     sauvegarde: bool | None = None  # 0.11.2 : « sauvegarde: true » désigne une appli maison à collecter ; « false » l'exclut ;
                                     # vide : collectée si sa sonde finit par /health, tant qu'aucune tuile ne porte « true » (ancien fichier)
+    depot: str = ""             # 0.13 : dépôt GitHub de l'appli (« carnet ») : sa dernière version publiée est lue dans ses étiquettes
+    version_url: str = ""       # 0.13 : tuile tierce : adresse qui rend sa version (Immich : /api/server/version), lue sans jeton
 
     @property
     def a_sonder(self) -> str:
@@ -122,6 +126,15 @@ def _sauvegarde(v) -> bool | None:
     if isinstance(v, str) and v.strip().lower() in ("non", "false", "no"):
         return False
     return None
+
+
+def _depot(valeur, nom: str, erreurs: list[str]) -> str:
+    """0.13 : « depot: carnet » — le nom d'un dépôt GitHub (lettres, chiffres, point, tiret, souligné)."""
+    v = str(valeur or "").strip()
+    if v and (not DEPOT_VALIDE.match(v) or v in (".", "..")):
+        erreurs.append(f"{nom} : dépôt « {v} » invalide (lettres, chiffres, « . », « - », « _ »), ignoré.")
+        return ""
+    return v
 
 
 def _cadre(valeur) -> bool | None:
@@ -214,7 +227,9 @@ def comprendre(texte: str, exemple: bool = False, modifie_le: str = "") -> Fichi
                                 privee=_adresse(s.get("privee"), nom, erreurs), sonde=_adresse(s.get("sonde"), nom, erreurs),
                                 icone=str(s.get("icone", "")).strip(), cadre=_cadre(s.get("cadre")),
                                 machine=machine, arret_attendu=bool(s.get("arret_attendu", False)),
-                                sauvegarde=_sauvegarde(s.get("sauvegarde"))))
+                                sauvegarde=_sauvegarde(s.get("sauvegarde")),
+                                depot=_depot(s.get("depot"), nom, erreurs),
+                                version_url=_adresse(s.get("version_url"), f"{nom} (version_url)", erreurs)))
     reglages = brut.get("reglages") or {}
     try:
         seuil = float(reglages.get("seuil_disque", 99.8))

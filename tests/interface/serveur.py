@@ -8,7 +8,9 @@ La ronde tourne toutes les demi-secondes pour que les tests n'attendent pas.
 l'Anneau ne sauvegardant que lui-même.
 0.12 : <dossier>/sante.json ({morceau d'adresse: corps du /health}) donne la santé des tâches de fond des tuiles ;
 <dossier>/arret.txt fait échouer chaque tour de veille et <dossier>/avance.txt avance l'horloge de la veille
-(en secondes) : ensemble, ils simulent une veille arrêtée depuis plus de 10 min."""
+(en secondes) : ensemble, ils simulent une veille arrêtée depuis plus de 10 min.
+0.13 : Répertoire et Arbre ont un `depot:` ; un faux GitHub (jamais le vrai) rend leurs étiquettes. La version en service
+se donne par le champ `version` de leur corps dans sante.json."""
 from __future__ import annotations
 
 import json
@@ -16,6 +18,7 @@ import sys
 import time
 from pathlib import Path
 
+import httpx
 import uvicorn
 
 from app import main, services
@@ -38,8 +41,8 @@ familles:
 machines:
   - {{ nom: Grand NAS, sonde: "{base}/health?machine=grand", famille: Machines }}
 services:
-  - {{ nom: Répertoire, famille: Proches, locale: "{base}/health?s=repertoire", sonde: "{base}/health?s=repertoire", icone: carnet, machine: Grand NAS }}
-  - {{ nom: Arbre, famille: Proches, locale: "{base}/health?s=arbre", sonde: "{base}/health?s=arbre", icone: arbre, machine: Grand NAS }}
+  - {{ nom: Répertoire, famille: Proches, locale: "{base}/health?s=repertoire", sonde: "{base}/health?s=repertoire", icone: carnet, machine: Grand NAS, depot: repertoire }}
+  - {{ nom: Arbre, famille: Proches, locale: "{base}/health?s=arbre", sonde: "{base}/health?s=arbre", icone: arbre, machine: Grand NAS, depot: arbre }}
   - {{ nom: Photothèque, famille: Photos, locale: "{base}/health?s=phototheque", icone: soleil, machine: Grand NAS }}
   - {{ nom: Numérisation, famille: Photos, locale: "{base}/health?s=numerisation", icone: numerisation, machine: Grand NAS }}
   - {{ nom: Cinéma, famille: Médias, locale: "{base}/health?s=cinema", icone: disque }}
@@ -72,6 +75,15 @@ def carte_demo(data: Path) -> None:
                       {"de": "phototheque", "vers": "nuage", "nature": "maj", "infos": ["copie"]}]}
     (data / "documents").mkdir(parents=True, exist_ok=True)
     (data / "documents" / "carte.json").write_text(json.dumps(carte, ensure_ascii=False), encoding="utf-8")
+
+
+ETIQUETTES = {"repertoire": ["v2.39.0", "v2.40.0", "latest"], "arbre": ["v3.0.0", "v9.0.0", "v9.0.0-rc1", "essai"]}
+
+
+def faux_github(req: httpx.Request) -> httpx.Response:
+    """0.13 : les étiquettes des dépôts inventés ; rien ne part vers le vrai GitHub."""
+    depot = req.url.path.split("/")[3]
+    return httpx.Response(200, json=[{"name": n} for n in ETIQUETTES[depot]]) if depot in ETIQUETTES else httpx.Response(404)
 
 
 def main_() -> None:
@@ -112,7 +124,8 @@ def main_() -> None:
     cfg = Config(password=MDP, data=data, static=Path(__file__).resolve().parents[2] / "app" / "static", secret_ha=SECRET,
                  attente_connexion=False, periode=0.5, sauvegarde_auto=False)   # la collecte se lance par le bouton
     main.ETAT.update(cfg=cfg, veille=VeilleDemo(data, services.lire(data / "services.yaml"), ha_attendu=False, sonder=sonder,
-                                                examiner=examiner, horloge=horloge))
+                                                examiner=examiner, horloge=horloge),
+                     transport_versions=httpx.MockTransport(faux_github))
     uvicorn.run(main.app, host="127.0.0.1", port=port, log_level="warning")
 
 

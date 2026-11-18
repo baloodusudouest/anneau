@@ -16,6 +16,10 @@ le NAS qui l'héberge est presque plein, il ne garde aucun historique de sondes.
 voir sante.py) ; une tuile peut être « à surveiller » (orange), jamais comptée comme en panne. Le jeton commun part
 avec la sonde des seules tuiles « sauvegarde: true » (les applis maison), jamais ailleurs. La veille note l'heure de sa
 dernière boucle : au-delà de 10 min, l'écran dit qu'elle est arrêtée. Troisième petit fichier : vus.json (« Vu »).
+
+0.13 (versions) : la version en service d'une tuile est lue dans son /health (`version`) ou, pour une tuile tierce, à son
+adresse `version_url:` (sans jeton) ; un changement est ajouté au journal des versions (versions.py). La dernière
+version publiée (tâche « versions-publiees ») est jointe à chaque tuile qui a un `depot:` ; jamais d'orange pour un retard.
 """
 from __future__ import annotations
 
@@ -32,7 +36,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
-from . import maison, sante
+from . import maison, sante, versions
 from .sauvegardes import base as base_maison
 from .services import Fichier, cle
 
@@ -121,13 +125,18 @@ class Veille:
                  horloge: Callable[[], float] = time.monotonic,
                  examiner: Callable[[str], Awaitable[str | None]] = examiner,
                  jeton: Callable[[], str] = maison.jeton_a_envoyer,
-                 instant: Callable[[], datetime] = lambda: datetime.now().astimezone()):
+                 instant: Callable[[], datetime] = lambda: datetime.now().astimezone(),
+                 versionner: Callable[[str], Awaitable[str | None]] = versions.lire_version_url):
         self.data, self.fichier, self.ha_attendu = data, fichier, ha_attendu
         self._sonder, self._horloge, self._examiner = sonder, horloge, examiner
         self._jeton, self._instant = jeton, instant          # 0.12 : jeton commun (applis maison), heure murale
         self._sonder_jeton = _accepte_jeton(sonder)
         self.sante: dict[str, dict] = {}        # 0.12 : clé de service → santé lue dans son /health (sante.lire)
         self.vus = sante.Vus(data)              # 0.12 : les « Vu » des tuiles orange
+        self._versionner = versionner           # 0.13 : lit la version_url d'une tuile tierce
+        self.versions = versions.EnService(data)   # 0.13 : versions en service et journal des changements
+        from . import __version__ as _moi           # 0.13 : la mise à jour de l'Anneau lui-même entre aussi au journal
+        self.versions.noter("@anneau", "L'Anneau", _moi)
         self.refus: dict[str, str] = {}         # adresse → raison pour laquelle le service interdit le cadre (vide : il l'accepte)
         self._tours = 0
         self.suivi: dict[str, dict] = {}        # clé de sonde → échecs, réussites, état, depuis, délai
@@ -226,6 +235,7 @@ class Veille:
         cibles = [("machine:" + m.cle, m.sonde, False, "") for m in f.machines if m.sonde] \
             + [("service:" + s.cle, s.a_sonder, s.arret_attendu, self._jeton_pour(s)) for s in f.services]
         resultats = await asyncio.gather(*(self._sonde(adresse, j) for _, adresse, _, j in cibles), return_exceptions=True)
+        lues = {}                                                           # 0.13 : clé de tuile → version lue ce tour-ci
         for (c, _, attendu, _), r in zip(cibles, resultats):
             r = (False, None) if isinstance(r, BaseException) else tuple(r)   # 0.10.2 : une sonde en erreur ne prive pas les autres
             vivant, delai = r[0], r[1]
@@ -236,6 +246,8 @@ class Veille:
                     self.sante.pop(c[len("service:"):], None)               # appli sans ces champs : rien ne change
                 else:
                     self.sante[c[len("service:"):]] = {**lue, "lu_le": maintenant()}
+                lues[c[len("service:"):]] = versions.version_lue(r[2])
+        await self._versions(lues)
         connues = {s.cle for s in f.services}
         for k in [k for k in self.sante if k not in connues]:
             del self.sante[k]
@@ -246,6 +258,33 @@ class Veille:
         t = self._instant()
         self.vus.menage({k: emp for k in connues if (emp := sante.empreinte(sante.defauts(self.sante.get(k), t)))})
         self.boucle_a, self.boucle_le = self._horloge(), maintenant()
+
+    # ------------------------------------------------------------ versions (0.13)
+    async def _versions(self, lues: dict[str, str | None]) -> None:
+        """Version en service de chaque tuile vivante : sa version_url si elle en a une, sinon son /health.
+        Un changement va au journal (une seule fois : la nouvelle version devient la connue)."""
+        vivantes = {s.cle: s for s in self.fichier.services if self.suivi.get("service:" + s.cle, {}).get("etat") == "ok"}
+        a_lire = [s for s in vivantes.values() if s.version_url]
+        for s, v in zip(a_lire, await asyncio.gather(*(self._versionner(s.version_url) for s in a_lire), return_exceptions=True)):
+            lues[s.cle] = None if isinstance(v, BaseException) else versions.nettoyer(v)
+        for k, s in vivantes.items():
+            entree = self.versions.noter(k, s.nom, lues.get(k))
+            if entree:
+                log.info("%s : %s → %s", s.nom, entree["de"], entree["vers"])
+        self.versions.oublier_sauf({s.cle for s in self.fichier.services})
+
+    def versions_des_tuiles(self) -> list[dict]:
+        """Pour Réglages › Versions et la fiche : en service, dernière publiée, mise à jour le."""
+        depots = versions.publiees(self.data)["depots"]
+        sortie = []
+        for s in self.fichier.services:
+            en_service = self.versions.version(s.cle)
+            publiee = (depots.get(s.depot) or {}).get("version") if s.depot else None
+            sortie.append({"nom": s.nom, "cle": s.cle, "famille": s.famille, "depot": s.depot, "version": en_service,
+                           "publiee": publiee, "a_jour": versions.a_jour(en_service, publiee),
+                           "mise_a_jour_le": self.versions.mise_a_jour_le(s.cle),
+                           "phrase": versions.phrase(en_service, publiee)})
+        return sortie
 
     # ------------------------------------------------------------ « à surveiller » (0.12)
     def defauts(self, cle_service: str) -> list[dict]:
@@ -390,6 +429,7 @@ class Veille:
         f = self.fichier
         t = self._instant()
         en_panne = {m.nom for m in f.machines if self.suivi.get("machine:" + m.cle, {}).get("etat") == "panne"}
+        vers = {v["cle"]: v for v in self.versions_des_tuiles()}      # 0.13
         familles = []
         for fam in f.familles:
             services = []
@@ -406,7 +446,10 @@ class Veille:
                     "machine": s.machine, "machine_en_panne": s.machine in en_panne,
                     # 0.12 : santé des tâches de fond ; « surveiller » = orange, la phrase s'écrit sur la tuile
                     "sante": self.sante.get(s.cle), "defauts": d, "surveiller": orange, "vu": bool(d) and vu,
-                    "phrase": sante.phrase(d) if orange else ""})
+                    "phrase": sante.phrase(d) if orange else "",
+                    # 0.13 : versions (dites en mots dans la fiche, jamais en couleur)
+                    "version": vers[s.cle]["version"], "version_publiee": vers[s.cle]["publiee"],
+                    "a_jour": vers[s.cle]["a_jour"], "version_phrase": vers[s.cle]["phrase"]})
             etats = {x["etat"] for x in services}
             familles.append({**fam, "services": services,
                              "etat": "panne" if "panne" in etats else "ok" if etats & {"ok", "eteint"} else "inconnu"})

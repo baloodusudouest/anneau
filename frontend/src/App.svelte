@@ -9,6 +9,7 @@
   import Sauvegardes from './pages/Sauvegardes.svelte'
   import Variables from './pages/Variables.svelte'
   import Carte from './pages/Carte.svelte'
+  import Nouveautes from '$lib/Nouveautes.svelte'
 
   let connecte = $state(null) // null : on ne sait pas encore
   let session = $state({ version: '' })
@@ -43,4 +44,7 @@
   {:else}
     <Anneau ondeconnecte={() => (connecte = false)} onreglages={() => (location.hash = '#/reglages')} />
   {/if}
+  <!-- 0.13 : à l'ouverture (après une connexion, ou premier chargement avec une session valide), ce qui a été mis à jour
+       depuis le dernier « Vu » ; montée une seule fois par ouverture, pas à chaque changement de page -->
+  <Nouveautes />
 {/if}

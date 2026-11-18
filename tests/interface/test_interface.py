@@ -549,3 +549,71 @@ def test_14_bandeau_veille_de_l_anneau_arretee(page, monde):
             return
         time.sleep(0.4)
     pytest.fail("Le bandeau de veille arrêtée ne s'est pas effacé.")
+
+
+def _api(page, chemin):
+    return page.evaluate("c => fetch(c, { credentials: 'same-origin' }).then(r => r.json())", chemin)
+
+
+def _attendre(page, condition, quoi):
+    for _ in range(60):
+        if condition():
+            return
+        time.sleep(0.25)
+    pytest.fail(quoi)
+
+
+def test_15_nouveautes_de_la_nuit_puis_vu_et_section_versions(page, monde):
+    """0.13 : la veille voit la version d'une tuile changer ; à l'ouverture suivante, la fenêtre « Mis à jour depuis votre
+    dernière visite » le dit, et disparaît après « Vu » (PC et iPhone). Réglages › Versions et la fiche disent le retard
+    en mots, sans orange."""
+    page.goto(page.url.split("#")[0] + "#/")
+    page.locator("svg.anneau").wait_for()
+    avant, apres = ("3.1.0", "3.2.0") if page.ecran == "pc" else ("3.5.0", "3.6.0")   # serveur partagé par les deux écrans
+    fichier = monde[1] / "sante.json"
+
+    def version_arbre(v):
+        corps = json.loads(fichier.read_text(encoding="utf-8")) if fichier.is_file() else {}
+        corps["s=arbre"] = {"ok": True, "version": v}
+        fichier.write_text(json.dumps(corps), encoding="utf-8")
+
+    version_arbre(avant)
+    _attendre(page, lambda: any(t["nom"] == "Arbre" and t["version"] == avant for t in _api(page, "/api/versions")["tuiles"]),
+              "La veille n'a pas lu la version d'Arbre.")
+    version_arbre(apres)
+    _attendre(page, lambda: any(c["tuile"] == "Arbre" and c["vers"] == apres for c in _api(page, "/api/versions/nouveautes")["changements"]),
+              "Le changement de version d'Arbre n'est pas au journal.")
+    # nouvelle ouverture de l'Anneau : la fenêtre
+    page.reload()
+    fenetre = page.get_by_role("dialog", name="Mis à jour depuis votre dernière visite")
+    fenetre.wait_for()
+    texte = fenetre.inner_text()
+    assert "Arbre" in texte and f"→ {apres}" in texte and re.search(r"\((cette nuit|aujourd'hui|hier|le \d\d/\d\d), \d\d:\d\d\)", texte)
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.screenshot(path=f"/tmp/nouveautes-{page.ecran}.png")
+    fenetre.get_by_role("button", name="Vu", exact=True).click()
+    fenetre.wait_for(state="detached")
+    page.reload()
+    page.locator("svg.anneau").wait_for()
+    time.sleep(0.5)
+    assert page.get_by_role("dialog").count() == 0                       # vu : plus rien à la réouverture
+    # Réglages › Versions
+    page.goto(page.url.split("#")[0] + "#/reglages")
+    section = page.get_by_role("region", name="Versions")
+    section.get_by_role("row", name=re.compile("Arbre")).wait_for()
+    ligne = section.get_by_role("row", name=re.compile("Arbre")).inner_text()
+    assert apres in ligne and "9.0.0" in ligne and "pas encore en service" in ligne
+    assert "2.40.0" in section.get_by_role("row", name=re.compile("Répertoire")).inner_text()
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    # la fiche de la tuile : le retard en mots, jamais d'orange
+    page.goto(page.url.split("#")[0] + "#/")
+    page.locator("svg.anneau").wait_for()
+    assert page.get_by_role("region", name="À surveiller").count() == 0
+    ouvrir_service(page, "Proches", "Arbre")
+    bouton = page.get_by_role("button", name="État", exact=True)
+    assert "surveiller" not in (bouton.get_attribute("class") or "")
+    bouton.click()
+    fiche = page.locator(".fiche-etat")
+    fiche.wait_for()
+    assert f"Version {apres} — dernière publiée 9.0.0 : pas encore en service" in fiche.inner_text()
+    page.get_by_role("button", name="Revenir à l'anneau").click()

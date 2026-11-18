@@ -14,6 +14,8 @@ Routes : /health (publique), /api/session, /api/connexion, /api/deconnexion, /ap
 0.12 — santé des tâches de fond : /health rend aussi version_socle, taches (veille, collecte de nuit, relecture de la
 carte ; messages seulement avec le jeton commun ou une session) et copie_base (null : l'Anneau n'a pas de base) ;
 /api/sante/vu (session) ;
+0.13 — versions et nouveautés de la nuit : tâche « versions-publiees » (étiquettes GitHub, chaque heure) ; /api/versions,
+/api/versions/nouveautes, /api/versions/vues (session) ;
 puis l'interface. Le chiffrement et le déchiffrement de l'export des variables se font dans la page (HTTPS seulement) :
 le serveur ne reçoit jamais que la clé publique et du texte déjà chiffré.
 """
@@ -31,7 +33,7 @@ from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 import time
 
-from . import carte, maison, sauvegardes, stack
+from . import carte, maison, sauvegardes, stack, versions
 
 from . import __version__
 from .auth import COMMUN, DUREE, Sessions, en_https
@@ -65,6 +67,7 @@ def _lire_generation(cfg: Config) -> int:
 # Registre commun du socle 0.9.0 (maison.TACHES). Écrit contre son API ; tant que le maison.py diffusé est plus ancien,
 # l'Anneau tourne comme avant et son /health n'a pas de tâches.
 TACHE_VEILLE, TACHE_COLLECTE, TACHE_CARTE = "veille", "collecte-de-nuit", "relecture-de-la-carte"
+TACHE_VERSIONS = "versions-publiees"          # 0.13
 
 
 def _registre():
@@ -92,6 +95,7 @@ def _declarer(cfg: Config) -> None:
             r.declarer(TACHE_COLLECTE, periode_s=86400, type="reguliere")
         if cfg.atlas_depot:
             r.declarer(TACHE_CARTE, periode_s=3600, type="reguliere")
+        r.declarer(TACHE_VERSIONS, periode_s=versions.HEURE, type="reguliere")
 
 
 async def _ronde(veille: Veille, periode: int) -> None:
@@ -116,6 +120,23 @@ async def _relire_carte(cfg: Config) -> None:
                         raise RuntimeError(e["erreur"])
         except Exception:
             log.exception("Relecture de la carte interrompue")
+        await asyncio.sleep(300)
+
+
+async def _versions_publiees(cfg: Config) -> None:
+    """0.13 : la dernière version publiée de chaque tuile qui a un `depot:`, relue toutes les heures (étiquettes Git,
+    API publique de GitHub, sans jeton). GitHub injoignable ou limite atteinte : l'ancienne lecture reste et seule la
+    tâche passe en erreur (rien d'autre à l'écran)."""
+    while True:
+        try:
+            if versions.a_relire(cfg.data, time.time()):
+                async with _tour(TACHE_VERSIONS):
+                    depots = [s.depot for s in ETAT["veille"].fichier.services if s.depot]
+                    e = await asyncio.to_thread(versions.relire, cfg.data, depots, ETAT.get("transport_versions"))
+                    if e.get("erreur"):
+                        raise RuntimeError(e["erreur"])
+        except Exception:
+            log.exception("Lecture des versions publiées interrompue")
         await asyncio.sleep(300)
 
 
@@ -159,8 +180,9 @@ async def cycle(app: FastAPI):
     ronde = asyncio.create_task(_ronde(veille, cfg.periode)) if cfg.veille else None
     atlas = asyncio.create_task(_relire_carte(cfg)) if cfg.veille and cfg.atlas_depot else None
     collecte = asyncio.create_task(_sauvegarde_quotidienne(cfg)) if cfg.veille and cfg.sauvegarde_auto else None
+    publiees = asyncio.create_task(_versions_publiees(cfg)) if cfg.veille else None
     yield
-    for t in (ronde, atlas, collecte):
+    for t in (ronde, atlas, collecte, publiees):
         if t:
             t.cancel()
             with suppress(asyncio.CancelledError):
@@ -294,6 +316,29 @@ def sante_vue(corps: dict = Body(...)):
     if not ETAT["veille"].marquer_vu(str(corps.get("cle", ""))):
         raise HTTPException(404, "Cette tuile n'a rien à surveiller.")
     return {"ok": True}
+
+
+# ================================================================ versions (0.13)
+
+@app.get("/api/versions")
+def lire_versions():
+    """Réglages › Versions : les tuiles dont on connaît une version (en service ou publiée)."""
+    tuiles = [t for t in ETAT["veille"].versions_des_tuiles() if t["version"] or t["depot"]]
+    return {"tuiles": tuiles, "publiees_lues_le": versions.publiees(ETAT["cfg"].data)["essaye_le"]}
+
+
+@app.get("/api/versions/nouveautes")
+def nouveautes():
+    """Ce qui a changé de version depuis le dernier « Vu » (une heure pour l'Anneau, pas par navigateur)."""
+    vu = versions.vu_le(ETAT["cfg"].data)
+    return {"vu_le": vu, "changements": ETAT["veille"].versions.depuis(vu)}
+
+
+@app.post("/api/versions/vues")
+def nouveautes_vues(corps: dict = Body(default={})):
+    """« Vu » sur la fenêtre des nouveautés : jusqu'au plus récent changement montré (`jusqu_a`), sinon maintenant."""
+    jusqu_a = corps.get("jusqu_a") if isinstance(corps, dict) else None
+    return {"vu_le": versions.marquer_vu(ETAT["cfg"].data, jusqu_a if isinstance(jusqu_a, str) else None)}
 
 
 async def _adopter(veille: Veille, fichier) -> dict:

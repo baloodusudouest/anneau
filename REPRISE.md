@@ -4,6 +4,13 @@ Fichier à lire en premier dans une nouvelle session, et à mettre à jour à ch
 
 ## État (18/11/2026)
 
+- **0.13.0** (18/11/2026) : versions et nouveautés de la nuit (E1 ; décisions de Julien du 18/11 après grill et conseil ; Watchtower met tout à jour chaque nuit à 05:00).
+  - `app/versions.py` : `lire_depot`/`plus_haute` (étiquettes `v<semver>` de `baloodusudouest/<depot>`, API publique sans jeton, 403/429/injoignable → `Injoignable`), `relire` (`versions.json`, ancienne lecture gardée), `version_lue` (`{"version"}` ou Immich `{"major","minor","patch"}`), `lire_version_url`, `EnService` (`versions-en-service.json` + `journal-versions.json`, 200 entrées, `depuis()` fusionne par tuile), `vu_le`/`marquer_vu` (`versions-vues.json`, ne recule jamais), `phrase`, `a_jour`.
+  - `app/services.py` : champs de tuile `depot:` (validé `[A-Za-z0-9._-]+`, ni `.` ni `..`) et `version_url:` ; une valeur fausse est signalée et ignorée, la tuile reste.
+  - `app/veille.py` : `_versions()` à chaque tour (tuiles « ok » seulement ; `versionner` injectable), `versions_des_tuiles()` ; `etat()` rend par service `version`, `version_publiee`, `a_jour`, `version_phrase` (jamais `surveiller` pour un retard).
+  - `app/main.py` : tâche `versions-publiees` (déclarée dans `maison.TACHES`, regardée toutes les 5 min, lancée si la dernière lecture a plus d'une heure ; `ETAT["transport_versions"]` pour un faux GitHub) ; routes `/api/versions`, `/api/versions/nouveautes`, `/api/versions/vues`.
+  - Écran : `lib/Nouveautes.svelte` (montée dans `App.svelte` une fois par ouverture connectée), ligne de version dans la fiche « État » (`.version-tuile`, bouton « État » aussi sans santé), section « Versions » de Réglages.
+  - **Jamais essayé sur la vraie installation** : l'API GitHub depuis le conteneur (proxy, limite de 60 demandes/h par adresse sans jeton : une par dépôt et par heure), le vrai `/api/server/version` d'Immich (sans jeton : à vérifier qu'il ne demande pas de clé), la fenêtre après une vraie nuit de Watchtower. Les champs `depot:` et `version_url:` ne sont pas encore dans la note « Tuiles de l'Anneau » du coffre.
 - **0.12.0** (18/11/2026) : santé des tâches de fond (E2 ; dossier et conseil « santé et copies » du 18/11).
   - `app/sante.py` : `lire` (nettoie `taches`, `copie_base`, `version_socle` du /health), `defauts` (règle de l'orange), `phrase`, `empreinte`, `Vus` (`vus.json`).
   - `app/veille.py` : sonde `repond_avec_sante` (JSON du /health, jeton commun seulement pour `sauvegarde: true` + sonde /health : `_jeton_pour`) ; une fausse sonde sans paramètre `jeton` marche encore (`_accepte_jeton`) ; `Veille.sante`, `marquer_vu`, `veille_anneau()` (`boucle_a`, 10 min) ; `etat()` rend par service `sante`, `defauts`, `surveiller`, `vu`, `phrase`, et au total `surveiller`, `veille`.
@@ -88,5 +95,5 @@ Fichier à lire en premier dans une nouvelle session, et à mettre à jour à ch
 
 - Un service mort derrière une page de connexion qui répond encore reste « or ».
 - La sonde ne teste que l'adresse locale, pas celle du réseau privé.
-- Pas de version claire.
+- Pas de version claire. (0.13 : version en service et dernière publiée dans la fiche et Réglages › Versions, pour les tuiles qui ont un `/health` avec `version`, un `version_url:` ou un `depot:`.)
 - Les notifications sont préparées (réponse de `/api/ha/etat`) mais rien n'est branché côté Home Assistant.

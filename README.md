@@ -9,7 +9,7 @@ Depuis la 0.8 : **la sauvegarde des réglages** des applis maison (voir plus bas
 ## Mise en place
 
 1. Ajouter le service de [`docker-compose.yml`](docker-compose.yml) à la stack, avec les variables de [`.env.example`](.env.example).
-2. Écrire `services.yaml` sur le modèle de [`app/services.exemple.yaml`](app/services.exemple.yaml) : familles, machines, services (adresse locale, adresse du réseau privé, icône ; `cadre: false` pour un service qui doit toujours s'ouvrir à côté). Sans ce fichier, l'Anneau montre l'exemple.
+2. Écrire `services.yaml` sur le modèle de [`app/services.exemple.yaml`](app/services.exemple.yaml) : familles, machines, services (adresse locale, adresse du réseau privé, icône ; `cadre: false` pour un service qui doit toujours s'ouvrir à côté ; `depot:` et `version_url:` pour les versions, voir plus bas). Sans ce fichier, l'Anneau montre l'exemple.
 3. Ouvrir `http://<NAS>:8094`, se connecter avec le mot de passe commun, puis Réglages › « Importer un fichier » (ou poser le fichier dans le dossier de données, puis « Recharger le fichier »).
 
 ## Variables
@@ -45,6 +45,29 @@ La veille lit la réponse JSON de chaque sonde `/health`. Une appli maison à jo
 - Fiche « État » (bouton de la vue réduite, ou « Voir » du rang) : chaque tâche, la dernière copie, la version du socle. Bouton **« Vu »** (`POST /api/sante/vu`, session) : l'empreinte des défauts est gardée dans `vus.json` ; la tuile n'est plus orange tant qu'elle ne change pas (petit signe « vu »), et le « vu » est oublié dès que la tuile n'a plus de défaut ou que ses défauts changent.
 - L'Anneau se surveille : sans boucle de veille finie depuis 10 min, bandeau orange « La veille de l'Anneau est arrêtée depuis … » (calculé par le serveur, et par le navigateur si l'API ne répond plus).
 - `/health` de l'Anneau : `version_socle`, `taches` (`veille`, `collecte-de-nuit`, `relecture-de-la-carte`, registre `maison.TACHES` ; messages seulement avec le jeton commun ou une session), `copie_base: null` (pas de base SQLite). Un seul worker uvicorn (registre en mémoire).
+
+## Versions et nouveautés de la nuit (0.13)
+
+Watchtower met à jour tous les conteneurs chaque nuit à 05:00. L'Anneau dit, pour chaque tuile, la version en service et la dernière publiée, et montre à l'ouverture ce qui a changé depuis la dernière visite.
+
+Deux champs facultatifs de tuile dans `services.yaml` :
+
+| Champ | Rôle |
+|---|---|
+| `depot:` | nom du dépôt GitHub de l'appli sous `baloodusudouest` (ex. `depot: carnet`, `depot: Millesime` ; lettres, chiffres, `.`, `-`, `_`). La tâche **`versions-publiees`** (chaque heure) lit `https://api.github.com/repos/baloodusudouest/<depot>/tags?per_page=100`, sans jeton (en-tête `User-Agent`), et garde la plus haute étiquette `v<majeur>.<mineur>.<correctif>` (les autres sont ignorées). |
+| `version_url:` | tuile tierce : adresse lue par la veille, sans jeton, qui rend la version en service. `{"major": 3, "minor": 1, "patch": 4}` (Immich : `http://<NAS>:2283/api/server/version`) donne « 3.1.4 » ; `{"version": "…"}` marche aussi. |
+
+```yaml
+  - { nom: Carnet, famille: Proches, locale: "http://192.0.2.10:8096", sonde: "http://192.0.2.10:8096/health", sauvegarde: true, depot: carnet }
+  - { nom: Photos, famille: Photos, locale: "http://192.0.2.10:2283", version_url: "http://192.0.2.10:2283/api/server/version" }
+```
+
+- **Version en service** : champ `version` du `/health` (applis maison), ou `version_url:`. Une lecture sans version ne change rien (la dernière connue reste, `versions-en-service.json`).
+- **Dernière publiée** : gardée dans `versions.json`. GitHub injoignable ou limite atteinte (403/429) : l'ancienne lecture reste ; seule la tâche `versions-publiees` passe en erreur (dans le `/health` de l'Anneau), rien d'autre à l'écran.
+- **Fiche de la tuile** (bouton « État ») : « Version 0.12.0 — dernière publiée 0.12.0 (à jour) » ou « … dernière publiée 0.13.0 : pas encore en service ». **Jamais d'orange** pour un retard.
+- **Réglages › Versions** : tableau tuile, en service, dernière publiée, mise à jour le (`GET /api/versions`, session).
+- **Journal** : quand la veille voit la version d'une tuile changer, elle l'ajoute à `journal-versions.json` (tuile, de, vers, le ; 200 entrées au plus).
+- **Fenêtre « Mis à jour depuis votre dernière visite »** : à l'ouverture de l'Anneau après une connexion (ou au premier chargement avec une session valide), s'il y a des changements depuis le dernier « Vu » : « Carnet 2.32.0 → 2.33.0 (cette nuit, 05:04) ». Plusieurs changements d'une même tuile font une ligne. « Vu » enregistre l'heure dans `versions-vues.json` (une pour l'Anneau, pas par navigateur). Routes (session) : `GET /api/versions/nouveautes` → `{"vu_le", "changements": [{"tuile", "cle", "de", "vers", "le"}]}`, `POST /api/versions/vues` (`{"jusqu_a": <le du plus récent montré>}`, facultatif).
 
 ## Home Assistant (facultatif)
 

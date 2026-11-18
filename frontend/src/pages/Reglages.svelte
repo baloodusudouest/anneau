@@ -2,6 +2,7 @@
   // « Réglages » : le fichier des services, la carte de la maison (0.11, ex-Atlas), la sauvegarde (0.8 ; listes et clés dans
   // les pages Sauvegardes et Variables depuis la 0.10), le seuil des disques,
   // ce que Home Assistant a envoyé, puis la version et la déconnexion.
+  // 0.13 : section « Versions » (en service, dernière publiée, mise à jour le), sans couleur pour un retard.
   import { onMount } from 'svelte'
   import { api } from '$lib/api.js'
   import { duree } from '$lib/temps.js'
@@ -57,6 +58,10 @@
     try { carte = await api.post('/api/carte/relire'); msgCarte = carte.etat.erreur ? '' : 'Carte relue.' } catch (x) { msgCarte = x.message }
     attenteCarte = false
   }
+  // 0.13 : versions des tuiles (en service lue par la veille, dernière publiée lue chaque heure sur GitHub)
+  let vers = $state(null)
+  async function lireVersions() { try { vers = await api.get('/api/versions') } catch { vers = { tuiles: [] } } }
+  onMount(lireVersions)
   // 0.8 : sauvegarde des réglages des applis maison, clé publique de l'export chiffré, restauration de l'Anneau
   let sv = $state(null)
   let heure = $state('03:30')
@@ -169,6 +174,31 @@
       {/if}
     </section>
 
+    <section class="mt-3 rounded-2xl border bg-card p-5" aria-label="Versions">
+      <h2 class="text-lg font-semibold">Versions</h2>
+      <p class="mt-1 text-sm text-muted-foreground">Version en service (lue par la veille) et dernière publiée (étiquettes GitHub du dépôt <code>depot:</code> de la tuile, relues chaque heure){vers?.publiees_lues_le ? `, relues il y a ${duree(vers.publiees_lues_le)}` : ''}. Watchtower met à jour chaque nuit à 05:00.</p>
+      {#if !vers}<p class="mt-2 text-sm text-muted-foreground">Lecture…</p>
+      {:else if !vers.tuiles.length}
+        <p class="mt-2 text-sm">Aucune version connue pour l'instant : ajoute <code>depot:</code> (ou <code>version_url:</code> pour une tuile tierce) dans le fichier des services.</p>
+      {:else}
+        <div class="mt-2 overflow-x-auto">
+          <table class="versions w-full text-left text-sm">
+            <thead><tr><th scope="col">Tuile</th><th scope="col">En service</th><th scope="col">Dernière publiée</th><th scope="col">Mise à jour le</th></tr></thead>
+            <tbody>
+              {#each vers.tuiles as t (t.cle)}
+                <tr>
+                  <th scope="row">{t.nom}</th>
+                  <td>{t.version || '—'}</td>
+                  <td>{t.publiee || '—'}{#if t.a_jour === false}<small>pas encore en service</small>{:else if t.a_jour}<small>à jour</small>{/if}</td>
+                  <td>{t.mise_a_jour_le ? quand(t.mise_a_jour_le) : '—'}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
+    </section>
+
     <section class="mt-3 rounded-2xl border bg-card p-5" aria-label="Sauvegarde" id="sauvegarde">
       <h2 class="text-lg font-semibold">Sauvegarde</h2>
       <p class="mt-1 text-sm text-muted-foreground">Chaque jour, l'Anneau demande leurs réglages aux applis maison du fichier des services et les range dans son dossier (emporté par Hyper Backup). Jamais de secret : une réponse qui en porte un est refusée.</p>
@@ -268,3 +298,10 @@
     <Button variant="outline" onclick={deconnecter}>Se déconnecter</Button>
   </p>
 </main>
+
+<style>
+  .versions th, .versions td { padding: 0.45rem 0.5rem 0.45rem 0; border-top: 1px solid var(--border); vertical-align: top; white-space: nowrap; }
+  .versions thead th { border-top: 0; font-size: 0.74rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-foreground); }
+  .versions tbody th { font-weight: 600; white-space: normal; }
+  .versions small { display: block; color: var(--muted-foreground); font-size: 0.78rem; }
+</style>

@@ -342,7 +342,8 @@ def test_boucles_declarees_et_suivies(tmp_path, veille, monkeypatch):
                  atlas_depot="exemple/atlas", github_jeton="")
     main._declarer(cfg)
     assert registre.declarees == {"veille": (60, "reguliere"), "collecte-de-nuit": (86400, "reguliere"),
-                                  "relecture-de-la-carte": (3600, "reguliere")}
+                                  "relecture-de-la-carte": (3600, "reguliere"),
+                                  "versions-publiees": (3600, "reguliere")}        # 0.13
 
     async def un_tour():
         t = asyncio.create_task(main._ronde(veille, 3600))
