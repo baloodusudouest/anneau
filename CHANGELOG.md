@@ -1,5 +1,9 @@
 # Journal des versions
 
+
+## 0.14.0 — 19 novembre 2026 (ouvrir en grand depuis le cadre)
+- Un service affiché dans le cadre de l'Anneau a un bouton **« Ouvrir en grand »** (à côté de « État ») : il l'ouvre dans sa propre fenêtre, toujours la même, comme « Ouvrir ». Sert au coffre Maison (SilverBullet), affiché désormais dans l'Anneau (décision de Julien du 19/11/2026 ; tuile sans `cadre: false`).
+
 ## 0.13.0 — 18 novembre 2026 (versions et nouveautés de la nuit)
 - **Versions publiées** (E1) : nouvelle tâche régulière horaire `versions-publiees` (registre `maison.TACHES`) qui lit les étiquettes Git de chaque dépôt donné par le nouveau champ de tuile `depot:` (ex. `depot: carnet`), sur l'API publique de GitHub, sans jeton, et garde la plus haute étiquette `v<semver>`. Dernière lecture gardée dans `/data/versions.json` ; GitHub injoignable ou limite atteinte (403/429) : l'ancienne reste, seule la tâche passe en erreur.
 - **Version en service** : lue dans le `/health` (`version`) comme avant ; pour une tuile tierce, nouveau champ `version_url:` (Immich : `/api/server/version`, `{"major", "minor", "patch"}` → « 3.x.y » ; accepte aussi `{"version": "…"}`), lu sans jeton.

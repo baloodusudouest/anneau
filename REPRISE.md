@@ -2,7 +2,9 @@
 
 Fichier à lire en premier dans une nouvelle session, et à mettre à jour à chaque fin de session, dans le même commit que le code.
 
-## État (18/11/2026)
+## État (19/11/2026)
+
+- **0.14.0** (19/11/2026) : bouton « Ouvrir en grand » (`.bouton-grand`, dans `.actions-service` avec « État », `Anneau.svelte`) pour un service affiché dans le cadre ; appelle `dehors()`. Tuile Coffre Maison passée en cadre « essayer » (coffre). Test : `test_014_ouvrir_en_grand_depuis_le_cadre`. Jamais essayé sur la vraie installation : SilverBullet dans le cadre (connexion sur iPhone, raccourcis clavier ; l'Anneau ouvert en http local et le coffre en https Tailscale ne sont pas « du même site »).
 
 - **0.13.0** (18/11/2026) : versions et nouveautés de la nuit (E1 ; décisions de Julien du 18/11 après grill et conseil ; Watchtower met tout à jour chaque nuit à 05:00).
   - `app/versions.py` : `lire_depot`/`plus_haute` (étiquettes `v<semver>` de `baloodusudouest/<depot>`, API publique sans jeton, 403/429/injoignable → `Injoignable`), `relire` (`versions.json`, ancienne lecture gardée), `version_lue` (`{"version"}` ou Immich `{"major","minor","patch"}`), `lire_version_url`, `EnService` (`versions-en-service.json` + `journal-versions.json`, 200 entrées, `depuis()` fusionne par tuile), `vu_le`/`marquer_vu` (`versions-vues.json`, ne recule jamais), `phrase`, `a_jour`.

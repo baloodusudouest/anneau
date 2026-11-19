@@ -617,3 +617,18 @@ def test_15_nouveautes_de_la_nuit_puis_vu_et_section_versions(page, monde):
     fiche.wait_for()
     assert f"Version {apres} — dernière publiée 9.0.0 : pas encore en service" in fiche.inner_text()
     page.get_by_role("button", name="Revenir à l'anneau").click()
+
+
+def test_014_ouvrir_en_grand_depuis_le_cadre(page):
+    """0.14 : un service affiché dans le cadre a un bouton « Ouvrir en grand » (même fenêtre que « Ouvrir »)."""
+    if page.locator("svg.anneau").count() == 0:
+        page.get_by_role("button", name="Revenir à l'anneau").click()
+    ouvrir_service(page, "Photos", "Photothèque")
+    page.locator("iframe[title='Photothèque']").wait_for()
+    page.evaluate("window.__ouvertes = []; window.open = (u, n) => { window.__ouvertes.push([u, n]); return null }")
+    bouton = page.get_by_role("button", name="Ouvrir en grand")
+    assert bouton.is_visible()
+    bouton.click()
+    ouvertes = [o for o in page.evaluate("window.__ouvertes") if o[0]]
+    assert len(ouvertes) == 1 and ouvertes[0][1] == "anneau-phototheque"
+    page.get_by_role("button", name="Revenir à l'anneau").click()

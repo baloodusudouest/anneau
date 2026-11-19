@@ -129,8 +129,18 @@
         <button type="button" aria-current={s.cle === service.cle ? 'true' : undefined} onclick={() => ouvrir(familleDuService, s)} {...milieu(s)}>
           <Icone icone={s.icone} etat={etatIcone(s, s.cle === service.cle)} />{s.nom}{#if s.surveiller}<span class="phrase-tuile">{s.phrase}</span>{:else if s.vu}<span class="vu" title="Vu : redevient orange au prochain changement">vu</span>{/if}{#if s.cle !== service.cle && gardes.some((g) => g.cle === s.cle)}<span class="garde" title="Resté ouvert"><span class="sr-only"> (resté ouvert)</span></span>{/if}</button>
       {/each}
-      {#if aFiche(leService)}
-        <button type="button" class="bouton-etat" class:surveiller={leService.surveiller} aria-pressed={etatOuvert} onclick={() => (etatOuvert = !etatOuvert)}>État</button>
+      {#if aFiche(leService) || affichable(leService)}
+        <span class="actions-service">
+          <!-- 0.14 : un service affiché dans le cadre s'ouvre aussi en grand (sa propre fenêtre, toujours la même) -->
+          {#if affichable(leService) && !etatOuvert}
+            <button type="button" class="bouton-grand" title="Ouvrir en grand" aria-label="Ouvrir en grand" onclick={() => dehors(leService)}>
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7" /></svg>
+            </button>
+          {/if}
+          {#if aFiche(leService)}
+            <button type="button" class="bouton-etat" class:surveiller={leService.surveiller} aria-pressed={etatOuvert} onclick={() => (etatOuvert = !etatOuvert)}>État</button>
+          {/if}
+        </span>
       {/if}
     </div>
     {/if}
@@ -303,7 +313,10 @@
   .pastilles.libres button.surveiller { flex-wrap: wrap; justify-content: center; max-width: 100%; padding-block: 0.35rem; border-color: color-mix(in srgb, var(--braise) 55%, var(--border)); }
   .pastilles button[aria-current='true'] .phrase-tuile { color: #6b3a00; }
   .vu { font-size: 0.7rem; color: var(--muted-foreground); border: 1px solid var(--border); border-radius: 9999px; padding: 0 0.35rem; }
-  .bouton-etat { margin-left: auto; position: sticky; right: 0; box-shadow: -0.6rem 0 0.6rem var(--background); }   /* toujours visible, même quand la rangée défile */
+  /* toujours visibles, même quand la rangée défile */
+  .actions-service { margin-left: auto; position: sticky; right: 0; display: flex; gap: 0.4rem; flex: none;
+                     background: var(--background); box-shadow: -0.6rem 0 0.6rem var(--background); }
+  .bouton-grand { padding-inline: 0.7rem !important; }
   .bouton-etat.surveiller { color: var(--braise) !important; border-color: color-mix(in srgb, var(--braise) 60%, var(--border)) !important; }
   .bouton-etat[aria-pressed='true'] { color: #1e1a16 !important; background: var(--braise) !important; }
   .fiche-etat { justify-content: flex-start; overflow-y: auto; }
