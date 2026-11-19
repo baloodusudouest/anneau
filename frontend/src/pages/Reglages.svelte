@@ -47,6 +47,10 @@
     } catch (x) { message = x.message }
     attente = false
   }
+  // 0.15 : le Bac à sable (les applis maison sur une fausse maison). Adresse de sa tuile si elle existe, sinon
+  // le même hôte que l'Anneau, port 8104, en http (le Bac à sable n'a pas de https).
+  const tuileBac = $derived(e?.familles?.flatMap((f) => f.services).find((x) => x.cle === 'bac-a-sable') || null)
+  const adresseBac = $derived(tuileBac?.adresse || `http://${location.hostname}:8104/`)
   // 0.11 : la carte de la maison (ex-Atlas), fabriquée par le coffre et relue toutes les heures
   let carte = $state(null)
   let msgCarte = $state('')
@@ -172,6 +176,18 @@
           {#if msgCarte}<span class="text-sm" role="status">{msgCarte}</span>{/if}
         </div>
       {/if}
+    </section>
+
+    <section class="mt-3 rounded-2xl border bg-card p-5" aria-label="Bac à sable">
+      <h2 class="text-lg font-semibold">Bac à sable</h2>
+      <p class="mt-1 text-sm text-muted-foreground">
+        Les applis maison lancées sur une fausse maison, avec des personnes inventées ou copiées de carnet, pour les
+        essayer sans rien écrire chez les vrais services.
+      </p>
+      <div class="mt-3 flex flex-wrap items-center gap-3">
+        <Button href={adresseBac} target="_blank" rel="noopener">Ouvrir le bac à sable</Button>
+        {#if !tuileBac}<span class="text-xs text-muted-foreground">Pas de tuile « Bac à sable » : adresse par défaut, port 8104.</span>{/if}
+      </div>
     </section>
 
     <section class="mt-3 rounded-2xl border bg-card p-5" aria-label="Versions">

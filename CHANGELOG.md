@@ -1,5 +1,7 @@
 # Journal des versions
 
+## 0.15.0 — 19 novembre 2026 (lien vers le Bac à sable)
+- **Réglages › Bac à sable** : bouton « Ouvrir le bac à sable », dans un nouvel onglet. Adresse de la tuile « Bac à sable » si elle existe ; sinon le même hôte que l'Anneau, port 8104, en http. Le Bac à sable (nouvelle appli, dépôt `bac-a-sable`) lance les applis maison sur une fausse maison (décision de Julien du 19/11/2026). Test : `test_015_lien_vers_le_bac_a_sable`.
 
 ## 0.14.0 — 19 novembre 2026 (ouvrir en grand depuis le cadre)
 - Un service affiché dans le cadre de l'Anneau a un bouton **« Ouvrir en grand »** (à côté de « État ») : il l'ouvre dans sa propre fenêtre, toujours la même, comme « Ouvrir ». Sert au coffre Maison (SilverBullet), affiché désormais dans l'Anneau (décision de Julien du 19/11/2026 ; tuile sans `cadre: false`).

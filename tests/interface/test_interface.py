@@ -632,3 +632,15 @@ def test_014_ouvrir_en_grand_depuis_le_cadre(page):
     ouvertes = [o for o in page.evaluate("window.__ouvertes") if o[0]]
     assert len(ouvertes) == 1 and ouvertes[0][1] == "anneau-phototheque"
     page.get_by_role("button", name="Revenir à l'anneau").click()
+
+
+def test_015_lien_vers_le_bac_a_sable(page):
+    """0.15 : Réglages ouvre le Bac à sable (adresse de sa tuile, sinon même hôte, port 8104, en http)."""
+    page.get_by_role("button", name="Réglages").click()
+    page.get_by_role("heading", level=1, name="Réglages").wait_for()
+    lien = page.get_by_role("region", name="Bac à sable").get_by_role("link", name="Ouvrir le bac à sable")
+    adresse = lien.get_attribute("href")
+    assert adresse.startswith("http://") and adresse.endswith(":8104/"), adresse
+    assert lien.get_attribute("target") == "_blank"
+    page.get_by_role("link", name="Revenir à l'anneau").click()
+    page.locator("svg.anneau").wait_for()

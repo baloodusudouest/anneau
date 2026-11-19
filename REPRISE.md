@@ -4,6 +4,7 @@ Fichier à lire en premier dans une nouvelle session, et à mettre à jour à ch
 
 ## État (19/11/2026)
 
+- **0.15.0** (19/11/2026) : section « Bac à sable » dans Réglages (`Reglages.svelte`, `tuileBac`/`adresseBac` : adresse de la tuile `bac-a-sable`, sinon `http://<hôte>:8104/`). Test : `test_015_lien_vers_le_bac_a_sable`. Jamais essayé sur la vraie installation (le Bac à sable n'est pas encore déployé).
 - **0.14.0** (19/11/2026) : bouton « Ouvrir en grand » (`.bouton-grand`, dans `.actions-service` avec « État », `Anneau.svelte`) pour un service affiché dans le cadre ; appelle `dehors()`. Tuile Coffre Maison passée en cadre « essayer » (coffre). Test : `test_014_ouvrir_en_grand_depuis_le_cadre`. Jamais essayé sur la vraie installation : SilverBullet dans le cadre (connexion sur iPhone, raccourcis clavier ; l'Anneau ouvert en http local et le coffre en https Tailscale ne sont pas « du même site »).
 
 - **0.13.0** (18/11/2026) : versions et nouveautés de la nuit (E1 ; décisions de Julien du 18/11 après grill et conseil ; Watchtower met tout à jour chaque nuit à 05:00).
