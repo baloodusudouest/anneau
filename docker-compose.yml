@@ -13,6 +13,7 @@ services:
       - TZ=Europe/Paris
       - MAISON_PASSWORD=${MAISON_PASSWORD}            # mot de passe commun aux applis maison, obligatoire (12 caractères au moins)
       - MAISON_JETON=${MAISON_JETON:-}                # jeton commun : annuaire, collecte et portes des sauvegardes ; vide : portes fermées, collecte impossible
+      - ANNEAU_CLE=${ANNEAU_CLE:-}                         # contrat 3 : l'Anneau lit les fiches « Connexion » ; vide = porte fermée
       - ANNEAU_SECRET_HA=${ANNEAU_SECRET_HA:-}        # secret joint par Home Assistant à ses envois ; vide : pas d'envois
       - ANNEAU_ATLAS_DEPOT=${ANNEAU_ATLAS_DEPOT:-}    # « propriétaire/atlas » ; vide : pas d'Atlas dans l'Anneau
       - ANNEAU_GITHUB_JETON=${ANNEAU_GITHUB_JETON:-}  # jeton GitHub en lecture seule sur le dépôt d'Atlas

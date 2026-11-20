@@ -8,11 +8,13 @@
   //    sa fiche (« État ») détaille les tâches, la dernière copie, la version du socle, avec le bouton « Vu ».
   //    Bandeau orange en haut si la veille de l'Anneau ne tourne plus depuis 10 min.
   // 0.13 : la fiche dit aussi la version en service et la dernière publiée, en mots (jamais d'orange pour un retard).
+  // 0.16 : la fiche d'une appli maison montre aussi ses fiches « Connexion » (lues à l'ouverture, Vérifier relayé).
   import { onMount } from 'svelte'
   import { api } from '$lib/api.js'
   import { duree, secondes } from '$lib/temps.js'
   import Cercle from '$lib/Cercle.svelte'
   import Icone from '$lib/Icone.svelte'
+  import FichesAppli from '$lib/FichesAppli.svelte'
   import { Button } from '$lib/components/ui/button/index.js'
 
   let { ondeconnecte, onreglages } = $props()
@@ -58,7 +60,7 @@
   const ETATS_TACHE = { ok: 'ok', en_retard: 'en retard', bloquee: 'bloquée', jamais: 'pas encore passée', erreur: 'dernier essai en erreur' }
   const octets = (n) => (n == null ? '' : n < 1048576 ? `${Math.max(1, Math.round(n / 1024))} Ko` : `${(n / 1048576).toFixed(1).replace('.', ',')} Mo`)
   const periode = (n) => (!n ? '' : n % 86400 === 0 ? (n === 86400 ? 'chaque jour' : `tous les ${n / 86400} j`) : n % 3600 === 0 ? (n === 3600 ? 'chaque heure' : `toutes les ${n / 3600} h`) : n >= 60 ? `toutes les ${Math.round(n / 60)} min` : `toutes les ${n} s`)
-  const aFiche = (s) => !!s && (!!s.sante || !!s.version_phrase)   // 0.13 : santé des tâches ou version connue
+  const aFiche = (s) => !!s && (!!s.sante || !!s.version_phrase || !!s.fiches)   // 0.13 : santé ou version ; 0.16 : fiches
   const etatIcone = (s, ouvert = false) => (s.etat !== 'ok' ? s.etat : s.surveiller ? 'surveiller' : ouvert ? 'sombre' : '')
   const deplier = (cle) => (ouverte = ouverte === cle ? null : cle)
   // Les services déjà ouverts dans le cadre restent chargés quand on passe à un autre ou qu'on revient à l'anneau :
@@ -160,6 +162,9 @@
           {:else if leService.vu}
             <ul class="defauts vus">{#each leService.defauts as d (d.cle)}<li>{d.phrase}</li>{/each}</ul>
             <p class="text-sm text-muted-foreground">Vu : la tuile redeviendra orange si autre chose casse.</p>
+          {/if}
+          {#if leService.fiches}
+            {#key leService.cle}<FichesAppli cle={leService.cle} nom={leService.nom} />{/key}
           {/if}
           {#if sa}
           <table class="taches">

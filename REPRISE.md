@@ -2,8 +2,9 @@
 
 Fichier à lire en premier dans une nouvelle session, et à mettre à jour à chaque fin de session, dans le même commit que le code.
 
-## État (19/11/2026)
+## État (20/11/2026)
 
+- **0.16.0 (20/11/2026)** : fiches « Connexion » des applis dans la fiche « État » (`app/fiches.py`, `lib/FichesAppli.svelte`, routes `/api/applis/{cle}/services…`, variable `ANNEAU_CLE`). Lues à l'ouverture seulement ; aucun geste qui écrit. **Jamais essayé sur la vraie installation.**
 - **0.15.0** (19/11/2026) : section « Bac à sable » dans Réglages (`Reglages.svelte`, `tuileBac`/`adresseBac` : adresse de la tuile `bac-a-sable`, sinon `http://<hôte>:8104/`). Test : `test_015_lien_vers_le_bac_a_sable`. Jamais essayé sur la vraie installation (le Bac à sable n'est pas encore déployé).
 - **0.14.0** (19/11/2026) : bouton « Ouvrir en grand » (`.bouton-grand`, dans `.actions-service` avec « État », `Anneau.svelte`) pour un service affiché dans le cadre ; appelle `dehors()`. Tuile Coffre Maison passée en cadre « essayer » (coffre). Test : `test_014_ouvrir_en_grand_depuis_le_cadre`. Jamais essayé sur la vraie installation : SilverBullet dans le cadre (connexion sur iPhone, raccourcis clavier ; l'Anneau ouvert en http local et le coffre en https Tailscale ne sont pas « du même site »).
 

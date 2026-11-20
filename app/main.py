@@ -16,6 +16,8 @@ carte ; messages seulement avec le jeton commun ou une session) et copie_base (n
 /api/sante/vu (session) ;
 0.13 — versions et nouveautés de la nuit : tâche « versions-publiees » (étiquettes GitHub, chaque heure) ; /api/versions,
 /api/versions/nouveautes, /api/versions/vues (session) ;
+0.16 — fiches « Connexion » des applis (contrat 3) : /api/applis/{cle}/services et
+/api/applis/{cle}/services/{service}/verifier (session) ; l'Anneau les lit chez l'appli avec ANNEAU_CLE, côté serveur ;
 puis l'interface. Le chiffrement et le déchiffrement de l'export des variables se font dans la page (HTTPS seulement) :
 le serveur ne reçoit jamais que la clé publique et du texte déjà chiffré.
 """
@@ -33,7 +35,7 @@ from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 import time
 
-from . import carte, maison, sauvegardes, stack, versions
+from . import carte, fiches, maison, sauvegardes, stack, versions
 
 from . import __version__
 from .auth import COMMUN, DUREE, Sessions, en_https
@@ -298,8 +300,37 @@ def _a_traiter() -> list[dict]:
 
 @app.get("/api/etat")
 def etat(request: Request):
-    return {**ETAT["veille"].etat(prive=_prive(request), https=_https(request), hote=_hote(request)),
-            "a_traiter": _a_traiter(), "version": __version__}
+    e = ETAT["veille"].etat(prive=_prive(request), https=_https(request), hote=_hote(request))
+    maisons = fiches.cibles(ETAT["veille"].fichier, APPLI)       # 0.16 : tuiles qui ont des fiches « Connexion »
+    for fam in e.get("familles", []):
+        for s in fam.get("services", []):
+            s["fiches"] = s.get("cle") in maisons
+    return {**e, "a_traiter": _a_traiter(), "version": __version__}
+
+
+# ================================================================ fiches « Connexion » des applis (0.16, contrat 3)
+
+def _appli_maison(cle: str) -> tuple[str, str]:
+    trouve = fiches.cibles(ETAT["veille"].fichier, APPLI).get(cle)
+    if not trouve:
+        raise HTTPException(404, "Cette tuile n'est pas une appli maison.")
+    return trouve
+
+
+@app.get("/api/applis/{cle}/services")
+async def fiches_appli(cle: str):
+    """Lues à l'ouverture de la fiche « État », jamais en boucle. La clé ANNEAU_CLE reste côté serveur."""
+    nom, b = _appli_maison(cle)
+    return await fiches.services(nom, b, maison.cle_anneau(), lire=ETAT.get("lire_fiches"))
+
+
+@app.post("/api/applis/{cle}/services/{service}/verifier")
+async def fiches_verifier(cle: str, service: str):
+    nom, b = _appli_maison(cle)
+    statut, corps = await fiches.verifier(nom, b, maison.cle_anneau(), service, lire=ETAT.get("lire_fiches"))
+    if statut != 200:
+        raise HTTPException(statut, corps.get("detail", "Erreur."))
+    return corps
 
 
 @app.post("/api/pannes/vue")

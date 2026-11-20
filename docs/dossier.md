@@ -125,3 +125,7 @@ Avis complet : `conseil-2.md`.
 5. **L'anneau comme écran d'ouverture** : sur iPhone, avec les deux rangs d'alerte en dessous, l'essentiel est-il visible sans défiler ?
 6. **Le temps 3 vaut-il encore le risque**, maintenant qu'on sait que le jeton est administrateur des deux NAS et que la recréation marche ?
 7. **Que manque-t-il** au temps 1 pour qu'il soit utilisable dès la première semaine ?
+
+## Décision du 20/11/2026 — fiches « Connexion » des applis (0.16)
+
+La fiche « État » d'une appli maison montre les fiches « Connexion » de cette appli (contrat 3 du socle), au même format que dans l'appli, avec « Vérifier ». L'Anneau les lit à l'ouverture de la fiche seulement, avec sa clé de lecture `ANNEAU_CLE` (qui n'ouvre que ces fiches, et se change seule, sans toucher `MAISON_JETON`). Il ne porte aucun geste qui écrit : Synchroniser, Livrer et les autres restent dans l'appli, l'Anneau n'écrit toujours chez personne. Dossier et conseil : `fiches-connexion-*.md` (projet Claude).

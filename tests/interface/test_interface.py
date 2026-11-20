@@ -644,3 +644,25 @@ def test_015_lien_vers_le_bac_a_sable(page):
     assert lien.get_attribute("target") == "_blank"
     page.get_by_role("link", name="Revenir à l'anneau").click()
     page.locator("svg.anneau").wait_for()
+
+
+def test_016_fiches_connexion_dans_la_fiche_etat(page):
+    """0.16 : une appli maison a une fiche « État » qui montre ses fiches « Connexion » (4 services : tuiles)."""
+    ouvrir_service(page, "Proches", "Répertoire")
+    bouton = page.get_by_role("button", name="État", exact=True)
+    bouton.click()
+    region = page.get_by_role("region", name="Connexion de Répertoire")
+    region.wait_for()
+    tuile = region.get_by_role("button", name=re.compile("^Calculateur du PC"))
+    assert tuile.get_attribute("aria-expanded") == "false"
+    tuile.click()
+    region.get_by_text("Allumer normalement").wait_for()
+    region.get_by_text("http://192.0.2.12:8000").wait_for()
+    assert region.get_by_role("button", name="Calculer").count() == 0          # aucun geste qui écrit dans l'Anneau
+    region.get_by_role("button", name="Vérifier").click()
+    region.get_by_text("Vérifié").wait_for()
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")
+    import os
+    if os.environ.get("CAPTURES"):
+        page.screenshot(path=f"{os.environ['CAPTURES']}/anneau-fiches-{page.ecran}.png", full_page=True)
+    bouton.click()

@@ -1,5 +1,14 @@
 # Journal des versions
 
+## 0.16.0 — 20 novembre 2026 (fiches « Connexion » des applis dans la fiche « État »)
+- La fiche « État » d'une appli maison montre ses fiches « Connexion » (contrat 3, socle 0.11.0) au même format que dans l'appli : de 1 à 3 services, fiches dépliées ; à partir de 4, tuiles puis la fiche ; guide (réglages lus, « Allumer normalement », « En cas de problème ») quand l'appli en donne un.
+- Lues une seule fois, à l'ouverture de la fiche (jamais en boucle), par `/api/applis/{cle}/services` ; « Vérifier » relayé par `/api/applis/{cle}/services/{service}/verifier`. Les deux partent du serveur avec **`ANNEAU_CLE`** (nouvelle variable, la même que dans les applis) : la clé ne va jamais au navigateur. Aucun geste qui écrit (ils restent dans l'appli).
+- Réponse de l'appli relue champ par champ, détail et guide nettoyés une seconde fois. Une appli d'avant le contrat 3 : « n'a pas encore les fiches communes » (jamais « en panne »). `ANNEAU_CLE` vide : une phrase le dit.
+- `/api/etat` : chaque tuile porte `fiches` (vrai pour une appli maison, l'Anneau lui-même exclu). Module `app/fiches.py`, composant `lib/FichesAppli.svelte`, interface commune `lib/services/` copiée du socle.
+- `maison.py` du socle 0.11.0. Tests : `tests/test_fiches.py`, écran `test_016`.
+- Revient sur l'écart « pas d'écran Connexion dans l'Anneau » (format commun § 7) : décision du 20/11/2026.
+- **Jamais essayé sur la vraie installation.**
+
 ## 0.15.0 — 19 novembre 2026 (lien vers le Bac à sable)
 - **Réglages › Bac à sable** : bouton « Ouvrir le bac à sable », dans un nouvel onglet. Adresse de la tuile « Bac à sable » si elle existe ; sinon le même hôte que l'Anneau, port 8104, en http. Le Bac à sable (nouvelle appli, dépôt `bac-a-sable`) lance les applis maison sur une fausse maison (décision de Julien du 19/11/2026). Test : `test_015_lien_vers_le_bac_a_sable`.
 

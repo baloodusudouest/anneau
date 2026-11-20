@@ -14,6 +14,7 @@ se donne par le champ `version` de leur corps dans sante.json."""
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -121,11 +122,36 @@ def main_() -> None:
     async def examiner(adresse: str):
         return "X-Frame-Options : SAMEORIGIN" if "s=numerisation" in adresse else ""
 
+    # 0.16 : fiches « Connexion » des applis maison (contrat 3), sans réseau : quatre services (tuiles), un guide
+    os.environ.setdefault("ANNEAU_CLE", "cle-anneau-de-demonstration")
+    FICHE = lambda id_, nom, etat, **kw: {"id": id_, "nom": nom, "genre": "exterieur", "cible": None, "etat": etat,
+                                         "lit": "Les fiches et leurs photos.", "ecrit": "Rien.", "reglage": None,
+                                         "detail": None, "verifie_le": None, "derniere_ecriture": None, "gestes": [],
+                                         "guide": None, **kw}
+    fiches_demo = [
+        FICHE("immich", "Immich", "repond", detail="Version 2.1.0."),
+        FICHE("pc-calcul", "Calculateur du PC", "ne_repond_pas", detail="Pas de réponse en 8 s.",
+              gestes=[{"id": "calculer", "nom": "Calculer"}],
+              guide={"reglages": [{"nom": "Adresse appelée", "valeur": "http://192.0.2.12:8000"}],
+                     "allumer": ["Allumer le PC.", "Ouvrir Docker Desktop."],
+                     "pannes": [{"signe": "« PC injoignable »", "faire": ["Le PC est-il allumé ?"], "commandes": ["ipconfig"]}],
+                     "terminal": "Les commandes se tapent dans PowerShell sur le PC."}),
+        FICHE("carnet", "carnet", "relie"),
+        FICHE("home-assistant", "Home Assistant", "pas_relie", reglage="HA_URL"),
+    ]
+
+    async def lire_fiches(methode, url, cle):
+        if url.endswith("/verifier"):
+            id_ = url.rsplit("/", 2)[-2]
+            f = next(x for x in fiches_demo if x["id"] == id_)
+            return 200, {**f, "verifie_le": "2026-11-20T08:00:00+01:00"}
+        return 200, {"contrat": 3, "appli": "repertoire", "simule": False, "services": fiches_demo}
+
     cfg = Config(password=MDP, data=data, static=Path(__file__).resolve().parents[2] / "app" / "static", secret_ha=SECRET,
                  attente_connexion=False, periode=0.5, sauvegarde_auto=False)   # la collecte se lance par le bouton
     main.ETAT.update(cfg=cfg, veille=VeilleDemo(data, services.lire(data / "services.yaml"), ha_attendu=False, sonder=sonder,
                                                 examiner=examiner, horloge=horloge),
-                     transport_versions=httpx.MockTransport(faux_github))
+                     transport_versions=httpx.MockTransport(faux_github), lire_fiches=lire_fiches)
     uvicorn.run(main.app, host="127.0.0.1", port=port, log_level="warning")
 
 
