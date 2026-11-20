@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 0.16.1 — 20 novembre 2026 (socle 0.11.1)
+- Copies communes du socle 0.11.1 : sur une fiche « Connexion », le titre devient « Pour le relier » quand le réglage se fait dans Réglages de l'appli (et non dans la stack).
+- **Jamais essayé sur la vraie installation.**
+
 ## 0.16.0 — 20 novembre 2026 (fiches « Connexion » des applis dans la fiche « État »)
 - La fiche « État » d'une appli maison montre ses fiches « Connexion » (contrat 3, socle 0.11.0) au même format que dans l'appli : de 1 à 3 services, fiches dépliées ; à partir de 4, tuiles puis la fiche ; guide (réglages lus, « Allumer normalement », « En cas de problème ») quand l'appli en donne un.
 - Lues une seule fois, à l'ouverture de la fiche (jamais en boucle), par `/api/applis/{cle}/services` ; « Vérifier » relayé par `/api/applis/{cle}/services/{service}/verifier`. Les deux partent du serveur avec **`ANNEAU_CLE`** (nouvelle variable, la même que dans les applis) : la clé ne va jamais au navigateur. Aucun geste qui écrit (ils restent dans l'appli).
