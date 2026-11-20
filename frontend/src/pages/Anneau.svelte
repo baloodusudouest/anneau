@@ -84,7 +84,20 @@
   }
   async function marquerVu(s) { try { await api.post('/api/sante/vu', { cle: s.cle }); await lire() } catch (x) { erreur = x.message } }
   // « Ouvrir » réutilise toujours la même fenêtre pour un service : les onglets ne se multiplient pas.
-  const dehors = (s) => window.open(s.adresse, 'anneau-' + s.cle)
+  // « Ouvrir » : toujours la même fenêtre par service (nom « anneau-<clé> »). 0.16.2 : si cet onglet existe déjà, le
+  // navigateur le rechargeait au fond sans le montrer (« rien ne se passe ») : on le ferme et on en ouvre un neuf, qui
+  // passe devant. Un onglet neuf s'ouvre vide (« about:blank », lisible) ; un onglet déjà chargé est d'un autre site
+  // (lire son adresse lève une erreur) ou montre une page d'erreur.
+  function dehors(s) {
+    const nom = 'anneau-' + s.cle
+    const w = window.open('', nom)
+    if (!w) { window.open(s.adresse, '_blank', 'noopener'); return }   // fenêtre refusée : un onglet à part
+    let neuf = false
+    try { neuf = w.location.href === 'about:blank' } catch { neuf = false }
+    if (neuf) { w.location.href = s.adresse; return }
+    try { w.close() } catch { /* fermeture refusée : l'ouverture suivante le remplace quand même */ }
+    window.open(s.adresse, nom)
+  }
   // Le bouton du milieu ouvre le service dans un nouvel onglet, sans quitter l'anneau.
   const onglet = (s) => window.open(s.adresse, '_blank', 'noopener')
   const milieu = (s) => ({

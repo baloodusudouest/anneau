@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 0.16.2 — 20 novembre 2026 (« Ouvrir » qui ne faisait rien)
+- **« Ouvrir <service> »** (service qui s'ouvre à côté, ex. Bac à sable) et « Ouvrir en grand » : quand l'onglet de ce service était déjà ouvert quelque part (autre fenêtre, onglet du fond), le navigateur le rechargeait sans le montrer : « rien ne se passe » (signalé par Julien le 20/11/2026, Anneau en https Tailscale sur le PC). Désormais cet onglet est fermé puis rouvert : il passe devant. Toujours un seul onglet par service ; fenêtre refusée par le navigateur : un onglet à part.
+- Test : `test_3_un_service_dans_le_cadre_un_autre_a_cote` (second clic : l'ancienne fenêtre fermée, la nouvelle devant), `test_014`. Tests : 170.
+- **Jamais essayé sur la vraie installation.**
+
 ## 0.16.1 — 20 novembre 2026 (socle 0.11.1)
 - Copies communes du socle 0.11.1 : sur une fiche « Connexion », le titre devient « Pour le relier » quand le réglage se fait dans Réglages de l'appli (et non dans la stack).
 - **Jamais essayé sur la vraie installation.**

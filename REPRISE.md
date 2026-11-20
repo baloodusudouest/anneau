@@ -4,6 +4,7 @@ Fichier à lire en premier dans une nouvelle session, et à mettre à jour à ch
 
 ## État (20/11/2026)
 
+- **0.16.2 (20/11/2026)** : `dehors()` (`Anneau.svelte`) ouvre d'abord `window.open('', 'anneau-<clé>')` : onglet neuf (`about:blank`) → on lui donne l'adresse ; onglet déjà chargé (lire son adresse lève une erreur) → fermé puis rouvert, pour qu'il passe devant (avant : rechargé au fond, « rien ne se passe ») ; `window.open` refusé → onglet à part `_blank`. **Jamais essayé sur la vraie installation.**
 - **0.16.1 (20/11/2026)** : copies communes du socle 0.11.1 (titre « Pour le relier » quand le réglage est dans l'appli).
 - **0.16.0 (20/11/2026)** : fiches « Connexion » des applis dans la fiche « État » (`app/fiches.py`, `lib/FichesAppli.svelte`, routes `/api/applis/{cle}/services…`, variable `ANNEAU_CLE`). Lues à l'ouverture seulement ; aucun geste qui écrit. **Jamais essayé sur la vraie installation.**
 - **0.15.0** (19/11/2026) : section « Bac à sable » dans Réglages (`Reglages.svelte`, `tuileBac`/`adresseBac` : adresse de la tuile `bac-a-sable`, sinon `http://<hôte>:8104/`). Test : `test_015_lien_vers_le_bac_a_sable`. Jamais essayé sur la vraie installation (le Bac à sable n'est pas encore déployé).

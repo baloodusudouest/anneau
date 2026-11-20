@@ -129,9 +129,14 @@ def test_3_un_service_dans_le_cadre_un_autre_a_cote(page, monde):
     assert "il interdit d'être affiché dans une autre page (X-Frame-Options : SAMEORIGIN)" in fiche.inner_text()
     with page.expect_popup() as fenetre:                                             # il s'ouvre à côté…
         fiche.get_by_role("button", name="Ouvrir Numérisation").click()
+    fenetre.value.wait_for_url("**s=numerisation**")                                # 0.16.2 : ouverte vide, puis l'adresse
     assert "s=numerisation" in fenetre.value.url
     assert fenetre.value.evaluate("window.name") == "anneau-numerisation"            # …toujours dans la même fenêtre
-    fenetre.value.close()
+    with page.expect_popup() as seconde:                                             # 0.16.2 : déjà ouverte, elle est
+        fiche.get_by_role("button", name="Ouvrir Numérisation").click()              # fermée et rouverte (elle passe devant)
+    seconde.value.wait_for_url("**s=numerisation**")
+    assert fenetre.value.is_closed() and seconde.value.evaluate("window.name") == "anneau-numerisation"
+    seconde.value.close()
     colonne.get_by_role("button", name="Médias").click()                             # la colonne change de famille
     page.get_by_role("region", name="Cinéma").wait_for()
     page.get_by_role("button", name="Revenir à l'anneau").click()
@@ -629,6 +634,20 @@ def test_014_ouvrir_en_grand_depuis_le_cadre(page):
     bouton = page.get_by_role("button", name="Ouvrir en grand")
     assert bouton.is_visible()
     bouton.click()
+    ouvertes = [o for o in page.evaluate("window.__ouvertes") if o[0]]
+    assert len(ouvertes) == 1 and ouvertes[0][1] in ("anneau-phototheque", "_blank")
+    # 0.16.2 : un onglet neuf (vide) reçoit l'adresse
+    page.evaluate("""window.__fenetre = { location: { href: 'about:blank' }, close() { window.__fermee = true } };
+        window.__ouvertes = []; window.__fermee = false;
+        window.open = (u, n) => { window.__ouvertes.push([u, n]); return u ? null : window.__fenetre }""")
+    bouton.click()
+    assert page.evaluate("window.__fenetre.location.href").startswith("http")
+    assert page.evaluate("window.__fermee") is False
+    # 0.16.2 : un onglet du même nom déjà chargé (autre site : lire son adresse lève une erreur) est fermé puis rouvert
+    page.evaluate("""window.__fenetre = { get location() { throw new Error('autre site') }, close() { window.__fermee = true } };
+        window.__ouvertes = []; window.__fermee = false""")
+    bouton.click()
+    assert page.evaluate("window.__fermee") is True
     ouvertes = [o for o in page.evaluate("window.__ouvertes") if o[0]]
     assert len(ouvertes) == 1 and ouvertes[0][1] == "anneau-phototheque"
     page.get_by_role("button", name="Revenir à l'anneau").click()
