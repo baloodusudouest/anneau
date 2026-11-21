@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 
 import yaml
 
+from .conteneurs import verifier_nom
 from .versions import DEPOT_VALIDE
 
 EXEMPLE = Path(__file__).parent / "services.exemple.yaml"
@@ -51,6 +52,7 @@ class Service:
                                     # vide : collectée si sa sonde finit par /health, tant qu'aucune tuile ne porte « true » (ancien fichier)
     depot: str = ""             # 0.13 : dépôt GitHub de l'appli (« carnet ») : sa dernière version publiée est lue dans ses étiquettes
     version_url: str = ""       # 0.13 : tuile tierce : adresse qui rend sa version (Immich : /api/server/version), lue sans jeton
+    conteneur: str = ""         # 0.17 : container_name de la stack : allumer, éteindre, mettre à jour depuis la fiche (Portainer)
 
     @property
     def a_sonder(self) -> str:
@@ -137,6 +139,14 @@ def _depot(valeur, nom: str, erreurs: list[str]) -> str:
     return v
 
 
+def _conteneur(valeur, nom: str, erreurs: list[str]) -> str:
+    """0.17 : « conteneur: bac-a-sable » — nom d'un conteneur de la stack (format Docker), jamais un interdit."""
+    v, erreur = verifier_nom(valeur)
+    if erreur:
+        erreurs.append(f"{nom} : {erreur}")
+    return v
+
+
 def _cadre(valeur) -> bool | None:
     """« cadre: true » force le cadre, « cadre: false » l'interdit ; absent ou « auto » : l'Anneau essaie."""
     if isinstance(valeur, bool):
@@ -201,7 +211,7 @@ def comprendre(texte: str, exemple: bool = False, modifie_le: str = "") -> Fichi
             machines.append(Machine(nom=nom, cle=cle(nom), sonde=_adresse(m.get("sonde"), f"Machine {nom}", erreurs),
                                     famille=famille if famille in connues else ""))
     noms_machines = {m.nom for m in machines}
-    services, vus = [], set()
+    services, vus, conteneurs_vus = [], set(), set()
     for s in brut.get("services") or []:
         if not isinstance(s, dict) or not str(s.get("nom", "")).strip():
             erreurs.append("Un service sans nom a été écarté.")
@@ -223,13 +233,20 @@ def comprendre(texte: str, exemple: bool = False, modifie_le: str = "") -> Fichi
             erreurs.append(f"{nom} : machine « {machine} » inconnue, ignorée.")
             machine = ""
         vus.add(cle(nom))
+        conteneur = _conteneur(s.get("conteneur"), nom, erreurs)
+        if conteneur and conteneur.lower() in conteneurs_vus:
+            erreurs.append(f"{nom} : conteneur « {conteneur} » déjà marqué sur une autre tuile, ignoré.")
+            conteneur = ""
+        if conteneur:
+            conteneurs_vus.add(conteneur.lower())
         services.append(Service(nom=nom, cle=cle(nom), famille=famille, locale=locale,
                                 privee=_adresse(s.get("privee"), nom, erreurs), sonde=_adresse(s.get("sonde"), nom, erreurs),
                                 icone=str(s.get("icone", "")).strip(), cadre=_cadre(s.get("cadre")),
                                 machine=machine, arret_attendu=bool(s.get("arret_attendu", False)),
                                 sauvegarde=_sauvegarde(s.get("sauvegarde")),
                                 depot=_depot(s.get("depot"), nom, erreurs),
-                                version_url=_adresse(s.get("version_url"), f"{nom} (version_url)", erreurs)))
+                                version_url=_adresse(s.get("version_url"), f"{nom} (version_url)", erreurs),
+                                conteneur=conteneur))
     reglages = brut.get("reglages") or {}
     try:
         seuil = float(reglages.get("seuil_disque", 99.8))

@@ -2,8 +2,23 @@
 
 Fichier à lire en premier dans une nouvelle session, et à mettre à jour à chaque fin de session, dans le même commit que le code.
 
-## État (20/11/2026)
+## État (21/11/2026)
 
+- **0.17.0 (21/11/2026)** : allumer, éteindre, mettre à jour un conteneur depuis la fiche de sa tuile (Portainer CE). Dossier `docs/ajout-0.17.0.md`, conseil et arbitrages `docs/conseil-0.17.0.md`.
+  - `app/conteneurs.py` : `Portainer` (client, clé dans l'en-tête `X-API-Key` seulement, `__repr__` sans clé ; `environnement()` = `ANNEAU_PORTAINER_ENV` ou premier `Type` 1 de `/api/endpoints`), `Conteneurs` (`relire` avant chaque tour de veille, `eteints()`, `barriere()`, `ordonner()` → tâche `_executer` dont la réponse ne conclut jamais sauf 401/403/404-405 de recreate, `suivre()` après chaque tour, `vue()` pour `/api/etat`, `stats()`, `essai()`), `INTERDITS`, `verifier_nom`, journal `journal-ecritures.jsonl`, mémoire `conteneurs.json` (ordres, `recreate_absent`).
+  - `app/services.py` : champ `conteneur:` (format Docker, interdits refusés dès la lecture, un conteneur par tuile). `app/config.py` : `portainer_url`, `portainer_cle`, `portainer_env` ; `Config.__repr__` sans secret.
+  - `app/veille.py` : `Veille.eteints` (tuiles `exited` traitées comme un arrêt attendu), `Veille.repond(s)`. `app/main.py` : `un_tour()` (relire → veille → suivre), ronde réveillée par `ETAT["reveil"]` et pressée (5 s) pendant 5 min ; routes `POST /api/conteneurs/{cle}/{geste}`, `GET /api/conteneurs/{cle}/stats`, `GET /api/conteneurs/journal` ; `_verifier_origine` (Origin exactement l'hôte de la requête, ou la locale/privée d'une tuile `anneau`) ; `CONNEXIONS` (fiches Portainer et GitHub, `maison.monter_services` après la garde) ; `_noms_eteints()` passé à la collecte. `app/sauvegardes.py` : `collecter(..., eteintes=)`.
+  - Écran : `lib/Conteneur.svelte` (boutons, fenêtre de confirmation, stats, avertissements), `Anneau.svelte` (phrase sur la pastille, `.tourne`, « Allumer » à la place de « Ouvrir », relecture toutes les 2,5 s pendant un ordre), `Cercle.svelte` (phrase au-dessus du nom), `--eteint` gris, `Reglages.svelte` (section Connexion, applis éteintes de la dernière collecte).
+  - Tests : faux Portainer `tests/faux_portainer.py` (aussi chargé par `tests/interface/serveur.py` : Séries et Films marqués, Musique hors stack), `tests/test_conteneurs.py`, écran `test_017`, `test_018`.
+  - **Jamais essayé sur la vraie installation** : rien de cette version n'a touché un vrai Portainer. En particulier : la version de Portainer de Julien et la présence de la route `recreate` (≥ 2.19) ; les droits réels d'un utilisateur standard CE sur une stack restreinte à une équipe (stop/start/recreate/stats, lecture de l'image) ; la durée d'une vraie recréation (pull) et le renommage « -old » pendant ce temps ; l'environnement trouvé automatiquement (le Synology est-il bien `Type` 1 ?) ; la date d'image (`GET …/images/{id}/json`, `Created`) ; le calcul du processeur sur le vrai `stats?stream=false` ; l'en-tête `Origin` derrière Tailscale Serve (https, port +1000 : l'hôte de la requête doit être celui du navigateur) ; Watchtower qui ne rallume pas un conteneur éteint (dit par le conseil, d'après la stack) ; l'appli éteinte vue par la collecte de 03:30.
+  - **Gestes à faire dans Portainer avant de remplir les variables** (décisions du 21/11/2026) :
+    1. Users › Add user : utilisateur **« anneau »**, rôle standard (pas administrateur).
+    2. Teams › Add team : équipe **« anneau »**, avec l'utilisateur « anneau ».
+    3. Stacks › `homelab` › Access control : accès **« restreint »** (Restricted) à l'équipe « anneau » (jamais « Public » ; risque accepté par Julien : toute la stack lui est ouverte, la liste d'interdits de l'Anneau protège Immich, Portainer, Watchtower, coffre-git, SilverBullet et l'Anneau).
+    4. **Obligatoire** — Settings › Security (environnement du Synology) : interdire aux utilisateurs non administrateurs les montages de dossiers de l'hôte (bind mounts) et le mode privilégié (et, si proposé, les capacités et les périphériques). Sans cela, la clé pourrait créer un conteneur qui monte tout le NAS.
+    5. Se connecter en « anneau » › My account › Access tokens : créer la clé d'API → `ANNEAU_PORTAINER_CLE` ; `ANNEAU_PORTAINER_URL` = l'adresse de Portainer vue depuis la stack ; `ANNEAU_PORTAINER_ENV` = le numéro de l'environnement du Synology (ou vide).
+    6. Dans le coffre (note « Tuiles de l'Anneau ») : `conteneur: bac-a-sable` sur la tuile du Bac à sable (et les autres tuiles choisies), puis importer `services.yaml`. Vérifier Réglages › Connexion › Portainer › « Vérifier ».
+  - Rappels : un redéploiement de la stack `homelab` rallume un conteneur éteint ; `restart: always` le rallume au redémarrage du NAS (la fiche le dit) ; « Mettre à jour » ne relit pas `homelab.yml` (une variable changée exige un redéploiement) ; l'ancienne image reste sur le NAS.
 - **0.16.2 (20/11/2026)** : `dehors()` (`Anneau.svelte`) ouvre d'abord `window.open('', 'anneau-<clé>')` : onglet neuf (`about:blank`) → on lui donne l'adresse ; onglet déjà chargé (lire son adresse lève une erreur) → fermé puis rouvert, pour qu'il passe devant (avant : rechargé au fond, « rien ne se passe ») ; `window.open` refusé → onglet à part `_blank`. **Jamais essayé sur la vraie installation.**
 - **0.16.1 (20/11/2026)** : copies communes du socle 0.11.1 (titre « Pour le relier » quand le réglage est dans l'appli).
 - **0.16.0 (20/11/2026)** : fiches « Connexion » des applis dans la fiche « État » (`app/fiches.py`, `lib/FichesAppli.svelte`, routes `/api/applis/{cle}/services…`, variable `ANNEAU_CLE`). Lues à l'ouverture seulement ; aucun geste qui écrit. **Jamais essayé sur la vraie installation.**
@@ -69,6 +84,7 @@ Fichier à lire en premier dans une nouvelle session, et à mettre à jour à ch
 - `app/veille.py` : la sonde et les règles d'une panne (trois échecs, trois réussites, machine qui emporte ses services, arrêt attendu, seuil des disques, Home Assistant muet). Mémoire : `pannes.json` dans le dossier de données, rien d'autre.
 - `app/main.py` : `/api/etat`, `/api/pannes/vue`, `/api/recharger`, `/api/ha/etat` (ouverte par le secret), les routes de sauvegarde (0.8).
 - `app/sauvegardes.py` (0.8) : collecte des réglages des applis maison, fichiers `sauvegardes/`, tuile « Sauvegarde ratée », exports chiffrés.
+- `app/conteneurs.py` (0.17) : Portainer, barrières, ordres, suivi, journal des écritures. `tests/faux_portainer.py` : le faux Portainer.
 - `frontend/src/lib/Cercle.svelte` : l'anneau (arcs, dépliage). `pages/Anneau.svelte` : l'écran et la vue réduite. `lib/icones.js` : les pictogrammes que le fichier appelle par leur nom.
 - `tests/interface/serveur.py` : l'Anneau de démonstration ; `morts.txt` dit quelles adresses ne répondent plus.
 
@@ -88,7 +104,7 @@ Fichier à lire en premier dans une nouvelle session, et à mettre à jour à ch
 
 ## Décisions à ne pas rouvrir sans raison
 
-- Temps 1 et 2 sans aucun jeton : ni Portainer, ni Home Assistant (c'est lui qui envoie). Le jeton commun `MAISON_JETON` (0.7) sert seulement entre applis maison.
+- Temps 1 et 2 sans aucun jeton : ni Portainer, ni Home Assistant (c'est lui qui envoie). Le jeton commun `MAISON_JETON` (0.7) sert seulement entre applis maison. **Revu le 21/11/2026 (0.17)** : une clé Portainer d'un utilisateur standard dédié, pour les seules tuiles marquées `conteneur:` ; jamais la stack entière, jamais de repli « pull seul », jamais l'Anneau, Immich, Portainer, Watchtower, coffre-git ni SilverBullet.
 - Sauvegarde (0.8) : jamais de secret dans une sauvegarde ; l'export des variables n'arrive que chiffré (age, clé publique ici, clé privée hors de la maison) ; pas de notification Home Assistant pour une sauvegarde ratée.
 - Sauvegarde (0.10) : tout dans l'Anneau, rien dans Atlas ; générer, chiffrer et ouvrir seulement en contexte sûr (HTTPS) ; liste des variables = noms seuls (pas de jeton sur le coffre), note dans Obsidian par lien.
 - Disques : seuil fixe, 99,8 % par défaut, dans le fichier.

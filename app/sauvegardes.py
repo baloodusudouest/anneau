@@ -337,15 +337,23 @@ def retention(data: Path) -> list[str]:
     return retirees
 
 
+ETEINTE = "éteinte, pas sauvegardée cette nuit"    # 0.17
+
+
 async def collecter(data: Path, fichier, propre: dict, jeton: str | None = None, lire: Lecteur | None = None,
-                    maintenant: datetime | None = None, automatique: bool = False) -> dict:
+                    maintenant: datetime | None = None, automatique: bool = False,
+                    eteintes: set[str] | frozenset[str] = frozenset()) -> dict:
     """Une collecte : toutes les applis maison en même temps, puis un fichier (automatique : celui du jour, remplacé
     s'il existe ; à la demande : un fichier neuf, horodaté).
-    `propre` est la sauvegarde de l'Anneau lui-même (sans passer par le réseau)."""
+    `propre` est la sauvegarde de l'Anneau lui-même (sans passer par le réseau).
+    0.17 : `eteintes` (noms de tuiles dont le conteneur est arrêté chez Portainer) ne sont pas demandées et ne comptent pas
+    comme ratées : « éteinte, pas sauvegardée cette nuit » (champ `eteintes` du fichier et de la dernière collecte)."""
     t = maintenant or datetime.now().astimezone()
     jeton = maison.jeton_a_envoyer() if jeton is None else jeton
     lire = lire or lire_http
     cibles = applis_maison(fichier)
+    eteintes_ici = {nom: ETEINTE for nom, _ in cibles if nom in eteintes}
+    cibles = [(nom, b) for nom, b in cibles if nom not in eteintes_ici]
     applis: dict[str, dict] = {}
     ratees: dict[str, str] = {}
     if propre:
@@ -362,6 +370,8 @@ async def collecter(data: Path, fichier, propre: dict, jeton: str | None = None,
     nom = jour if automatique else _nom_manuel(data, t)
     contenu = {"contrat": maison.CONTRAT_SAUVEGARDE, "le": t.isoformat(timespec="seconds"),
                "applis": applis, "ratees": ratees}
+    if eteintes_ici:
+        contenu["eteintes"] = eteintes_ici
     erreur = ""
     try:
         _ecrire_atomique(dossier(data) / f"{nom}.json", json.dumps(contenu, ensure_ascii=False, indent=1))
@@ -370,7 +380,7 @@ async def collecter(data: Path, fichier, propre: dict, jeton: str | None = None,
         erreur = str(exc) or exc.__class__.__name__
     e = lire_etat(data)
     derniere = {"le": contenu["le"], "fichier": f"{nom}.json", "applis": sorted(applis), "ratees": ratees,
-                "erreur": erreur, "automatique": automatique}
+                "eteintes": eteintes_ici, "erreur": erreur, "automatique": automatique}
     e["derniere"] = derniere
     if automatique:
         e["auto_le"] = jour
@@ -378,6 +388,7 @@ async def collecter(data: Path, fichier, propre: dict, jeton: str | None = None,
         e["derniere_reussie"] = contenu["le"]
     ligne = (f"{contenu['le']} — " + ("collecte automatique" if automatique else "collecte à la demande")
              + f" : {len(applis)} appli(s) lue(s)" + (f", {len(ratees)} ratée(s) ({', '.join(sorted(ratees))})" if ratees else "")
+             + (f", {len(eteintes_ici)} éteinte(s), pas sauvegardée(s) ({', '.join(sorted(eteintes_ici))})" if eteintes_ici else "")
              + (f", fichier non écrit : {erreur}" if erreur else ""))
     e["historique"] = ([ligne] + list(e.get("historique") or []))[:HISTORIQUE]
     _garder_etat(data, e)

@@ -98,7 +98,7 @@ def test_deconnexion_invalide_les_anciens_cookies(client, tmp_path):
 
 def test_sans_fichier_l_exemple_sert_et_c_est_dit(tmp_path):
     f = services.lire(tmp_path / "services.yaml")
-    assert f.exemple and len(f.services) == 7 and [x["nom"] for x in f.familles][:2] == ["Proches", "Photos"]
+    assert f.exemple and len(f.services) == 8 and [x["nom"] for x in f.familles][:2] == ["Proches", "Photos"]   # 0.17 : + Bac à sable (conteneur:)
     assert f.seuil_disque == 99.8 and f.famille_ha == "Maison" and not f.erreurs
     assert all("192.0.2." in s.locale for s in f.services)              # adresses réservées à la documentation
 

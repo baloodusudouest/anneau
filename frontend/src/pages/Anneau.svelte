@@ -9,12 +9,16 @@
   //    Bandeau orange en haut si la veille de l'Anneau ne tourne plus depuis 10 min.
   // 0.13 : la fiche dit aussi la version en service et la dernière publiée, en mots (jamais d'orange pour un retard).
   // 0.16 : la fiche d'une appli maison montre aussi ses fiches « Connexion » (lues à l'ouverture, Vérifier relayé).
+  // 0.17 : une tuile marquée « conteneur: » s'allume, s'éteint et se met à jour depuis sa fiche (Portainer) : éteinte, elle
+  //    est grise et « Ouvrir » laisse la place à « Allumer » ; affichée dans le cadre, le bouton « État » mène aux boutons.
+  //    Pendant un ordre, la phrase est écrite sur la tuile et l'écran se relit toutes les 2,5 s.
   import { onMount } from 'svelte'
   import { api } from '$lib/api.js'
   import { duree, secondes } from '$lib/temps.js'
   import Cercle from '$lib/Cercle.svelte'
   import Icone from '$lib/Icone.svelte'
   import FichesAppli from '$lib/FichesAppli.svelte'
+  import Conteneur from '$lib/Conteneur.svelte'
   import { Button } from '$lib/components/ui/button/index.js'
 
   let { ondeconnecte, onreglages } = $props()
@@ -37,6 +41,13 @@
     const a = setInterval(lire, 20000), b = setInterval(() => (tic = Date.now()), 5000)
     return () => { clearInterval(a); clearInterval(b); mq.removeEventListener('change', suivre) }
   })
+  // 0.17 : un ordre en cours chez Portainer : relire toutes les 2,5 s jusqu'à sa fin
+  const ordreEnCours = $derived((e?.familles || []).some((f) => f.services.some((s) => s.conteneur?.ordre?.etat === 'en_cours')))
+  $effect(() => {
+    if (!ordreEnCours) return
+    const t = setInterval(lire, 2500)
+    return () => clearInterval(t)
+  })
 
   const familles = $derived(e?.familles || [])
   const pannes = $derived(e?.pannes || [])
@@ -57,10 +68,14 @@
   const leService = $derived(familleDuService?.services.find((s) => s.cle === service.cle) || null)
 
   const PHRASES = { ok: 'répond', panne: 'ne répond plus', eteint: 'est éteint (arrêt attendu)', inconnu: 'pas encore vérifié' }
+  const phraseEtat = (s) => (s.etat === 'eteint' && s.conteneur?.statut === 'exited' ? 'est éteint (conteneur arrêté)' : PHRASES[s.etat])
   const ETATS_TACHE = { ok: 'ok', en_retard: 'en retard', bloquee: 'bloquée', jamais: 'pas encore passée', erreur: 'dernier essai en erreur' }
   const octets = (n) => (n == null ? '' : n < 1048576 ? `${Math.max(1, Math.round(n / 1024))} Ko` : `${(n / 1048576).toFixed(1).replace('.', ',')} Mo`)
   const periode = (n) => (!n ? '' : n % 86400 === 0 ? (n === 86400 ? 'chaque jour' : `tous les ${n / 86400} j`) : n % 3600 === 0 ? (n === 3600 ? 'chaque heure' : `toutes les ${n / 3600} h`) : n >= 60 ? `toutes les ${Math.round(n / 60)} min` : `toutes les ${n} s`)
-  const aFiche = (s) => !!s && (!!s.sante || !!s.version_phrase || !!s.fiches)   // 0.13 : santé ou version ; 0.16 : fiches
+  const aFiche = (s) => !!s && (!!s.sante || !!s.version_phrase || !!s.fiches || !!s.conteneur)   // 0.13 : santé ou version ; 0.16 : fiches ; 0.17 : conteneur
+  const phraseConteneur = (s) => s.conteneur?.phrase || ''
+  const tourne = (s) => s.conteneur?.ordre?.etat === 'en_cours'
+  const allumable = (s) => !!s.conteneur?.gerable && s.conteneur.statut === 'exited'
   const etatIcone = (s, ouvert = false) => (s.etat !== 'ok' ? s.etat : s.surveiller ? 'surveiller' : ouvert ? 'sombre' : '')
   const deplier = (cle) => (ouverte = ouverte === cle ? null : cle)
   // Les services déjà ouverts dans le cadre restent chargés quand on passe à un autre ou qu'on revient à l'anneau :
@@ -142,7 +157,7 @@
     <div class="pastilles" class:avec-etat={aFiche(leService)} aria-label={'Services de ' + familleDuService.nom}>
       {#each familleDuService.services as s (s.cle)}
         <button type="button" aria-current={s.cle === service.cle ? 'true' : undefined} onclick={() => ouvrir(familleDuService, s)} {...milieu(s)}>
-          <Icone icone={s.icone} etat={etatIcone(s, s.cle === service.cle)} />{s.nom}{#if s.surveiller}<span class="phrase-tuile">{s.phrase}</span>{:else if s.vu}<span class="vu" title="Vu : redevient orange au prochain changement">vu</span>{/if}{#if s.cle !== service.cle && gardes.some((g) => g.cle === s.cle)}<span class="garde" title="Resté ouvert"><span class="sr-only"> (resté ouvert)</span></span>{/if}</button>
+          <Icone icone={s.icone} etat={etatIcone(s, s.cle === service.cle)} />{s.nom}{#if phraseConteneur(s)}<span class="phrase-conteneur">{#if tourne(s)}<span class="tourne" aria-hidden="true"></span>{/if}{phraseConteneur(s)}</span>{/if}{#if s.surveiller}<span class="phrase-tuile">{s.phrase}</span>{:else if s.vu}<span class="vu" title="Vu : redevient orange au prochain changement">vu</span>{/if}{#if s.cle !== service.cle && gardes.some((g) => g.cle === s.cle)}<span class="garde" title="Resté ouvert"><span class="sr-only"> (resté ouvert)</span></span>{/if}</button>
       {/each}
       {#if aFiche(leService) || affichable(leService)}
         <span class="actions-service">
@@ -176,6 +191,9 @@
             <ul class="defauts vus">{#each leService.defauts as d (d.cle)}<li>{d.phrase}</li>{/each}</ul>
             <p class="text-sm text-muted-foreground">Vu : la tuile redeviendra orange si autre chose casse.</p>
           {/if}
+          {#if leService.conteneur}
+            {#key leService.cle}<Conteneur s={leService} onfait={lire} />{/key}
+          {/if}
           {#if leService.fiches}
             {#key leService.cle}<FichesAppli cle={leService.cle} nom={leService.nom} />{/key}
           {/if}
@@ -206,10 +224,12 @@
         <div class="fiche">
           <h1 class="plume" class:panne={leService.etat === 'panne'}>{leService.nom}</h1>
           {#if leService.version_phrase}<p class="version-tuile text-sm">{leService.version_phrase}</p>{/if}
-          <p role="status">{leService.nom} {PHRASES[leService.etat]}{leService.depuis ? ` depuis ${duree(leService.depuis, tic)}` : ''}{leService.etat === 'ok' && leService.delai != null ? ` · réponse en ${leService.delai} ms` : ''}.</p>
+          <p role="status">{leService.nom} {phraseEtat(leService)}{leService.depuis ? ` depuis ${duree(leService.depuis, tic)}` : ''}{leService.etat === 'ok' && leService.delai != null ? ` · réponse en ${leService.delai} ms` : ''}.</p>
           {#if leService.machine_en_panne}<p class="text-sm text-muted-foreground">{leService.machine} ne répond plus : c'est lui qui est en panne.</p>{/if}
-          <Button onclick={() => dehors(leService)}>Ouvrir {leService.nom}</Button>
-          <p class="text-sm text-muted-foreground">{leService.cadre ? (leService.etat === 'eteint' ? 'Éteint : rien à afficher ici.' : 'En panne : rien à afficher ici.') : `${leService.nom} s'ouvre à côté, toujours dans la même fenêtre : ${leService.hors_cadre}.`}</p>
+          <!-- 0.17 : conteneur arrêté : « Allumer » et « Allumer et mettre à jour » à la place de « Ouvrir » -->
+          {#if !allumable(leService)}<Button onclick={() => dehors(leService)}>Ouvrir {leService.nom}</Button>{/if}
+          {#if leService.conteneur}{#key leService.cle}<Conteneur s={leService} onfait={lire} />{/key}{/if}
+          {#if !allumable(leService)}<p class="text-sm text-muted-foreground">{leService.cadre ? (leService.etat === 'eteint' ? 'Éteint : rien à afficher ici.' : 'En panne : rien à afficher ici.') : `${leService.nom} s'ouvre à côté, toujours dans la même fenêtre : ${leService.hors_cadre}.`}</p>{/if}
         </div>
       {/if}
     </section>
@@ -228,7 +248,7 @@
           <h2 class="plume">{familleOuverte.nom}</h2>
           <div class="pastilles libres">
             {#each familleOuverte.services as s, i (s.cle)}
-              <button type="button" style:animation-delay="{i * 28}ms" class:surveiller={s.surveiller} onclick={() => ouvrir(familleOuverte, s)} {...milieu(s)}><Icone icone={s.icone} etat={etatIcone(s)} />{s.nom}{#if s.surveiller}<span class="phrase-tuile">{s.phrase}</span>{:else if s.vu}<span class="vu" title="Vu : redevient orange au prochain changement">vu</span>{/if}</button>
+              <button type="button" style:animation-delay="{i * 28}ms" class:surveiller={s.surveiller} class:avec-phrase={!!phraseConteneur(s)} onclick={() => ouvrir(familleOuverte, s)} {...milieu(s)}><Icone icone={s.icone} etat={etatIcone(s)} />{s.nom}{#if phraseConteneur(s)}<span class="phrase-conteneur">{#if tourne(s)}<span class="tourne" aria-hidden="true"></span>{/if}{phraseConteneur(s)}</span>{/if}{#if s.surveiller}<span class="phrase-tuile">{s.phrase}</span>{:else if s.vu}<span class="vu" title="Vu : redevient orange au prochain changement">vu</span>{/if}</button>
             {/each}
           </div>
         </div>
@@ -330,6 +350,13 @@
   .pastilles.libres .phrase-tuile { flex-basis: 100%; }
   .pastilles.libres button.surveiller { flex-wrap: wrap; justify-content: center; max-width: 100%; padding-block: 0.35rem; border-color: color-mix(in srgb, var(--braise) 55%, var(--border)); }
   .pastilles button[aria-current='true'] .phrase-tuile { color: #6b3a00; }
+  .phrase-conteneur { display: inline-flex; align-items: center; font-size: 0.78rem; color: var(--muted-foreground); white-space: nowrap; }
+  .pastilles button[aria-current='true'] .phrase-conteneur { color: #3a2f1c; }
+  .pastilles.libres button.avec-phrase { flex-wrap: wrap; justify-content: center; max-width: 100%; padding-block: 0.35rem; }
+  .pastilles.libres .phrase-conteneur { flex-basis: 100%; justify-content: center; }
+  .tourne { display: inline-block; flex: none; width: 0.7rem; height: 0.7rem; margin-right: 0.35rem; border-radius: 50%;
+            border: 2px solid color-mix(in srgb, var(--spectre) 30%, transparent); border-top-color: var(--spectre); animation: tourne 0.9s linear infinite; }
+  @keyframes tourne { to { transform: rotate(360deg); } }
   .vu { font-size: 0.7rem; color: var(--muted-foreground); border: 1px solid var(--border); border-radius: 9999px; padding: 0 0.35rem; }
   /* toujours visibles, même quand la rangée défile */
   .actions-service { margin-left: auto; position: sticky; right: 0; display: flex; gap: 0.4rem; flex: none;
@@ -362,7 +389,9 @@
   /* ── pastilles (services d'une famille) ── */
   .pastilles { display: flex; gap: 0.4rem; overflow-x: auto; scrollbar-width: none; min-width: 0; }
   .pastilles.libres { flex-wrap: wrap; justify-content: center; overflow: visible; }
-  .pastilles button { display: inline-flex; align-items: center; gap: 0.45rem; flex: none; min-height: 2.5rem; padding: 0 0.85rem; border-radius: 9999px; white-space: nowrap;
+  /* 0.17 : position relative : le texte « (resté ouvert) » des lecteurs d'écran (sr-only, absolu) restait hors de la rangée
+     qui défile et élargissait la page sur téléphone quand une tuile gardée était au-delà du bord */
+  .pastilles button { position: relative; display: inline-flex; align-items: center; gap: 0.45rem; flex: none; min-height: 2.5rem; padding: 0 0.85rem; border-radius: 9999px; white-space: nowrap;
                       font-size: 0.87rem; color: var(--muted-foreground); background: var(--card); border: 1px solid var(--border); }
   .pastilles button[aria-current='true'] { color: #1e1a16; background: var(--app); border-color: var(--app); font-weight: 600; }
   .pastilles.libres button { color: var(--foreground); animation: descend 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
@@ -402,5 +431,6 @@
   .fiche { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.8rem; padding: 1.5rem; text-align: center; }
   .fiche h1 { font-size: 3.4rem; margin: 0; }
   .fiche p { max-width: 44ch; margin: 0; }
-  @media (prefers-reduced-motion: reduce) { .retour, .pastilles.libres button { animation: none; } }
+  .fiche :global(.conteneur) { max-width: 30rem; }
+  @media (prefers-reduced-motion: reduce) { .retour, .pastilles.libres button, .tourne { animation: none; } }
 </style>

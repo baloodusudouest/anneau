@@ -17,8 +17,14 @@ services:
       - ANNEAU_SECRET_HA=${ANNEAU_SECRET_HA:-}        # secret joint par Home Assistant à ses envois ; vide : pas d'envois
       - ANNEAU_ATLAS_DEPOT=${ANNEAU_ATLAS_DEPOT:-}    # « propriétaire/atlas » ; vide : pas d'Atlas dans l'Anneau
       - ANNEAU_GITHUB_JETON=${ANNEAU_GITHUB_JETON:-}  # jeton GitHub en lecture seule sur le dépôt d'Atlas
+      # 0.17 : allumer, éteindre, mettre à jour les conteneurs des tuiles marquées « conteneur: » (vide : pas de boutons)
+      - ANNEAU_PORTAINER_URL=${ANNEAU_PORTAINER_URL:-}    # adresse de Portainer (ex. http://<NAS>:9000)
+      - ANNEAU_PORTAINER_CLE=${ANNEAU_PORTAINER_CLE:-}    # clé d'API de l'utilisateur Portainer « anneau » (jamais la clé admin)
+      - ANNEAU_PORTAINER_ENV=${ANNEAU_PORTAINER_ENV:-}    # numéro de l'environnement ; vide : le premier environnement Docker
+      - ANNEAU_LECTURE_SEULE=${ANNEAU_LECTURE_SEULE:-}    # « oui » : aucun ordre à Portainer (« non » l'emporte sur MAISON_LECTURE_SEULE)
     volumes:
-      # services.yaml, pannes.json, reglages.json, documents/ (Atlas), sauvegardes/ (réglages des applis, exports chiffrés)
+      # services.yaml, pannes.json, reglages.json, documents/ (Atlas), sauvegardes/ (réglages des applis, exports chiffrés),
+      # 0.17 : conteneurs.json (ordre en cours), journal-ecritures.jsonl (ordres donnés à Portainer)
       - ${ANNEAU_DATA_DIR}:/data
     labels:
       # mise à jour à la main, comme les autres applis de la maison

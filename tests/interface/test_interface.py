@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import socket
@@ -685,3 +686,108 @@ def test_016_fiches_connexion_dans_la_fiche_etat(page):
     if os.environ.get("CAPTURES"):
         page.screenshot(path=f"{os.environ['CAPTURES']}/anneau-fiches-{page.ecran}.png", full_page=True)
     bouton.click()
+
+
+def _deborde(page) -> bool:
+    d = page.evaluate("document.documentElement.scrollWidth > window.innerWidth + 1")
+    if d:
+        print(page.evaluate("""[...document.querySelectorAll('*')].filter(e => e.getBoundingClientRect().right > innerWidth + 1)
+            .slice(0, 12).map(e => e.tagName + '.' + e.className + ' ' + Math.round(e.getBoundingClientRect().right) + ' ' + (e.innerText||'').slice(0,40))"""))
+    return d
+
+
+def test_017_conteneur_eteindre_allumer_mettre_a_jour(page):
+    """0.17 : boutons du conteneur (faux Portainer) : absents sans marquage ou hors stack ; Éteindre et Mettre à jour
+    confirmés dans une fenêtre, Allumer sans ; tuile grise « éteint » ; suivi de la mise à jour lente ; nouvelle image
+    puis « déjà à jour ». PC : Séries ; iPhone : Films (serveur partagé)."""
+    nom = "Séries" if page.ecran == "pc" else "Films"
+    if page.locator("svg.anneau").count() == 0:
+        page.get_by_role("button", name="Revenir à l'anneau").click()
+    # sans marquage : pas de bouton « État », donc rien
+    ouvrir_service(page, "Maison", "Domotique")
+    assert page.get_by_role("button", name="État", exact=True).count() == 0
+    assert page.get_by_role("button", name="Éteindre").count() == 0
+    # marquée, mais le conteneur n'est pas de la stack : la fiche le dit, sans bouton
+    ouvrir_service(page, "Collecte", "Musique")
+    page.get_by_role("button", name="État", exact=True).click()
+    zone = page.get_by_role("region", name="Conteneur de Musique")
+    zone.get_by_text("com.docker.compose.project=homelab").wait_for()
+    assert zone.get_by_role("button").count() == 0
+    # la tuile marquée, affichée dans le cadre : « État » mène aux boutons, avec la mémoire et le processeur
+    page.get_by_label("Services de Collecte").get_by_role("button", name=nom, exact=True).click()
+    etat = page.get_by_role("button", name="État", exact=True)
+    if etat.get_attribute("aria-pressed") != "true":
+        etat.click()
+    zone = page.get_by_role("region", name="Conteneur de " + nom)
+    zone.get_by_text(re.compile("mémoire 260 Mo · processeur 40 %")).wait_for()
+    assert "image du 10/11" in zone.inner_text() and "Un redéploiement de la stack le rallume" in zone.inner_text()
+    if nom == "Séries":
+        assert "se rallumera au redémarrage du NAS" in zone.inner_text()
+    # Éteindre : fenêtre de confirmation ; « Annuler » ne fait rien
+    zone.get_by_role("button", name="Éteindre").click()
+    fenetre = page.get_by_role("dialog", name=f"Éteindre {nom} ?")
+    assert "Ses données restent sur le disque" in fenetre.inner_text() and "redéploiement de la stack" in fenetre.inner_text()
+    assert not _deborde(page)
+    fenetre.get_by_role("button", name="Annuler").click()
+    assert page.get_by_role("dialog").count() == 0
+    time.sleep(1)
+    assert "Allumé" in zone.inner_text()
+    zone.get_by_role("button", name="Éteindre").click()
+    page.get_by_role("dialog").get_by_role("button", name="Éteindre").click()
+    # éteint : la fiche propose Allumer (sans confirmation) et Allumer et mettre à jour, à la place de « Ouvrir »
+    zone.get_by_role("button", name="Allumer", exact=True).wait_for(timeout=15000)
+    assert zone.get_by_role("button", name="Allumer et mettre à jour").count() == 1
+    zone.get_by_text(re.compile(r"image du 10/11, il y a \d+ jours")).wait_for(timeout=15000)   # l'ordre fini : l'âge de l'image
+    etat.click()                                                     # fiche de la tuile (plus de cadre : elle est éteinte)
+    fiche = page.get_by_role("region", name=nom, exact=True)
+    fiche.get_by_text("est éteint (conteneur arrêté)").wait_for(timeout=15000)
+    assert fiche.get_by_role("button", name="Ouvrir " + nom).count() == 0
+    pastille = page.get_by_label("Services de Collecte").get_by_role("button", name=re.compile("^" + nom))
+    assert "éteint" in pastille.inner_text()
+    gris = pastille.locator("svg.trait").evaluate("e => getComputedStyle(e).stroke")
+    assert gris == "rgb(138, 133, 128)", gris                       # gris
+    assert not _deborde(page)
+    if os.environ.get("CAPTURES"):
+        page.screenshot(path=f"{os.environ['CAPTURES']}/anneau-eteint-{page.ecran}.png", full_page=True)
+    fiche.get_by_role("button", name="Allumer", exact=True).click()
+    assert page.get_by_role("dialog").count() == 0                 # pas de confirmation pour allumer
+    page.locator(f"iframe[title='{nom}']:visible").wait_for(timeout=15000)   # rallumé : de nouveau dans le cadre
+    # Mettre à jour : confirmation, « mise à jour en cours… » (recréation lente), puis « image du 10/11 → 20/11 »
+    etat.click()
+    zone.get_by_role("button", name="Mettre à jour").click()
+    fenetre = page.get_by_role("dialog", name=f"Mettre à jour {nom} ?")
+    assert "dernière image" in fenetre.inner_text()
+    fenetre.get_by_role("button", name="Mettre à jour").click()
+    pastille.get_by_text("mise à jour en cours…").wait_for()
+    assert pastille.locator(".tourne").count() == 1
+    assert not _deborde(page)
+    pastille.get_by_text("image du 10/11 → 20/11").wait_for(timeout=20000)
+    zone.get_by_role("button", name="Mettre à jour").click()
+    page.get_by_role("dialog").get_by_role("button", name="Mettre à jour").click()
+    pastille.get_by_text("mise à jour en cours…").wait_for()
+    pastille.get_by_text("déjà à jour").wait_for(timeout=20000)
+    assert "Dernier ordre : déjà à jour." in zone.inner_text()
+    page.get_by_role("button", name="Revenir à l'anneau").click()  # sur l'anneau aussi (PC : au-dessus du nom)
+    if famille(page, "Collecte").get_attribute("aria-expanded") != "true":
+        famille(page, "Collecte").click()
+    if page.ecran == "pc":
+        page.locator("text.phrase-service.conteneur", has_text="déjà à jour").wait_for()
+    else:
+        page.locator(".dessous").get_by_role("button", name=re.compile("^" + nom)).get_by_text("déjà à jour").wait_for()
+    assert not _deborde(page)
+    famille(page, "Collecte").click()
+
+
+def test_018_reglages_connexion_portainer(page):
+    """0.17 : Réglages › Connexion : la fiche Portainer (ce que l'Anneau lit et écrit), « Vérifier »."""
+    page.get_by_role("button", name="Réglages").first.click()
+    page.get_by_role("heading", level=1, name="Réglages").wait_for()
+    zone = page.get_by_role("region", name="Connexion", exact=True)
+    zone.get_by_text("conteneur:", exact=False).first.wait_for()
+    assert "recréer avec la dernière image" in zone.inner_text() and "GitHub" in zone.inner_text()
+    portainer = zone.get_by_role("listitem").filter(has_text="Portainer")
+    portainer.get_by_role("button", name="Vérifier").click()
+    portainer.get_by_text("environnement 3").wait_for()
+    assert not _deborde(page)
+    page.get_by_role("link", name="Revenir à l'anneau").click()
+    page.locator("svg.anneau").wait_for()

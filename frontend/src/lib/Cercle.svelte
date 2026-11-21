@@ -92,7 +92,7 @@
       <g class="monte" class:la={leve === ouverte} style:transform="translateY(-{leve === ouverte ? m.r : R}px)" style:transition-delay="{m.rangDansFile * 22}ms">
         <text class="service {m.s.etat}" class:surveiller={m.s.surveiller} text-anchor="middle" font-size={CORPS_SERVICE} tabindex="0" role="link"
               transform="{m.bas ? 'rotate(180) ' : ''}translate(0 {CORPS_SERVICE * 0.3})"
-              aria-label={m.s.nom + (m.s.etat === 'panne' ? ', en panne' : m.s.surveiller ? ', à surveiller : ' + m.s.phrase : '')}
+              aria-label={m.s.nom + (m.s.etat === 'panne' ? ', en panne' : m.s.surveiller ? ', à surveiller : ' + m.s.phrase : m.s.conteneur?.phrase ? ', ' + m.s.conteneur.phrase : '')}
               onclick={() => onservice?.(m.s)} onmousedown={(e) => e.button === 1 && e.preventDefault()}
               onauxclick={(e) => { if (e.button === 1) { e.preventDefault(); onmilieu?.(m.s) } }} onkeydown={(e) => touche(e, () => onservice?.(m.s))}>{m.s.nom}</text>
         {#if m.s.surveiller}
@@ -100,6 +100,10 @@
                écrite dans la liste « À surveiller » à côté de l'anneau, et sur la pastille de la vue réduite) -->
           <text class="phrase-service" text-anchor="middle" font-size="12.5" transform="{m.bas ? 'rotate(180) ' : ''}translate(0 {-CORPS_SERVICE * 0.62})">
             <title>{m.s.phrase}</title>à surveiller</text>
+        {:else if m.s.conteneur?.phrase}
+          <!-- 0.17 : « éteint », « démarrage… », « mise à jour en cours… », « déjà à jour », « image du 20/11 → 21/11 » -->
+          <text class="phrase-service conteneur" class:encours={m.s.conteneur.ordre?.etat === 'en_cours'} text-anchor="middle" font-size="12.5"
+                transform="{m.bas ? 'rotate(180) ' : ''}translate(0 {-CORPS_SERVICE * 0.62})">{m.s.conteneur.phrase}</text>
         {/if}
       </g>
     </g>
@@ -123,9 +127,12 @@
   .deplie .famille:not(.active):not(.panne):not(.faire) { fill: color-mix(in srgb, var(--or-sourd) 62%, var(--background)); }
   .service { cursor: pointer; fill: var(--app); }
   .service:hover { fill: var(--or-vif); }
-  .service.inconnu, .service.eteint { fill: var(--or-sourd); }
+  .service.inconnu { fill: var(--or-sourd); }
+  .service.eteint { fill: var(--eteint); }      /* 0.17 : éteint = gris */
   .service.surveiller { fill: var(--braise); }
   .phrase-service { font-family: var(--font-sans); font-weight: 500; fill: var(--braise); pointer-events: none; }
+  .phrase-service.conteneur { fill: var(--muted-foreground); }
+  .phrase-service.conteneur.encours { fill: var(--spectre); }
   .famille.panne, .famille.panne.active, .service.panne, .centre-grand.panne {
     fill: url(#lave); filter: drop-shadow(0 0 5px rgb(255 80 20 / 0.85)) drop-shadow(0 0 14px rgb(255 60 0 / 0.45)); animation: braise 2.6s ease-in-out infinite; }
   .famille.faire, .famille.faire.active { fill: url(#spectre); filter: drop-shadow(0 0 5px rgb(90 200 255 / 0.85)) drop-shadow(0 0 14px rgb(60 170 255 / 0.45)); }

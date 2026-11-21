@@ -15,7 +15,7 @@ services:
 """
 CLE = "cle-anneau-de-test-1234567890"
 FICHE = {"id": "immich", "nom": "Immich", "genre": "exterieur", "cible": None, "etat": "repond", "lit": "Les photos.",
-         "ecrit": "Rien.", "reglage": None, "detail": "Refus de http://user:mdp@192.168.1.4:2283", "verifie_le": None,
+         "ecrit": "Rien.", "reglage": None, "detail": "Refus de http://user:mdp@192.0.2.4:2283", "verifie_le": None,
          "derniere_ecriture": None, "gestes": [{"id": "synchroniser", "nom": "Synchroniser"}],
          "guide": {"allumer": ["Allumer le PC."], "inconnu": 1}, "en_trop": "x"}
 

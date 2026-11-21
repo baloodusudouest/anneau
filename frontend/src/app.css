@@ -22,6 +22,7 @@
   --or-sourd: #8f7d52;
   --lave: #ff5a26;                        /* en panne */
   --spectre: #6fd0ff;                     /* quelque chose à faire */
+  --eteint: #8a8580;                      /* 0.17 : éteint (conteneur arrêté, arrêt attendu) : gris */
   --braise: #ff9f1c;                      /* 0.12 : à surveiller (une tâche de fond en retard, une copie vieille) */
   --plume: "Tangerine", "Snell Roundhand", cursive;
 

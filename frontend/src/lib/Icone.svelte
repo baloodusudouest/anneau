@@ -18,7 +18,8 @@
   .trait.panne { stroke: var(--lave); }
   .trait.faire { stroke: var(--spectre); }
   .trait.surveiller { stroke: var(--braise); }
-  .trait.inconnu, .trait.eteint { stroke: var(--or-sourd); }
+  .trait.inconnu { stroke: var(--or-sourd); }
+  .trait.eteint { stroke: var(--eteint); }      /* 0.17 : éteint = gris */
   .trait.sourd { stroke: var(--or-sourd); }
   .trait.vif { stroke: var(--or-vif); }
   .trait.sombre { stroke: #1e1a16; }

@@ -54,6 +54,12 @@ services:
     locale: "http://192.0.2.20:8105"
     icone: descente
     machine: Petit NAS
+  - nom: Bac à sable
+    famille: Machines
+    locale: "http://192.0.2.10:8106"
+    icone: cube
+    machine: Grand NAS
+    conteneur: bac-a-sable           # 0.17 : container_name de la stack : Allumer, Éteindre, Mettre à jour sur sa fiche
   - nom: Ordinateur de calcul
     famille: Machines
     locale: "http://192.0.2.40:3003"

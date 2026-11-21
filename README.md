@@ -4,6 +4,8 @@ Une seule porte pour les machines, les services et les applis de la maison : un 
 
 Depuis la 0.1 : **la vue**. L'Anneau lit (une demande par service, chaque minute) et reçoit (Home Assistant lui envoie l'état des machines). Il n'écrit nulle part hors de son dossier et ne détient aucun jeton d'un autre service, hors le jeton commun des applis maison et, pour Atlas, un jeton GitHub en lecture seule.
 
+Depuis la 0.17 : **allumer, éteindre et mettre à jour** les seuls conteneurs marqués `conteneur:` dans `services.yaml`, par la clé d'API d'un utilisateur Portainer dédié (voir plus bas) ; c'est sa seule écriture hors de son dossier.
+
 Depuis la 0.8 : **la sauvegarde des réglages** des applis maison (voir plus bas).
 
 ## Mise en place
@@ -20,6 +22,10 @@ Depuis la 0.8 : **la sauvegarde des réglages** des applis maison (voir plus bas
 | `MAISON_JETON` | jeton commun des applis maison : annuaire, collecte et portes des sauvegardes. Vide : portes fermées. |
 | `ANNEAU_SECRET_HA` | secret joint par Home Assistant à ses envois. |
 | `ANNEAU_ATLAS_DEPOT`, `ANNEAU_GITHUB_JETON` | Atlas relu chaque jour depuis sa publication GitHub. |
+| `ANNEAU_PORTAINER_URL` | 0.17 : adresse de Portainer. Vide : pas de boutons Allumer / Éteindre / Mettre à jour. |
+| `ANNEAU_PORTAINER_CLE` | 0.17 : clé d'API d'un utilisateur Portainer standard « anneau » (en-tête `X-API-Key`). Jamais écrite dans un journal, une page ni la sauvegarde. |
+| `ANNEAU_PORTAINER_ENV` | 0.17 : numéro de l'environnement Docker dans Portainer. Vide : le premier environnement Docker local (`Type` 1) de `GET /api/endpoints`. |
+| `ANNEAU_LECTURE_SEULE` / `MAISON_LECTURE_SEULE` | « oui » : aucun ordre à Portainer (boutons grisés, routes 403). |
 
 Les réglages d'usage (heure de la collecte, clé publique de l'export chiffré) se changent dans Réglages › Sauvegarde et sont gardés dans `reglages.json`.
 
@@ -68,6 +74,21 @@ Deux champs facultatifs de tuile dans `services.yaml` :
 - **Réglages › Versions** : tableau tuile, en service, dernière publiée, mise à jour le (`GET /api/versions`, session).
 - **Journal** : quand la veille voit la version d'une tuile changer, elle l'ajoute à `journal-versions.json` (tuile, de, vers, le ; 200 entrées au plus).
 - **Fenêtre « Mis à jour depuis votre dernière visite »** : à l'ouverture de l'Anneau après une connexion (ou au premier chargement avec une session valide), s'il y a des changements depuis le dernier « Vu » : « Carnet 2.32.0 → 2.33.0 (cette nuit, 05:04) ». Plusieurs changements d'une même tuile font une ligne. « Vu » enregistre l'heure dans `versions-vues.json` (une pour l'Anneau, pas par navigateur). Routes (session) : `GET /api/versions/nouveautes` → `{"vu_le", "changements": [{"tuile", "cle", "de", "vers", "le"}]}`, `POST /api/versions/vues` (`{"jusqu_a": <le du plus récent montré>}`, facultatif).
+
+## Allumer, éteindre, mettre à jour un conteneur (0.17)
+
+Pour ne pas laisser tourner une appli qui sert peu (le Bac à sable…), et pour la mettre à jour sans attendre Watchtower.
+
+- **Liste blanche** : seules les tuiles marquées `conteneur: <container_name>` dans `services.yaml` ont ces boutons. Format vérifié à la lecture (lettres, chiffres, `_`, `.`, `-`) ; un même conteneur sur deux tuiles : le second est ignoré.
+- **Interdits** (insensible à la casse, sur le champ ET sur le nom réel rendu par Portainer) : `anneau`, `immich*`, `portainer`, `watchtower`, `coffre-git`, `silverbullet*`.
+- **Étiquette** `com.docker.compose.project=homelab` exigée sur le conteneur.
+- **Routes** (session de l'Anneau ; en-tête `Origin` exactement égal à l'adresse de l'Anneau — hôte de la requête, ou locale/privée d'une tuile `anneau` ; jamais en lecture seule) : `POST /api/conteneurs/{tuile}/{allumer|eteindre|mettre-a-jour|allumer-et-mettre-a-jour}` (le corps est ignoré : le nom vient de `services.yaml`), `GET /api/conteneurs/{tuile}/stats`, `GET /api/conteneurs/journal`.
+- **Portainer** : `GET /api/endpoints`, `GET /api/endpoints/{env}/docker/containers/{nom}/json`, `…/stop`, `…/start`, `…/stats?stream=false`, `GET …/docker/images/{id}/json` (date de l'image), `POST /api/docker/{env}/containers/{id}/recreate` `{"PullImage": true}` (Portainer ≥ 2.19 ; identifiant relu par le nom à chaque fois). Route absente (404/405) : « Mettre à jour » disparaît, la fiche dit pourquoi.
+- **Suivi** : la réponse d'un ordre ne dit pas le résultat ; la veille relit l'état (toutes les 5 s pendant 5 min après un ordre) : fini quand le conteneur tourne et que sa sonde répond (allumer, mettre à jour) ou qu'il est `exited` (éteindre) ; au-delà de 10 min : « pas de réponse, voir Portainer ». Ordre en cours gardé dans `conteneurs.json` (survit à un redémarrage).
+- **Écran** : tuile grise « éteint » (« Ouvrir » remplacé par « Allumer » et « Allumer et mettre à jour », âge de l'image), « démarrage… », « mise à jour en cours… », puis « déjà à jour » ou « image du 20/11 → 21/11 ». Fiche « Conteneur » (fiche de la tuile, ou bouton « État » quand l'appli est dans le cadre) : mémoire et processeur, avertissement si redémarrage `always`, rappel « un redéploiement de la stack le rallume ». Confirmation avant Éteindre et Mettre à jour.
+- **Panne et sauvegarde** : un conteneur `exited` n'est jamais « en panne », et n'est pas demandé à la collecte de la nuit (« éteinte, pas sauvegardée cette nuit », pas de « Sauvegarde ratée »).
+- **Journal des écritures** : `journal-ecritures.jsonl` (une ligne JSON par ordre refusé, lancé, fini : `quand`, `quoi`, `tuile`, `resultat`, `conteneur`).
+- **Réglages › Connexion** : fiches Portainer et GitHub (ce que l'Anneau y lit et y écrit, « Vérifier »).
 
 ## Home Assistant (facultatif)
 

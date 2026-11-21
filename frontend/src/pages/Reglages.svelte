@@ -3,10 +3,13 @@
   // les pages Sauvegardes et Variables depuis la 0.10), le seuil des disques,
   // ce que Home Assistant a envoyé, puis la version et la déconnexion.
   // 0.13 : section « Versions » (en service, dernière publiée, mise à jour le), sans couleur pour un retard.
+  // 0.17 : section « Connexion » (fiches communes, contrat 3) : Portainer (ce que l'Anneau y lit et y écrit) et GitHub ;
+  //    la dernière collecte dit les applis éteintes (« éteinte, pas sauvegardée cette nuit »).
   import { onMount } from 'svelte'
   import { api } from '$lib/api.js'
   import { duree } from '$lib/temps.js'
   import { Button } from '$lib/components/ui/button/index.js'
+  import FicheService from '$lib/services/FicheService.svelte'
 
   let { session, deconnecter, ondeconnecte } = $props()
   let e = $state(null)
@@ -61,6 +64,22 @@
     attenteCarte = true; msgCarte = ''
     try { carte = await api.post('/api/carte/relire'); msgCarte = carte.etat.erreur ? '' : 'Carte relue.' } catch (x) { msgCarte = x.message }
     attenteCarte = false
+  }
+  // 0.17 : fiches « Connexion » de l'Anneau lui-même (Portainer, GitHub) ; « Vérifier » ne teste que ce service
+  let connexions = $state(null)
+  let enCoursCx = $state({})
+  let messagesCx = $state({})
+  let annoncesCx = $state({})
+  async function lireConnexions() { try { connexions = await api.get('/api/maison/services') } catch (x) { connexions = { services: [], erreur: x.message } } }
+  onMount(lireConnexions)
+  async function verifierCx(f) {
+    enCoursCx = { ...enCoursCx, [f.id]: 'verifier' }; messagesCx = { ...messagesCx, [f.id]: '' }
+    try {
+      const n = await api.post(`/api/maison/services/${encodeURIComponent(f.id)}/verifier`)
+      connexions = { ...connexions, services: connexions.services.map((x) => (x.id === n.id ? n : x)) }
+      annoncesCx = { ...annoncesCx, [f.id]: `${n.nom} : ${n.etat === 'repond' ? 'répond' : n.etat === 'ne_repond_pas' ? 'ne répond pas' : n.etat}.` }
+    } catch (x) { messagesCx = { ...messagesCx, [f.id]: x.message } }
+    enCoursCx = { ...enCoursCx, [f.id]: '' }
   }
   // 0.13 : versions des tuiles (en service lue par la veille, dernière publiée lue chaque heure sur GitHub)
   let vers = $state(null)
@@ -178,6 +197,21 @@
       {/if}
     </section>
 
+    <section class="mt-3 rounded-2xl border bg-card p-5" aria-label="Connexion">
+      <h2 class="text-lg font-semibold">Connexion</h2>
+      <p class="mt-1 text-sm text-muted-foreground">Les services que l'Anneau joint lui-même : ce qu'il y lit et y écrit. Les applis maison ont leurs fiches dans leur fiche « État ».</p>
+      {#if !connexions}<p class="mt-2 text-sm text-muted-foreground">Lecture…</p>
+      {:else if connexions.erreur}<p class="mt-2 text-sm text-destructive" role="alert">{connexions.erreur}</p>
+      {:else}
+        <ul class="mt-3 grid gap-3" aria-label="Services de l'Anneau">
+          {#each connexions.services as f (f.id)}
+            <li><FicheService service={f} simule={connexions.simule} titreNiveau={3} enCours={enCoursCx[f.id] || ''} message={messagesCx[f.id] || ''}
+                              annonce={annoncesCx[f.id] || ''} onverifier={verifierCx} /></li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
+
     <section class="mt-3 rounded-2xl border bg-card p-5" aria-label="Bac à sable">
       <h2 class="text-lg font-semibold">Bac à sable</h2>
       <p class="mt-1 text-sm text-muted-foreground">
@@ -233,6 +267,11 @@
           {:else}
             <p class="mt-1 text-sm">{quand(sv.derniere.le)} ({sv.derniere.automatique ? 'automatique' : 'à la demande'}) : {sv.derniere.applis.length} appli(s) lue(s){sv.derniere.applis.length ? ' — ' + sv.derniere.applis.join(', ') : ''}.</p>
             {#if sv.derniere.erreur}<p class="mt-1 text-sm text-destructive" role="alert">Fichier non écrit : {sv.derniere.erreur}</p>{/if}
+            {#if Object.keys(sv.derniere.eteintes || {}).length}
+              <ul class="mt-1 list-disc pl-5 text-sm text-muted-foreground" aria-label="Applis éteintes">
+                {#each Object.entries(sv.derniere.eteintes) as [nom, raison]}<li class="break-words">{nom} : {raison}</li>{/each}
+              </ul>
+            {/if}
             {#if Object.keys(sv.derniere.ratees).length}
               <ul class="mt-1 list-disc pl-5 text-sm" aria-label="Applis non lues">
                 {#each Object.entries(sv.derniere.ratees) as [nom, raison]}<li class="break-words"><span class="text-[var(--app)]">{nom}</span> : {raison}</li>{/each}

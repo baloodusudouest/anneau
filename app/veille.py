@@ -137,6 +137,7 @@ class Veille:
         self.versions = versions.EnService(data)   # 0.13 : versions en service et journal des changements
         from . import __version__ as _moi           # 0.13 : la mise à jour de l'Anneau lui-même entre aussi au journal
         self.versions.noter("@anneau", "L'Anneau", _moi)
+        self.eteints: set[str] = set()          # 0.17 : tuiles dont le conteneur est arrêté chez Portainer (exited) : « éteint »
         self.refus: dict[str, str] = {}         # adresse → raison pour laquelle le service interdit le cadre (vide : il l'accepte)
         self._tours = 0
         self.suivi: dict[str, dict] = {}        # clé de sonde → échecs, réussites, état, depuis, délai
@@ -233,7 +234,7 @@ class Veille:
         """Un tour : toutes les machines et tous les services, en même temps."""
         f = self.fichier
         cibles = [("machine:" + m.cle, m.sonde, False, "") for m in f.machines if m.sonde] \
-            + [("service:" + s.cle, s.a_sonder, s.arret_attendu, self._jeton_pour(s)) for s in f.services]
+            + [("service:" + s.cle, s.a_sonder, s.arret_attendu or s.cle in self.eteints, self._jeton_pour(s)) for s in f.services]
         resultats = await asyncio.gather(*(self._sonde(adresse, j) for _, adresse, _, j in cibles), return_exceptions=True)
         lues = {}                                                           # 0.13 : clé de tuile → version lue ce tour-ci
         for (c, _, attendu, _), r in zip(cibles, resultats):
@@ -258,6 +259,14 @@ class Veille:
         t = self._instant()
         self.vus.menage({k: emp for k in connues if (emp := sante.empreinte(sante.defauts(self.sante.get(k), t)))})
         self.boucle_a, self.boucle_le = self._horloge(), maintenant()
+
+    async def repond(self, s) -> bool:
+        """0.17 : la tuile répond-elle maintenant ? (suivi d'un ordre donné à Portainer : /health qui répond)"""
+        try:
+            r = await self._sonde(s.a_sonder, self._jeton_pour(s))
+        except Exception:                      # noqa: BLE001
+            return False
+        return bool(r and r[0])
 
     # ------------------------------------------------------------ versions (0.13)
     async def _versions(self, lues: dict[str, str | None]) -> None:

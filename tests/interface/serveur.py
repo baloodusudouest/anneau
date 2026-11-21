@@ -10,7 +10,10 @@ l'Anneau ne sauvegardant que lui-même.
 <dossier>/arret.txt fait échouer chaque tour de veille et <dossier>/avance.txt avance l'horloge de la veille
 (en secondes) : ensemble, ils simulent une veille arrêtée depuis plus de 10 min.
 0.13 : Répertoire et Arbre ont un `depot:` ; un faux GitHub (jamais le vrai) rend leurs étiquettes. La version en service
-se donne par le champ `version` de leur corps dans sante.json."""
+se donne par le champ `version` de leur corps dans sante.json.
+0.17 : un faux Portainer (tests/faux_portainer.py, dans le même processus) ; Séries et Films sont marqués `conteneur:`
+(ils ne répondent que si leur conteneur tourne ; recréation lente : 1,5 s ; une image plus récente attend), Musique est
+marquée mais son conteneur n'a pas l'étiquette de la stack (pas de boutons)."""
 from __future__ import annotations
 
 import json
@@ -25,6 +28,7 @@ import uvicorn
 from app import main, services
 from app.config import Config
 from app.veille import Veille
+from tests.faux_portainer import CLE as CLE_PORTAINER, FauxPortainer
 
 MDP, SECRET = "essai-essai-essai", "secret-de-demonstration"
 
@@ -50,9 +54,9 @@ services:
   - {{ nom: Statistiques, famille: Médias, locale: "{base}/health?s=statistiques", icone: courbes, machine: Grand NAS }}
   - {{ nom: Livres lus, famille: Médias, locale: "{base}/health?s=livres", icone: casque, machine: Grand NAS }}
   - {{ nom: Domotique, famille: Maison, locale: "{base}/health?s=domotique", icone: maison }}
-  - {{ nom: Séries, famille: Collecte, locale: "{base}/health?s=series", icone: ecran }}
-  - {{ nom: Films, famille: Collecte, locale: "{base}/health?s=films", icone: pellicule }}
-  - {{ nom: Musique, famille: Collecte, locale: "{base}/health?s=musique", icone: musique }}
+  - {{ nom: Séries, famille: Collecte, locale: "{base}/health?s=series", icone: ecran, conteneur: series }}
+  - {{ nom: Films, famille: Collecte, locale: "{base}/health?s=films", icone: pellicule, conteneur: films }}
+  - {{ nom: Musique, famille: Collecte, locale: "{base}/health?s=musique", icone: musique, conteneur: musique }}
   - {{ nom: Ordinateur de calcul, famille: Machines, locale: "{base}/health?s=calcul", icone: processeur, arret_attendu: true }}
 """
 
@@ -87,6 +91,21 @@ def faux_github(req: httpx.Request) -> httpx.Response:
     return httpx.Response(200, json=[{"name": n} for n in ETIQUETTES[depot]]) if depot in ETIQUETTES else httpx.Response(404)
 
 
+CONTENEURS = {"s=series": "series", "s=films": "films", "s=musique": "musique"}
+
+
+def faux_portainer() -> FauxPortainer:
+    """0.17 : Séries (redémarrage « always ») et Films tournent sur une image du 10/11 ; celle du 20/11 attend."""
+    f = FauxPortainer(lenteur=1.5)
+    for nom, redemarrage in (("series", "always"), ("films", "unless-stopped")):
+        image = f"ghcr.io/exemple/{nom}:latest"
+        ancienne = f.image(image, "2026-11-10T05:00:00Z", derniere=False)
+        f.image(image, "2026-11-20T05:00:00Z")
+        f.ajouter(nom, ancienne, image, redemarrage=redemarrage)
+    f.ajouter("musique", f.image("ghcr.io/exemple/musique:latest", "2026-11-15T05:00:00Z"), projet="autre")
+    return f
+
+
 def main_() -> None:
     racine, port = Path(sys.argv[1]), int(sys.argv[2])
     data = racine / "data"
@@ -99,11 +118,17 @@ def main_() -> None:
     sante = racine / "sante.json"
     arret, avance = racine / "arret.txt", racine / "avance.txt"
 
+    portainer = faux_portainer()
+
     async def sonder(adresse: str, jeton: str = ""):
         try:
             corps = json.loads(sante.read_text(encoding="utf-8")) if sante.is_file() else {}
         except ValueError:
             corps = {}
+        nom = next((n for m, n in CONTENEURS.items() if m in adresse), None)
+        if nom is not None:                                # 0.17 : répond si son conteneur tourne
+            c = portainer.conteneurs.get(nom)
+            return (bool(c and c["State"]["Running"]), 14, None)
         return (not any(m and m in adresse for m in morts.read_text().split()), 14,
                 next((c for m, c in corps.items() if m in adresse), None))
 
@@ -148,10 +173,12 @@ def main_() -> None:
         return 200, {"contrat": 3, "appli": "repertoire", "simule": False, "services": fiches_demo}
 
     cfg = Config(password=MDP, data=data, static=Path(__file__).resolve().parents[2] / "app" / "static", secret_ha=SECRET,
-                 attente_connexion=False, periode=0.5, sauvegarde_auto=False)   # la collecte se lance par le bouton
+                 attente_connexion=False, periode=0.5, sauvegarde_auto=False,   # la collecte se lance par le bouton
+                 portainer_url="http://portainer.exemple:9000", portainer_cle=CLE_PORTAINER)
     main.ETAT.update(cfg=cfg, veille=VeilleDemo(data, services.lire(data / "services.yaml"), ha_attendu=False, sonder=sonder,
                                                 examiner=examiner, horloge=horloge),
-                     transport_versions=httpx.MockTransport(faux_github), lire_fiches=lire_fiches)
+                     transport_versions=httpx.MockTransport(faux_github), lire_fiches=lire_fiches,
+                     transport_portainer=portainer.transport())
     uvicorn.run(main.app, host="127.0.0.1", port=port, log_level="warning")
 
 

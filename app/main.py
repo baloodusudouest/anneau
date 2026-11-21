@@ -18,6 +18,10 @@ carte ; messages seulement avec le jeton commun ou une session) et copie_base (n
 /api/versions/nouveautes, /api/versions/vues (session) ;
 0.16 — fiches « Connexion » des applis (contrat 3) : /api/applis/{cle}/services et
 /api/applis/{cle}/services/{service}/verifier (session) ; l'Anneau les lit chez l'appli avec ANNEAU_CLE, côté serveur ;
+0.17 — allumer, éteindre, mettre à jour un conteneur marqué « conteneur: » (Portainer, ANNEAU_PORTAINER_*) :
+POST /api/conteneurs/{cle}/{geste} (session + en-tête Origin exactement celui de l'Anneau ; jamais en lecture seule),
+GET /api/conteneurs/{cle}/stats, GET /api/conteneurs/journal ; fiches « Connexion » de l'Anneau lui-même
+(/api/maison/services : Portainer, GitHub) ; journal des écritures (journal-ecritures.jsonl) ;
 puis l'interface. Le chiffrement et le déchiffrement de l'export des variables se font dans la page (HTTPS seulement) :
 le serveur ne reçoit jamais que la clé publique et du texte déjà chiffré.
 """
@@ -30,12 +34,13 @@ import logging
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 import time
 
-from . import carte, fiches, maison, sauvegardes, stack, versions
+from . import carte, conteneurs, fiches, maison, sauvegardes, stack, versions
 
 from . import __version__
 from .auth import COMMUN, DUREE, Sessions, en_https
@@ -100,14 +105,40 @@ def _declarer(cfg: Config) -> None:
         r.declarer(TACHE_VERSIONS, periode_s=versions.HEURE, type="reguliere")
 
 
+PERIODE_PRESSEE = 5                            # 0.17 : secondes entre deux tours pendant les 5 min qui suivent un ordre
+
+
+async def un_tour(veille: Veille) -> None:
+    """Un tour de veille. 0.17 : l'état des conteneurs marqués est relu chez Portainer avant la sonde (un conteneur
+    arrêté est « éteint », jamais « en panne »), puis les ordres en cours sont suivis (état réel, /health)."""
+    c = ETAT.get("conteneurs")
+    if c is not None and c.actif:
+        try:
+            await c.relire(veille.fichier)
+        except Exception:                          # noqa: BLE001 — Portainer en panne n'arrête pas la veille
+            log.exception("Lecture des conteneurs interrompue")
+        veille.eteints = c.eteints()
+    await veille.tour()
+    if c is not None and c.actif:
+        await c.suivre(veille.fichier, veille.repond)
+
+
 async def _ronde(veille: Veille, periode: int) -> None:
+    reveil = ETAT.get("reveil")
     while True:
         try:
             async with _tour(TACHE_VEILLE):
-                await veille.tour()
+                await un_tour(veille)
         except Exception:                          # une ronde ratée ne doit jamais arrêter la veille
             log.exception("Ronde de sonde interrompue")
-        await asyncio.sleep(periode)
+        c = ETAT.get("conteneurs")
+        attente = min(periode, PERIODE_PRESSEE) if c is not None and c.presse() else periode
+        if reveil is None:
+            await asyncio.sleep(attente)
+            continue
+        reveil.clear()
+        with suppress(asyncio.TimeoutError):       # 0.17 : un ordre réveille la ronde (relecture tout de suite)
+            await asyncio.wait_for(reveil.wait(), timeout=attente)
 
 
 async def _relire_carte(cfg: Config) -> None:
@@ -173,8 +204,13 @@ async def cycle(app: FastAPI):
     veille = ETAT.get("veille") or Veille(cfg.data, _lire_au_demarrage(cfg.data), ha_attendu=bool(cfg.secret_ha))
     reglages = ETAT.get("reglages") or maison.Reglages(cfg.data / "reglages.json", sauvegardes.DEFAUTS, {})
     sauvegardes.demarrer(cfg.data)
+    portainer = conteneurs.Portainer(cfg.portainer_url, cfg.portainer_cle, cfg.portainer_env,
+                                     transport=ETAT.get("transport_portainer")) if cfg.portainer else None
+    gestion = ETAT.get("conteneurs") or conteneurs.Conteneurs(cfg.data, portainer)
+    reveil = asyncio.Event()
+    gestion.reveil = reveil
     ETAT.update(cfg=cfg, sessions=Sessions(APPLI, cfg.password, _lire_generation(cfg)), veille=veille,
-                reglages=reglages, verrou_collecte=asyncio.Lock())
+                reglages=reglages, verrou_collecte=asyncio.Lock(), conteneurs=gestion, reveil=reveil)
     # 0.10.5 : la génération des sessions de l'Anneau sert aussi au cookie commun ; « Se déconnecter » l'augmente
     # et les autres applis la lisent dans /externe/services : les cookies communs d'avant ne valent plus nulle part
     maison.definir_generation_commune(_generation_commune)
@@ -206,6 +242,44 @@ async def garde(request: Request, appel):
     if chemin.startswith("/api/"):
         reponse.headers["Cache-Control"] = "no-store"
     return reponse
+
+
+# 0.17 : fiches « Connexion » de l'Anneau lui-même (contrat 3) : Réglages › Connexion. Montées après la garde (le dernier
+# middleware ajouté passe en premier) ; accès : session de l'Anneau, ou ANNEAU_CLE.
+CONNEXIONS = maison.Services(APPLI)
+
+
+def _cfg_ou_vide():
+    return ETAT.get("cfg")
+
+
+async def _essai_portainer():
+    c = ETAT.get("conteneurs")
+    if c is None:
+        return False, "Pas réglé."
+    try:
+        return await c.essai()
+    except conteneurs.ErreurPortainer as exc:
+        return False, exc.phrase
+
+
+CONNEXIONS.ajouter(
+    "portainer", "Portainer",
+    lit="L'état, l'image, la mémoire et le processeur des seuls conteneurs marqués « conteneur: » dans le fichier "
+        "des services (relus à chaque tour de veille).",
+    ecrit="Sur ordre depuis la fiche d'une tuile marquée : arrêter, démarrer, ou recréer avec la dernière image (ce seul "
+          "conteneur, jamais la stack). Chaque ordre est noté au journal des écritures.",
+    regle=lambda: bool(_cfg_ou_vide() and _cfg_ou_vide().portainer), reglage="ANNEAU_PORTAINER_URL",
+    essai=_essai_portainer,
+    derniere_ecriture=lambda: ETAT["conteneurs"].derniere_ecriture() if ETAT.get("conteneurs") else None)
+CONNEXIONS.ajouter(
+    "github", "GitHub",
+    lit="La carte de la maison (carte.json du dépôt d'Atlas, chaque heure, jeton en lecture seule) et les étiquettes "
+        "publiques des dépôts des tuiles (versions publiées).",
+    ecrit="Rien.",
+    regle=lambda: bool(_cfg_ou_vide() and _cfg_ou_vide().atlas_depot and _cfg_ou_vide().github_jeton),
+    reglage="ANNEAU_ATLAS_DEPOT")
+maison.monter_services(app, CONNEXIONS, lambda request: ETAT["sessions"].connecte(request.cookies))
 
 
 # ================================================================ public
@@ -302,10 +376,97 @@ def _a_traiter() -> list[dict]:
 def etat(request: Request):
     e = ETAT["veille"].etat(prive=_prive(request), https=_https(request), hote=_hote(request))
     maisons = fiches.cibles(ETAT["veille"].fichier, APPLI)       # 0.16 : tuiles qui ont des fiches « Connexion »
+    tuiles = {t.cle: t for t in ETAT["veille"].fichier.services}
+    gestion, seule = ETAT.get("conteneurs"), _lecture_seule()
     for fam in e.get("familles", []):
         for s in fam.get("services", []):
             s["fiches"] = s.get("cle") in maisons
+            t = tuiles.get(s.get("cle"))                         # 0.17 : conteneur gérable depuis la fiche
+            s["conteneur"] = gestion.vue(t, seule) if gestion is not None and t is not None else None
     return {**e, "a_traiter": _a_traiter(), "version": __version__}
+
+
+# ================================================================ conteneurs (0.17 : Portainer)
+
+def _lecture_seule() -> bool:
+    return maison.lecture_seule("ANNEAU_LECTURE_SEULE")
+
+
+def _origine_de_la_requete(request: Request) -> str:
+    proto = (request.headers.get("x-forwarded-proto") or request.url.scheme or "http").split(",")[0].strip().lower()
+    hote = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").split(",")[0].strip().lower()
+    return f"{proto}://{hote}" if hote else ""
+
+
+def _origine(adresse: str) -> str:
+    try:
+        u = urlsplit(adresse)
+        port = u.port
+    except ValueError:
+        return ""
+    if not u.scheme or not u.hostname:
+        return ""
+    defaut = {"http": 80, "https": 443}.get(u.scheme.lower())
+    return f"{u.scheme.lower()}://{u.hostname.lower()}" + (f":{port}" if port and port != defaut else "")
+
+
+def origines_de_l_anneau(request: Request) -> set[str]:
+    """Les adresses de l'Anneau : celle par laquelle la page est ouverte (hôte de la requête), et la locale et la privée
+    d'une tuile « anneau » s'il y en a une. Le cookie de connexion est commun à toutes les applis de la maison : « même
+    site » ne suffit pas, l'Origin doit être exactement l'une de celles-ci."""
+    sortie = {_origine_de_la_requete(request)}
+    for t in ETAT["veille"].fichier.services:
+        if t.cle == APPLI:
+            sortie |= {_origine(t.locale), _origine(t.privee)}
+    return {o for o in sortie if o}
+
+
+def _verifier_origine(request: Request) -> None:
+    origine = (request.headers.get("origin") or "").strip().lower()
+    if not origine or origine not in origines_de_l_anneau(request):
+        raise HTTPException(403, "Ordre refusé : il ne vient pas d'une page de l'Anneau (en-tête Origin).")
+
+
+def _tuile(cle: str):
+    t = next((x for x in ETAT["veille"].fichier.services if x.cle == cle), None)
+    if t is None:
+        raise HTTPException(404, "Tuile inconnue.")
+    return t
+
+
+@app.post("/api/conteneurs/{cle}/{geste}")
+async def ordre_conteneur(cle: str, geste: str, request: Request):
+    """Allumer, éteindre, mettre à jour le conteneur d'une tuile. Le nom du conteneur vient de services.yaml (champ
+    conteneur:), jamais de la requête : son corps est ignoré."""
+    gestion = ETAT["conteneurs"]
+    try:
+        _verifier_origine(request)
+    except HTTPException as exc:
+        gestion.noter(geste, cle, f"refusé : {exc.detail}")
+        raise
+    if geste not in conteneurs.GESTES:
+        raise HTTPException(404, "Geste inconnu.")
+    t = _tuile(cle)
+    try:
+        ordre = await gestion.ordonner(t, geste, _lecture_seule())
+    except conteneurs.Refus as r:
+        raise HTTPException(r.statut, r.phrase) from None
+    return JSONResponse({"ordre": ordre}, status_code=202)
+
+
+@app.get("/api/conteneurs/journal")
+def journal_conteneurs():
+    """Les derniers ordres donnés à Portainer (journal des écritures), du plus récent au plus ancien."""
+    return {"lignes": ETAT["conteneurs"].journal(50)}
+
+
+@app.get("/api/conteneurs/{cle}/stats")
+async def stats_conteneur(cle: str):
+    """Mémoire et processeur du conteneur (un GET stats?stream=false), lus à l'ouverture de la fiche."""
+    try:
+        return await ETAT["conteneurs"].stats(_tuile(cle))
+    except conteneurs.Refus as r:
+        raise HTTPException(r.statut, r.phrase) from None
 
 
 # ================================================================ fiches « Connexion » des applis (0.16, contrat 3)
@@ -452,10 +613,18 @@ def _propre() -> dict:
     return maison.sauvegarde(APPLI, __version__, ETAT["reglages"].tout(), exclus=sauvegardes.EXCLUS)
 
 
+def _noms_eteints() -> set[str]:
+    """0.17 : noms des tuiles dont le conteneur est arrêté chez Portainer (pas demandées à la collecte)."""
+    c = ETAT.get("conteneurs")
+    cles = c.eteints() if c is not None else set()
+    return {s.nom for s in ETAT["veille"].fichier.services if s.cle in cles}
+
+
 async def _collecter(automatique: bool = False) -> dict:
     async with ETAT["verrou_collecte"]:
         return await sauvegardes.collecter(ETAT["cfg"].data, ETAT["veille"].fichier, _propre(),
-                                           lire=ETAT.get("lire_sauvegarde"), automatique=automatique)
+                                           lire=ETAT.get("lire_sauvegarde"), automatique=automatique,
+                                           eteintes=_noms_eteints())
 
 
 @app.get("/api/reglages")
