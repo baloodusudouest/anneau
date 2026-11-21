@@ -298,13 +298,21 @@ CONNEXIONS.ajouter(
     regle=lambda: bool(_cfg_ou_vide() and _cfg_ou_vide().watchtower), reglage="ANNEAU_WATCHTOWER_URL",
     essai=_essai_watchtower,
     derniere_ecriture=lambda: ETAT["conteneurs"].derniere_ecriture(conteneurs.MAJ) if ETAT.get("conteneurs") else None)
+def _essai_github():
+    """0.17.2 : lit les informations de carte.json avec le jeton (lecture seule, rien n'est enregistré)."""
+    cfg = _cfg_ou_vide()
+    if cfg is None:
+        return False, "Pas réglé."
+    return carte.essai(cfg.atlas_depot, cfg.github_jeton, ETAT.get("transport_github"))
+
+
 CONNEXIONS.ajouter(
     "github", "GitHub",
     lit="La carte de la maison (carte.json du dépôt d'Atlas, chaque heure, jeton en lecture seule) et les étiquettes "
         "publiques des dépôts des tuiles (versions publiées).",
     ecrit="Rien.",
     regle=lambda: bool(_cfg_ou_vide() and _cfg_ou_vide().atlas_depot and _cfg_ou_vide().github_jeton),
-    reglage="ANNEAU_ATLAS_DEPOT")
+    reglage="ANNEAU_ATLAS_DEPOT", essai=_essai_github)
 maison.monter_services(app, CONNEXIONS, lambda request: ETAT["sessions"].connecte(request.cookies))
 
 

@@ -87,6 +87,33 @@ def valider(carte) -> str:
     return ""
 
 
+def essai(depot: str, jeton: str, transport: httpx.BaseTransport | None = None) -> tuple[bool, str]:
+    """0.17.2 : « Vérifier » de la fiche GitHub. Lit les informations de carte.json dans le dépôt (lecture seule,
+    rien n'est enregistré : la copie locale ne change pas). (True, phrase) si le jeton ouvre le fichier ; sinon
+    (False, la raison). Le jeton ne figure jamais dans la phrase."""
+    if not depot or not jeton:
+        return False, "ANNEAU_ATLAS_DEPOT ou ANNEAU_GITHUB_JETON n'est pas réglé dans la stack."
+    entetes = {"Authorization": f"Bearer {jeton}", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "anneau",
+               "Accept": "application/vnd.github+json"}
+    try:
+        with httpx.Client(timeout=10, transport=transport, follow_redirects=False) as c:
+            r = c.get(f"{API}/repos/{depot}/contents/{FICHIER}", headers=entetes)
+    except httpx.HTTPError as exc:
+        return False, f"GitHub injoignable ({type(exc).__name__})."
+    if r.status_code in (401, 403):
+        return False, "GitHub refuse le jeton (expiré, ou sans accès en lecture au dépôt de la carte)."
+    if r.status_code == 404:
+        return False, f"{FICHIER} introuvable dans {depot} (ou dépôt invisible pour ce jeton)."
+    if r.status_code != 200:
+        return False, f"GitHub a répondu {r.status_code}."
+    try:
+        taille = int(r.json().get("size", 0))
+    except (ValueError, AttributeError):
+        taille = 0
+    reste = r.headers.get("x-ratelimit-remaining")
+    return True, f"Jeton accepté, {FICHIER} lisible dans {depot} ({taille} octets)" + (f", {reste} demandes restantes cette heure." if reste else ".")
+
+
 def telecharger(data: Path, depot: str, jeton: str, transport: httpx.BaseTransport | None = None) -> dict:
     """Relit carte.json dans le dépôt et remplace la copie locale si elle a changé. Une erreur laisse l'ancienne
     carte en place et est notée (montrée dans Réglages)."""

@@ -536,3 +536,34 @@ def test_cookies_secure_en_https(client):
     assert len(poses) == 2 and all("secure" in c.lower() for c in poses)
     r = client.post("/api/connexion", json={"mot_de_passe": MDP})
     assert not any("secure" in c.lower() for c in r.headers.get_list("set-cookie"))
+
+
+# ---------------------------------------------------------------- 0.17.2 : « Vérifier » de la fiche GitHub
+
+def test_essai_github_lecture_seule(tmp_path):
+    vus = []
+    ok, phrase = carte.essai("moi/atlas", "jeton-essai", faux_github(vus=vus))
+    assert ok and "Jeton accepté" in phrase and "jeton-essai" not in phrase
+    assert vus == [("https://api.github.com/repos/moi/atlas/contents/carte.json", "Bearer jeton-essai")]
+    assert not carte.lire(tmp_path)                                           # rien d'enregistré
+    assert carte.essai("moi/atlas", "x", faux_github(etat=401)) == (False, "GitHub refuse le jeton (expiré, ou sans accès en lecture au dépôt de la carte).")
+    assert "introuvable" in carte.essai("moi/atlas", "x", faux_github(etat=404))[1]
+    assert "ANNEAU_GITHUB_JETON" in carte.essai("", "", None)[1]
+    def coupe(req):
+        raise httpx.ConnectError("hors ligne")
+    assert carte.essai("moi/atlas", "x", httpx.MockTransport(coupe)) == (False, "GitHub injoignable (ConnectError).")
+
+
+def test_verifier_github_repond_ou_dit_pourquoi(client):
+    connecter(client)
+    main.ETAT["cfg"] = Config(password=MDP, data=main.ETAT["cfg"].data, static=main.ETAT["cfg"].static, secret_ha=SECRET,
+                              attente_connexion=False, veille=False, atlas_depot="moi/atlas", github_jeton="jeton-essai")
+    main.ETAT["transport_github"] = faux_github()
+    main.CONNEXIONS._dernier.pop("github", None)
+    f = client.post("/api/maison/services/github/verifier").json()
+    assert f["etat"] == "repond" and "Jeton accepté" in f["detail"] and f["verifie_le"]
+    main.ETAT["transport_github"] = faux_github(etat=401)
+    main.CONNEXIONS._dernier.pop("github", None)
+    f = client.post("/api/maison/services/github/verifier").json()
+    assert f["etat"] == "ne_repond_pas" and "refuse le jeton" in f["detail"]
+    assert "jeton-essai" not in client.get("/api/maison/services").text

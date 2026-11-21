@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 0.17.2 — 21 novembre 2026 (« Vérifier » de la fiche GitHub)
+- Panne signalée par Julien : Réglages › Connexion › GitHub › « Vérifier » ne faisait rien. La fiche n'avait aucun essai branché : le bouton renvoyait la fiche telle quelle, sans message.
+- « Vérifier » lit maintenant les informations de `carte.json` dans le dépôt réglé (`ANNEAU_ATLAS_DEPOT`) avec `ANNEAU_GITHUB_JETON`, en lecture seule (la copie locale de la carte ne change pas) : « répond » (jeton accepté, fichier lisible, demandes restantes) ou la raison (jeton refusé ou expiré, carte introuvable ou dépôt invisible, GitHub injoignable, autre code). Le jeton n'apparaît jamais dans la phrase.
+
 ## 0.17.1 — 21 novembre 2026 (« Mettre à jour » par Watchtower)
 - Pourquoi : dans Portainer CE, dès qu'un réglage « Hide … for non-administrators » (Docker security settings) est actif, la recréation (recreate, duplicate, edit) est interdite aux non-admins. Julien les active tous (obligatoire pour la sécurité de la clé « anneau »). Choix de Julien du 21/11/2026 : **« Mettre à jour » passe par l'API HTTP de Watchtower** ; Allumer et Éteindre restent par Portainer.
 - **Nouvelles variables** : `ANNEAU_WATCHTOWER_URL` (vide : pas de « Mettre à jour » ; valeur de la stack `http://watchtower:8080`) et `ANNEAU_WATCHTOWER_JETON` (même valeur que `WATCHTOWER_HTTP_API_TOKEN` ; en-tête `Authorization: Bearer` vers Watchtower seulement, jamais dans un journal, une page, une réponse ni la sauvegarde).
