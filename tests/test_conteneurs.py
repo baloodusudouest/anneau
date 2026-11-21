@@ -1,4 +1,5 @@
-"""0.17 : allumer, éteindre, mettre à jour un conteneur par Portainer (faux Portainer : tests/faux_portainer.py).
+"""0.17 : allumer, éteindre, mettre à jour un conteneur par Portainer (faux Portainer : tests/faux_portainer.py) ;
+0.17.1 : la mise à jour passe par Watchtower (faux Watchtower : tests/faux_watchtower.py).
 Tout est inventé : aucune vraie adresse, aucun vrai nom."""
 from __future__ import annotations
 
@@ -12,10 +13,12 @@ from app import conteneurs, main, sauvegardes, services
 from app.config import Config
 from app.veille import Veille
 from tests.faux_portainer import CLE, FauxPortainer, attendre
+from tests.faux_watchtower import JETON, FauxWatchtower
 
 MDP = "mot-de-passe-de-test"
 ORIGINE = {"Origin": "http://testserver"}
 URL = "http://portainer.exemple:9000"
+URL_WT = "http://watchtower:8080"
 BASE = "http://192.0.2.10"
 SONDES = {":8104": "bac-a-sable", ":8105": "transhumance", ":8106": "atelier"}
 
@@ -53,6 +56,11 @@ def faux():
     return f
 
 
+@pytest.fixture()
+def wt(faux):
+    return FauxWatchtower(faux)
+
+
 def _veille(tmp_path, faux, texte):
     (tmp_path / "services.yaml").write_text(texte, encoding="utf-8")
 
@@ -69,22 +77,29 @@ def _veille(tmp_path, faux, texte):
     return Veille(tmp_path, services.lire(tmp_path / "services.yaml"), sonder=sonder, examiner=examiner)
 
 
-def _client(tmp_path, faux, avec_cle=True, texte=None, horloge=None):
+def _client(tmp_path, faux, avec_cle=True, texte=None, horloge=None, wt=None, wt_url=URL_WT, wt_jeton=JETON,
+            wt_transport=None):
     main.ETAT.clear()
+    main.CONNEXIONS._dernier.clear()                 # le registre des fiches garde le dernier essai (1 min) : on repart à zéro
+    wt = wt or FauxWatchtower(faux)
     cfg = Config(password=MDP, data=tmp_path, static=tmp_path / "static", attente_connexion=False, veille=False,
-                 sauvegarde_auto=False, portainer_url=URL if avec_cle else "", portainer_cle=CLE if avec_cle else "")
+                 sauvegarde_auto=False, portainer_url=URL if avec_cle else "", portainer_cle=CLE if avec_cle else "",
+                 watchtower_url=wt_url, watchtower_jeton=wt_jeton)
     veille = _veille(tmp_path, faux, texte or fichier())
-    etat = {"cfg": cfg, "veille": veille, "transport_portainer": faux.transport()}
+    transport_wt = wt_transport or wt.transport()
+    etat = {"cfg": cfg, "veille": veille, "transport_portainer": faux.transport(), "transport_watchtower": transport_wt}
     if horloge is not None:
-        etat["conteneurs"] = conteneurs.Conteneurs(tmp_path, conteneurs.Portainer(URL, CLE, transport=faux.transport()),
-                                                   horloge=horloge)
+        etat["conteneurs"] = conteneurs.Conteneurs(
+            tmp_path, conteneurs.Portainer(URL, CLE, transport=faux.transport()), horloge=horloge,
+            watchtower=conteneurs.Watchtower(URL_WT, JETON, transport=transport_wt) if cfg.watchtower else None,
+            watchtower_manque=cfg.watchtower_manque())
     main.ETAT.update(etat)
     return TestClient(main.app)
 
 
 @pytest.fixture()
-def client(tmp_path, faux):
-    with _client(tmp_path, faux) as c:
+def client(tmp_path, faux, wt):
+    with _client(tmp_path, faux, wt=wt) as c:
         c.post("/api/connexion", json={"mot_de_passe": MDP})
         yield c
     main.ETAT.clear()
@@ -97,6 +112,11 @@ def tour(c, n=1):
 
 def tuile(c, nom):
     return next(s for f in c.get("/api/etat").json()["familles"] for s in f["services"] if s["nom"] == nom)
+
+
+def verifier(c, id_):
+    main.CONNEXIONS._dernier.pop(id_, None)
+    return c.post(f"/api/maison/services/{id_}/verifier")
 
 
 def ordre(c, cle, geste, entetes=ORIGINE, **kw):
@@ -276,7 +296,7 @@ def test_eteindre_puis_allumer(client, faux):
     assert all(set(l) >= {"quand", "quoi", "tuile", "resultat"} for l in lignes)
 
 
-def test_mise_a_jour_nouvelle_image_puis_deja_a_jour(client, faux):
+def test_mise_a_jour_nouvelle_image_puis_deja_a_jour(client, faux, wt):
     tour(client)
     avant = faux.conteneurs["bac-a-sable"]["Id"]
     assert ordre(client, "bac-a-sable", "mettre-a-jour").status_code == 202
@@ -285,41 +305,47 @@ def test_mise_a_jour_nouvelle_image_puis_deja_a_jour(client, faux):
     tour(client)
     c = tuile(client, "Bac à sable")["conteneur"]
     assert c["ordre"]["etat"] == "fini" and c["phrase"] == "image du 20/11 → 21/11", c
-    assert ("POST", f"/api/docker/3/containers/{avant}/recreate") in faux.appels   # identifiant relu par le nom
+    assert ("POST", "/v1/update", "image=ghcr.io%2Fexemple%2Fbac-a-sable") in wt.appels   # image sans l'étiquette
+    assert not [p for m, p in faux.appels if m == "POST"]                                # rien d'écrit chez Portainer
     avant = faux.conteneurs["bac-a-sable"]["Id"]
     assert ordre(client, "bac-a-sable", "mettre-a-jour").status_code == 202
-    assert attendre(lambda: "bac-a-sable" in faux.conteneurs and faux.conteneurs["bac-a-sable"]["Id"] != avant)
+    assert attendre(lambda: main.ETAT["conteneurs"].ordres["bac-a-sable"].get("wt") == "fini")
+    assert faux.conteneurs["bac-a-sable"]["Id"] == avant          # pas de nouvelle image : Watchtower n'a rien recréé
     tour(client)
     assert tuile(client, "Bac à sable")["conteneur"]["phrase"] == "déjà à jour"
 
 
-def test_allumer_et_mettre_a_jour_une_tuile_eteinte(client, faux):
+def test_allumer_et_mettre_a_jour_une_tuile_eteinte(client, faux, wt):
     faux.conteneurs["bac-a-sable"]["State"] = {"Status": "exited", "Running": False}
     tour(client)
     c = tuile(client, "Bac à sable")["conteneur"]
-    assert c["phrase"] == "éteint" and c["image_age"] is not None and c["image_age"] >= 1
+    assert c["phrase"] == "éteint" and c["image_age"] is not None and c["image_age"] >= 1 and c["maj"]
+    avant = faux.conteneurs["bac-a-sable"]["Image"]
     assert ordre(client, "bac-a-sable", "allumer-et-mettre-a-jour").status_code == 202
-    assert attendre(lambda: faux.conteneurs.get("bac-a-sable", {}).get("State", {}).get("Running"))
+    assert attendre(lambda: faux.conteneurs["bac-a-sable"]["Image"] != avant)
     tour(client)
     assert tuile(client, "Bac à sable")["conteneur"]["phrase"] == "image du 20/11 → 21/11"
+    # démarré par Portainer d'abord (Watchtower ignore un conteneur arrêté), puis Watchtower
+    assert any(p.endswith("/bac-a-sable/start") for m, p in faux.appels if m == "POST")
+    assert [a for a in wt.appels if a[1] == "/v1/update"] == [("POST", "/v1/update", "image=ghcr.io%2Fexemple%2Fbac-a-sable")]
 
 
-def test_suivi_lent_puis_delai_depasse(tmp_path, faux):
+def test_suivi_lent_puis_delai_depasse(tmp_path, faux, wt):
     horloge = Horloge()
-    faux.lenteur = 0.6
-    with _client(tmp_path, faux, horloge=horloge) as c:
+    wt.lenteur = 0.6
+    with _client(tmp_path, faux, horloge=horloge, wt=wt) as c:
         c.post("/api/connexion", json={"mot_de_passe": MDP})
         tour(c)
         assert ordre(c, "bac-a-sable", "mettre-a-jour").status_code == 202
         assert main.ETAT["conteneurs"].presse()                               # la ronde relit plus vite
-        tour(c)                                                               # recréation en cours : le nom ne répond plus
+        tour(c)                         # Watchtower travaille : même image, conteneur en marche, mais pas « déjà à jour »
         assert tuile(c, "Bac à sable")["conteneur"]["ordre"]["etat"] == "en_cours"
         horloge.t += 200
         tour(c)
         assert tuile(c, "Bac à sable")["conteneur"]["phrase"] == "mise à jour en cours…"
-        assert attendre(lambda: faux.conteneurs.get("bac-a-sable", {}).get("State", {}).get("Running"), 5)
+        assert attendre(lambda: main.ETAT["conteneurs"].ordres["bac-a-sable"].get("wt") == "fini", 5)
         tour(c)
-        assert tuile(c, "Bac à sable")["conteneur"]["ordre"]["etat"] == "fini"
+        assert tuile(c, "Bac à sable")["conteneur"]["phrase"] == "image du 20/11 → 21/11"
         horloge.t += 301
         assert not main.ETAT["conteneurs"].presse()
         # un arrêt que Portainer accepte sans que rien ne bouge : au-delà de 10 min, « pas de réponse, voir Portainer »
@@ -336,25 +362,144 @@ def test_suivi_lent_puis_delai_depasse(tmp_path, faux):
     main.ETAT.clear()
 
 
-def test_recreate_absent(client, faux):
-    faux.sans_recreate = True
-    faux.version = "2.18.4"
+def test_mise_a_jour_attend_le_verrou_de_watchtower(client, faux, wt):
+    """La mise à jour planifiée (05:00) tient le verrou : la demande ciblée attend ; l'Anneau ne conclut pas « déjà à
+    jour » tant que Watchtower n'a pas répondu, puis suit jusqu'à la nouvelle empreinte."""
+    tour(client)
+    client.portal.call(wt.verrou.acquire)
+    assert ordre(client, "bac-a-sable", "mettre-a-jour").status_code == 202
+    attendre(lambda: any(a[1] == "/v1/update" for a in wt.appels))
+    tour(client, 3)
+    c = tuile(client, "Bac à sable")["conteneur"]
+    assert c["ordre"]["etat"] == "en_cours" and c["phrase"] == "mise à jour en cours…"
+    client.portal.call(wt.verrou.release)
+    assert attendre(lambda: main.ETAT["conteneurs"].ordres["bac-a-sable"].get("wt") == "fini")
+    tour(client)
+    assert tuile(client, "Bac à sable")["conteneur"]["phrase"] == "image du 20/11 → 21/11"
+
+
+def test_sans_watchtower_pas_de_bouton_mettre_a_jour(tmp_path, faux):
+    for url, jeton, variable in (("", "", "ANNEAU_WATCHTOWER_URL"), (URL_WT, "", "ANNEAU_WATCHTOWER_JETON")):
+        wt = FauxWatchtower(faux)
+        with _client(tmp_path, faux, wt=wt, wt_url=url, wt_jeton=jeton) as c:
+            c.post("/api/connexion", json={"mot_de_passe": MDP})
+            tour(c)
+            b = tuile(c, "Bac à sable")["conteneur"]
+            assert b["gerable"] and not b["maj"] and variable in b["maj_pourquoi"]   # Allumer / Éteindre restent
+            r = ordre(c, "bac-a-sable", "mettre-a-jour")
+            assert r.status_code == 409 and variable in r.json()["detail"]
+            assert ordre(c, "bac-a-sable", "allumer-et-mettre-a-jour").status_code == 409
+            assert not wt.appels
+            w = next(f for f in c.get("/api/maison/services").json()["services"] if f["id"] == "watchtower")
+            assert w["etat"] == "pas_relie" and w["reglage"] == "ANNEAU_WATCHTOWER_URL"
+        main.ETAT.clear()
+
+
+def test_etiquette_watchtower_false_pas_de_bouton(client, faux, wt):
+    faux.conteneurs["bac-a-sable"]["Config"]["Labels"]["com.centurylinklabs.watchtower.enable"] = "False"
+    tour(client)
+    b = tuile(client, "Bac à sable")["conteneur"]
+    assert b["gerable"] and not b["maj"] and "watchtower.enable=false" in b["maj_pourquoi"]
+    r = ordre(client, "bac-a-sable", "mettre-a-jour")
+    assert r.status_code == 409 and "watchtower.enable=false" in r.json()["detail"]
+    assert not wt.appels
+    assert ordre(client, "bac-a-sable", "eteindre").status_code == 202                   # Éteindre reste permis
+
+
+def test_image_epinglee_ou_registre_a_port():
+    assert conteneurs.image_pour_watchtower("ghcr.io/exemple/bac-a-sable:latest") == ("ghcr.io/exemple/bac-a-sable", "")
+    assert conteneurs.image_pour_watchtower("nginx") == ("nginx", "")
+    assert conteneurs.image_pour_watchtower("exemple/app@sha256:abcd")[1]
+    assert conteneurs.image_pour_watchtower("sha256:abcdef0123")[1]
+    assert "port" in conteneurs.image_pour_watchtower("registre.exemple:5000/app:1")[1]
+    assert conteneurs.image_pour_watchtower("a,b/c")[1]                                 # pas de virgule (séparateur)
+
+
+def test_jeton_refuse_par_watchtower(client, faux, wt):
+    wt.jeton = "autre-jeton"
     tour(client)
     assert ordre(client, "bac-a-sable", "mettre-a-jour").status_code == 202
-    assert attendre(lambda: not tuile(client, "Bac à sable")["conteneur"]["maj"])
+    assert attendre(lambda: main.ETAT["conteneurs"].ordres["bac-a-sable"]["etat"] == "echec")
     c = tuile(client, "Bac à sable")["conteneur"]
-    assert c["ordre"]["etat"] == "echec" and "2.19" in c["maj_pourquoi"] and "2.18.4" in c["maj_pourquoi"]
-    r = ordre(client, "bac-a-sable", "mettre-a-jour")
-    assert r.status_code == 409 and "absent" in r.json()["detail"]
+    assert "jeton refusé par Watchtower" in c["ordre"]["phrase"] and c["statut"] == "running"
+    assert client.get("/api/conteneurs/journal").json()["lignes"][0]["resultat"].startswith("échec : jeton refusé")
+    f = verifier(client, "watchtower").json()
+    assert f["etat"] == "ne_repond_pas" and "jeton refusé par Watchtower à la dernière mise à jour" in f["detail"]
+    assert not [a for a in wt.appels if a[1] == "/v1/update" and a[0] != "POST"]
+
+
+def test_watchtower_injoignable(tmp_path, faux):
+    with _client(tmp_path, faux, wt_transport=FauxWatchtower.injoignable()) as c:
+        c.post("/api/connexion", json={"mot_de_passe": MDP})
+        tour(c)
+        avant = dict(faux.conteneurs["bac-a-sable"])
+        assert ordre(c, "bac-a-sable", "mettre-a-jour").status_code == 202
+        assert attendre(lambda: main.ETAT["conteneurs"].ordres["bac-a-sable"]["etat"] == "echec")
+        b = tuile(c, "Bac à sable")["conteneur"]
+        assert b["ordre"]["phrase"] == "Watchtower ne répond pas : pas de mise à jour."
+        assert faux.conteneurs["bac-a-sable"] == avant and b["statut"] == "running"     # pas de changement d'état
+        f = verifier(c, "watchtower").json()
+        assert f["etat"] == "ne_repond_pas" and "ne répond pas" in f["detail"]
+        # « Allumer et mettre à jour » : allumé par Portainer, puis Watchtower ne répond pas
+        faux.conteneurs["bac-a-sable"]["State"] = {"Status": "exited", "Running": False}
+        tour(c)
+        assert ordre(c, "bac-a-sable", "allumer-et-mettre-a-jour").status_code == 202
+        assert attendre(lambda: main.ETAT["conteneurs"].ordres["bac-a-sable"]["etat"] == "echec")
+        assert main.ETAT["conteneurs"].ordres["bac-a-sable"]["phrase"].startswith("allumé, mais Watchtower ne répond pas")
+        assert faux.etat("bac-a-sable") == "running"
+    main.ETAT.clear()
+
+
+def test_watchtower_signale_un_echec(client, faux, wt):
+    wt.echec.add("bac-a-sable")
+    tour(client)
+    assert ordre(client, "bac-a-sable", "mettre-a-jour").status_code == 202
+    assert attendre(lambda: main.ETAT["conteneurs"].ordres["bac-a-sable"].get("wt") == "fini")
+    tour(client)
+    assert "signale un échec" in tuile(client, "Bac à sable")["conteneur"]["ordre"]["phrase"]
+
+
+def test_portainer_refuse_l_ordre(client, faux):
+    faux.refus_ordres.add("bac-a-sable")
+    tour(client)
+    assert tuile(client, "Bac à sable")["conteneur"]["gerable"]                          # la lecture est permise
+    assert ordre(client, "bac-a-sable", "eteindre").status_code == 202
+    assert attendre(lambda: main.ETAT["conteneurs"].ordres["bac-a-sable"]["etat"] == "echec")
+    phrase = tuile(client, "Bac à sable")["conteneur"]["ordre"]["phrase"]
+    assert phrase == "Portainer refuse : vérifier l'accès de l'équipe « anneau » à la stack."
     assert faux.etat("bac-a-sable") == "running"
 
 
-def test_etat_en_cours_survit_au_redemarrage(tmp_path, faux):
+def test_verifier_watchtower_sans_effet(tmp_path, faux):
+    # sans /v1/containers ni /v1/metrics : seulement « adresse et jeton présents » ; jamais /v1/update
+    wt = FauxWatchtower(faux)
+    with _client(tmp_path, faux, wt=wt) as c:
+        c.post("/api/connexion", json={"mot_de_passe": MDP})
+        w = next(f for f in c.get("/api/maison/services").json()["services"] if f["id"] == "watchtower")
+        assert w["etat"] == "relie" and "/v1/update" in w["ecrit"]
+        f = verifier(c, "watchtower").json()
+        assert f["etat"] == "repond" and "adresse et jeton présents" in f["detail"]
+        assert not [a for a in wt.appels if a[1] == "/v1/update"]
+    main.ETAT.clear()
+    # avec /v1/containers : le jeton est vérifié
+    wt = FauxWatchtower(faux, containers_api=True)
+    with _client(tmp_path, faux, wt=wt) as c:
+        c.post("/api/connexion", json={"mot_de_passe": MDP})
+        f = verifier(c, "watchtower").json()
+        assert f["etat"] == "repond" and "jeton accepté" in f["detail"]
+        wt.jeton = "autre"
+        f = verifier(c, "watchtower").json()
+        assert f["etat"] == "ne_repond_pas" and "jeton refusé" in f["detail"]
+        assert not [a for a in wt.appels if a[1] == "/v1/update"]
+    main.ETAT.clear()
+
+
+def test_etat_en_cours_survit_au_redemarrage(tmp_path, faux, wt):
     horloge = Horloge()
-    with _client(tmp_path, faux, horloge=horloge) as c:
+    with _client(tmp_path, faux, horloge=horloge, wt=wt) as c:
         c.post("/api/connexion", json={"mot_de_passe": MDP})
         tour(c)
-        faux.lenteur = 30                                   # la recréation n'est pas finie quand l'Anneau redémarre
+        wt.lenteur = 30                                     # Watchtower n'a pas fini quand l'Anneau redémarre
         faux.conteneurs["bac-a-sable"]["State"] = {"Status": "running", "Running": True}
         assert ordre(c, "bac-a-sable", "mettre-a-jour").status_code == 202
     main.ETAT.clear()
@@ -362,10 +507,15 @@ def test_etat_en_cours_survit_au_redemarrage(tmp_path, faux):
     assert relu.en_cours("bac-a-sable")
     s = services.lire(tmp_path / "services.yaml").services[0]
     assert relu.vue(s, False)["phrase"] == "mise à jour en cours…"
-    horloge.t += 601
     import asyncio
-    asyncio.run(relu.suivre(services.lire(tmp_path / "services.yaml"), lambda s: asyncio.sleep(0, True)))
+    sonde = lambda s: asyncio.sleep(0, True)
+    relu.etats["bac-a-sable"] = {**conteneurs.resume(faux.conteneurs["bac-a-sable"]), "lecture": 5}
+    asyncio.run(relu.suivre(services.lire(tmp_path / "services.yaml"), sonde))
+    assert relu.en_cours("bac-a-sable")                 # même image, Watchtower n'a pas répondu : jamais « déjà à jour »
+    horloge.t += conteneurs.DELAI_MAJ + 1
+    asyncio.run(relu.suivre(services.lire(tmp_path / "services.yaml"), sonde))
     assert relu.ordres["bac-a-sable"]["etat"] == "delai"
+    assert relu.ordres["bac-a-sable"]["phrase"] == "pas de réponse, voir Watchtower et Portainer."
 
 
 # ---------------------------------------------------------------- fiche : stats, connexion ; secrets
@@ -381,7 +531,7 @@ def test_stats_et_politique_de_redemarrage(client):
 def test_reglages_connexion_portainer(client):
     r = client.get("/api/maison/services").json()
     p = next(f for f in r["services"] if f["id"] == "portainer")
-    assert p["etat"] == "relie" and "conteneur:" in p["lit"] and "recréer" in p["ecrit"]
+    assert p["etat"] == "relie" and "conteneur:" in p["lit"] and "Watchtower" in p["ecrit"] and "recréer" not in p["ecrit"]
     f = client.post("/api/maison/services/portainer/verifier").json()
     assert f["etat"] == "repond" and "environnement 3" in f["detail"] and "2.21.4" in f["detail"]
 
@@ -394,19 +544,25 @@ def test_connexion_portainer_pas_reglee(tmp_path, faux):
     main.ETAT.clear()
 
 
-def test_la_cle_ne_sort_jamais(client, faux, caplog, monkeypatch):
+def test_la_cle_ne_sort_jamais(client, faux, wt, caplog, monkeypatch):
     caplog.set_level(logging.DEBUG)
     tour(client)
+    ordre(client, "bac-a-sable", "mettre-a-jour")
+    assert attendre(lambda: main.ETAT["conteneurs"].ordres["bac-a-sable"].get("wt") == "fini")
+    tour(client)
+    verifier(client, "watchtower")
     ordre(client, "bac-a-sable", "eteindre")
     attendre(lambda: faux.etat("bac-a-sable") == "exited")
     tour(client)
     assert faux.cles_vues == {CLE}                                     # elle part bien vers Portainer…
+    assert wt.jetons_vus == {JETON} and CLE not in str(wt.appels)     # le jeton vers Watchtower seulement
     data = main.ETAT["cfg"].data
     textes = [client.get("/api/etat").text, client.get("/health").text, client.get("/api/maison/services").text,
               client.get("/api/conteneurs/journal").text, json.dumps(main._propre()), repr(main.ETAT["cfg"]),
-              repr(main.ETAT["conteneurs"].portainer), caplog.text]
+              repr(main.ETAT["conteneurs"].portainer), repr(main.ETAT["conteneurs"].watchtower), caplog.text,
+              verifier(client, "watchtower").text]
     textes += [p.read_text(encoding="utf-8", errors="ignore") for p in data.rglob("*") if p.is_file()]
-    assert not [t for t in textes if CLE in t]                          # …et nulle part ailleurs
+    assert not [t for t in textes if CLE in t or JETON in t]            # …et nulle part ailleurs
 
 
 def test_sauvegarde_de_nuit_ne_compte_pas_l_eteinte(client, faux):

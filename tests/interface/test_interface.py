@@ -756,7 +756,8 @@ def test_017_conteneur_eteindre_allumer_mettre_a_jour(page):
     etat.click()
     zone.get_by_role("button", name="Mettre à jour").click()
     fenetre = page.get_by_role("dialog", name=f"Mettre à jour {nom} ?")
-    assert "dernière image" in fenetre.inner_text()
+    assert "dernière image" in fenetre.inner_text() and "Watchtower" in fenetre.inner_text()
+    assert not _deborde(page)
     fenetre.get_by_role("button", name="Mettre à jour").click()
     pastille.get_by_text("mise à jour en cours…").wait_for()
     assert pastille.locator(".tourne").count() == 1
@@ -779,15 +780,23 @@ def test_017_conteneur_eteindre_allumer_mettre_a_jour(page):
 
 
 def test_018_reglages_connexion_portainer(page):
-    """0.17 : Réglages › Connexion : la fiche Portainer (ce que l'Anneau lit et écrit), « Vérifier »."""
+    """0.17 : Réglages › Connexion : la fiche Portainer (ce que l'Anneau lit et écrit), « Vérifier ».
+    0.17.1 : la fiche Watchtower ; « Vérifier » sans effet (adresse et jeton présents)."""
     page.get_by_role("button", name="Réglages").first.click()
     page.get_by_role("heading", level=1, name="Réglages").wait_for()
     zone = page.get_by_role("region", name="Connexion", exact=True)
     zone.get_by_text("conteneur:", exact=False).first.wait_for()
-    assert "recréer avec la dernière image" in zone.inner_text() and "GitHub" in zone.inner_text()
-    portainer = zone.get_by_role("listitem").filter(has_text="Portainer")
-    portainer.get_by_role("button", name="Vérifier").click()
-    portainer.get_by_text("environnement 3").wait_for()
+    assert "arrêter ou démarrer ce seul conteneur" in zone.inner_text() and "GitHub" in zone.inner_text()
+    assert "recréer" not in zone.inner_text()
+    portainer = zone.get_by_role("listitem").filter(has_text="Portainer").filter(has_not_text="Watchtower répond")
+    portainer.first.get_by_role("button", name="Vérifier").click()
+    portainer.first.get_by_text("environnement 3").wait_for()
+    watchtower = zone.get_by_role("listitem").filter(has_text="POST /v1/update")
+    assert watchtower.count() == 1
+    watchtower.get_by_role("button", name="Vérifier").click()
+    watchtower.get_by_text("adresse et jeton présents", exact=False).wait_for()
     assert not _deborde(page)
+    if os.environ.get("CAPTURES"):
+        page.screenshot(path=f"{os.environ['CAPTURES']}/anneau-connexion-{page.ecran}.png", full_page=True)
     page.get_by_role("link", name="Revenir à l'anneau").click()
     page.locator("svg.anneau").wait_for()

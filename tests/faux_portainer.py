@@ -8,15 +8,15 @@ Routes imitées (toutes exigent l'en-tête X-API-Key ; mauvaise clé : 401) :
   POST /api/endpoints/{env}/docker/containers/{nom}/start       204, ou 304 déjà démarré
   GET  /api/endpoints/{env}/docker/containers/{nom}/stats       ?stream=false : un relevé
   GET  /api/endpoints/{env}/docker/images/{id}/json             date de création de l'image
-  POST /api/docker/{env}/containers/{id}/recreate               {"PullImage": true} : lent ; nouvel identifiant,
-                                                                 dernière image, conteneur démarré ; 404 si `sans_recreate`
-Accès : un conteneur listé dans `caches` rend 403 (l'utilisateur standard n'y a pas accès) ; un conteneur de `figes`
-accepte stop et start (204) sans changer d'état (ordre qui ne mène à rien).
+0.17.1 : plus de route recreate (l'Anneau ne s'en sert plus : la mise à jour passe par Watchtower, tests/faux_watchtower.py,
+qui agit sur les mêmes conteneurs par `remplacer`).
+Accès : un conteneur listé dans `caches` rend 403 (l'utilisateur standard n'y a pas accès) ; un conteneur de
+`refus_ordres` se lit mais refuse stop et start (403) ; un conteneur de `figes` accepte stop et start (204) sans changer
+d'état (ordre qui ne mène à rien).
 Aucune adresse, aucun nom réel : tout est inventé.
 """
 from __future__ import annotations
 
-import asyncio
 import itertools
 import time
 
@@ -41,7 +41,7 @@ class FauxPortainer:
         self.images: dict[str, str] = {}          # identifiant d'image → date de création
         self.dernieres: dict[str, str] = {}       # nom d'image (dépôt:étiquette) → identifiant de la dernière image
         self.caches: set[str] = set()
-        self.sans_recreate = False
+        self.refus_ordres: set[str] = set()       # lecture permise, stop/start refusés (403)
         self.figes: set[str] = set()              # conteneurs qui acceptent stop/start (204) sans jamais changer d'état
         self.appels: list[tuple[str, str]] = []
         self.cles_vues: set[str] = set()
@@ -56,8 +56,9 @@ class FauxPortainer:
         return ident
 
     def ajouter(self, nom: str, image: str, nom_image: str = "", projet: str | None = "homelab",
-                running: bool = True, redemarrage: str = "unless-stopped") -> dict:
+                running: bool = True, redemarrage: str = "unless-stopped", etiquettes: dict | None = None) -> dict:
         labels = {"com.docker.compose.project": projet} if projet else {}
+        labels.update(etiquettes or {})
         c = {"Id": _ident(), "Name": "/" + nom, "Image": image,
              "State": {"Status": "running" if running else "exited", "Running": running},
              "Config": {"Image": nom_image or f"ghcr.io/exemple/{nom}:latest", "Labels": labels},
@@ -72,6 +73,14 @@ class FauxPortainer:
             if len(ref) >= 4 and c["Id"].startswith(ref):
                 return c
         return None
+
+    def remplacer(self, nom: str, image: str) -> dict:
+        """Ce que fait Watchtower : arrête l'ancien, crée un nouveau conteneur du même nom (nouvel identifiant, nouvelle
+        image), le démarre."""
+        ancien = self.conteneurs[nom]
+        neuf = {**ancien, "Id": _ident(), "Image": image, "State": {"Status": "running", "Running": True}}
+        self.conteneurs[nom] = neuf
+        return neuf
 
     def transport(self) -> httpx.ASGITransport:
         return httpx.ASGITransport(app=self.app)
@@ -125,6 +134,8 @@ class FauxPortainer:
             refus = acces(c)
             if refus:
                 return refus
+            if c["Name"].lstrip("/") in moi.refus_ordres:
+                return JSONResponse({"message": "Access denied to resource"}, status_code=403)
             if c["Name"].lstrip("/") in moi.figes and action in ("stop", "start"):
                 return Response(status_code=204)
             if action == "stop":
@@ -157,27 +168,6 @@ class FauxPortainer:
             if ident not in moi.images:
                 return JSONResponse({"message": "No such image"}, status_code=404)
             return {"Id": ident, "Created": moi.images[ident]}
-
-        @app.post("/api/docker/{env}/containers/{ident}/recreate")
-        async def recreer(env: str, ident: str, request: Request):
-            if moi.sans_recreate:
-                return JSONResponse({"message": "Not found"}, status_code=404)
-            c = moi.trouver(ident)
-            refus = acces(c)
-            if refus:
-                return refus
-            corps = await request.json()
-            nom = c["Name"].lstrip("/")
-            # l'ancien est renommé « -old » pendant la recréation : le nom ne répond plus un instant
-            del moi.conteneurs[nom]
-            moi.conteneurs[nom + "-old"] = {**c, "Name": "/" + nom + "-old"}
-            if moi.lenteur:
-                await asyncio.sleep(moi.lenteur)
-            image = moi.dernieres.get(c["Config"]["Image"], c["Image"]) if corps.get("PullImage") else c["Image"]
-            neuf = {**c, "Id": _ident(), "Image": image, "State": {"Status": "running", "Running": True}}
-            del moi.conteneurs[nom + "-old"]
-            moi.conteneurs[nom] = neuf
-            return neuf
 
         return app
 

@@ -21,6 +21,9 @@ services:
       - ANNEAU_PORTAINER_URL=${ANNEAU_PORTAINER_URL:-}    # adresse de Portainer (ex. http://<NAS>:9000)
       - ANNEAU_PORTAINER_CLE=${ANNEAU_PORTAINER_CLE:-}    # clé d'API de l'utilisateur Portainer « anneau » (jamais la clé admin)
       - ANNEAU_PORTAINER_ENV=${ANNEAU_PORTAINER_ENV:-}    # numéro de l'environnement ; vide : le premier environnement Docker
+      # 0.17.1 : « Mettre à jour » par l'API HTTP de Watchtower (vide : pas de bouton « Mettre à jour »)
+      - ANNEAU_WATCHTOWER_URL=${ANNEAU_WATCHTOWER_URL:-}      # adresse vue depuis la stack (ex. http://watchtower:8080, port non publié)
+      - ANNEAU_WATCHTOWER_JETON=${ANNEAU_WATCHTOWER_JETON:-}  # même valeur que WATCHTOWER_HTTP_API_TOKEN de Watchtower
       - ANNEAU_LECTURE_SEULE=${ANNEAU_LECTURE_SEULE:-}    # « oui » : aucun ordre à Portainer (« non » l'emporte sur MAISON_LECTURE_SEULE)
     volumes:
       # services.yaml, pannes.json, reglages.json, documents/ (Atlas), sauvegardes/ (réglages des applis, exports chiffrés),
@@ -29,3 +32,16 @@ services:
     labels:
       # mise à jour à la main, comme les autres applis de la maison
       - "com.centurylinklabs.watchtower.enable=false"
+
+  # 0.17.1 : ce que Watchtower doit recevoir dans la même stack pour que l'Anneau lui demande une mise à jour
+  # (extrait : garder le reste de sa configuration ; port 8080 non publié, même réseau que l'Anneau).
+  watchtower:
+    image: nickfedor/watchtower:1.19.0
+    container_name: watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_HTTP_API_UPDATE=true                              # ouvre POST /v1/update
+      - WATCHTOWER_HTTP_API_TOKEN=${WATCHTOWER_HTTP_API_TOKEN}         # jeton (même valeur que ANNEAU_WATCHTOWER_JETON)
+      - WATCHTOWER_HTTP_API_PERIODIC_POLLS=true                      # garde la mise à jour planifiée (05:00)

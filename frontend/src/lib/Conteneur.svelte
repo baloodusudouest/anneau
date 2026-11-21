@@ -1,5 +1,7 @@
 <script>
   // 0.17 : le conteneur d'une tuile marquée « conteneur: » (Portainer). Sur la fiche de la tuile et dans la fiche « État ».
+  // 0.17.1 : « Mettre à jour » passe par Watchtower (absent sans Watchtower ou avec l'étiquette watchtower.enable=false :
+  // la fiche dit pourquoi) ; Allumer et Éteindre restent par Portainer.
   //  - Allumé : « Éteindre » et « Mettre à jour » (confirmation dans une fenêtre) ; mémoire et processeur (lus à l'ouverture).
   //  - Éteint : « Allumer » (sans confirmation) et « Allumer et mettre à jour » (confirmation) ; âge de l'image.
   //  - Pendant un ordre : la phrase (« démarrage… », « mise à jour en cours… ») ; l'écran se relit plus souvent.
@@ -93,7 +95,7 @@
     {#if c.redemarrage === 'always'}
       <p class="text-sm avert">Redémarrage « always » : éteint, il se rallumera au redémarrage du NAS.</p>
     {/if}
-    <p class="text-xs text-muted-foreground">Un redéploiement de la stack le rallume. Mettre à jour recrée ce seul conteneur avec la dernière image (sans relire la stack).</p>
+    <p class="text-xs text-muted-foreground">Un redéploiement de la stack le rallume. Mettre à jour demande à Watchtower la dernière image (sans relire la stack).</p>
   {/if}
   {#if c.erreur}<p class="text-xs text-muted-foreground">Portainer : {c.erreur}.</p>{/if}
 </section>
@@ -108,8 +110,9 @@
           {#if c.redemarrage === 'always'}<p class="avert">Il se rallumera au redémarrage du NAS (redémarrage « always »).</p>{/if}
           <p class="text-muted-foreground">Un redéploiement de la stack le rallume.</p>
         {:else}
-          <p>Portainer télécharge la dernière image et recrée ce seul conteneur : quelques minutes. Ses données restent sur le disque.</p>
-          <p class="text-muted-foreground">La stack n'est pas redéployée : une variable changée dans la stack n'est pas prise.</p>
+          {#if confirmer === 'allumer-et-mettre-a-jour'}<p>Portainer l'allume d'abord (Watchtower ignore un conteneur éteint).</p>{/if}
+          <p>Watchtower télécharge la dernière image et recrée le conteneur : quelques minutes (plus s'il est déjà en train de tout mettre à jour). Ses données restent sur le disque.</p>
+          <p class="text-muted-foreground">Tout autre conteneur allumé de la même image est mis à jour aussi. La stack n'est pas redéployée : une variable changée dans la stack n'est pas prise.</p>
         {/if}
       </div>
       <div class="boutons">

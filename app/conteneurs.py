@@ -1,13 +1,18 @@
-"""0.17 : allumer, éteindre et mettre à jour un conteneur depuis la fiche de sa tuile, par l'API de Portainer CE.
+"""0.17 : allumer, éteindre et mettre à jour un conteneur depuis la fiche de sa tuile (Portainer CE, et Watchtower
+pour la mise à jour depuis la 0.17.1).
 
 Décisions de Julien du 21/11/2026 (dossier et avis du conseil, docs/ajout-0.17.0.md et docs/conseil-0.17.0.md) :
 - seules les tuiles marquées `conteneur: <container_name>` dans services.yaml ont ces boutons (liste blanche, format vérifié
   à la lecture) ; le nom du conteneur n'est JAMAIS pris dans la requête : la route reçoit la clé de la tuile ;
 - liste d'interdits, insensible à la casse, appliquée au champ ET au nom réel renvoyé par Portainer ;
 - étiquette `com.docker.compose.project=homelab` exigée sur le conteneur ;
-- « Mettre à jour » = POST /api/docker/{env}/containers/{id}/recreate {"PullImage": true} (Portainer ≥ 2.19), identifiant
-  relu par le nom à chaque fois (il change à chaque recréation) ; route absente (404/405) : plus de bouton, la fiche dit
-  pourquoi (pas de repli « pull seul ») ;
+- 0.17.1 (21/11/2026) : « Mettre à jour » passe par l'API HTTP de Watchtower (POST /v1/update?image=<dépôt/image>,
+  en-tête Authorization: Bearer <jeton>) : dans Portainer CE, dès qu'un réglage « Hide … for non-administrators » est
+  actif (obligatoire pour la sécurité de la clé « anneau »), la recréation est interdite aux non-admins. Allumer et
+  Éteindre restent par Portainer. L'image (Config.Image, sans l'étiquette) et son empreinte avant sont lues par
+  Portainer ; Watchtower met à jour les conteneurs EN MARCHE de cette image (un conteneur arrêté est ignoré) ; un
+  conteneur qui porte com.centurylinklabs.watchtower.enable=false n'a pas le bouton. La recréation par Portainer
+  (route recreate) n'est plus utilisée ;
 - on ne se fie jamais à la réponse d'un ordre (leçon du 13/11/2026 : une mise à jour qui dépasse le délai « échoue » en
   réussissant) : l'état réel est relu (conteneur running + /health qui répond, ou exited) ; au-delà de 10 min :
   « pas de réponse, voir Portainer » ;
@@ -15,8 +20,18 @@ Décisions de Julien du 21/11/2026 (dossier et avis du conseil, docs/ajout-0.17.
 - chaque ordre (refusé, lancé, fini) est noté dans le journal des écritures (journal-ecritures.jsonl, JSON lignes :
   quand, quoi, tuile, résultat) ; jamais de secret.
 
-La clé d'API (ANNEAU_PORTAINER_CLE, en-tête X-API-Key) ne sort que vers Portainer : jamais dans un journal, une page,
-une réponse, ni la sauvegarde.
+La clé d'API (ANNEAU_PORTAINER_CLE, en-tête X-API-Key) ne sort que vers Portainer, et le jeton de Watchtower
+(ANNEAU_WATCHTOWER_JETON, en-tête Authorization) que vers Watchtower : jamais dans un journal, une page, une réponse,
+ni la sauvegarde.
+
+Watchtower (fork nickfedor/watchtower 1.19.0, d'après sa documentation et son code, pkg/api) :
+- /v1/update n'accepte que POST (GET : 405) ; 200 avec un résumé JSON {"summary": {"scanned", "updated", "failed",
+  "restarted", "skipped"}, …} quand la mise à jour est FINIE ; 401 jeton absent ou faux ; 429 trop de demandes (60/min
+  par adresse) ; 503 demande abandonnée en attendant le verrou ; 500 erreur ;
+- avec ?image=, la demande ATTEND le verrou (partagé avec la mise à jour planifiée de 05:00) au lieu de rendre 429 ; le
+  serveur coupe une réponse au-delà de 10 min (la mise à jour continue) ;
+- /v1/containers et /v1/metrics (GET, jeton) n'existent que si WATCHTOWER_HTTP_API_CONTAINERS / _METRICS sont actifs ;
+  une route absente rend 404 sans regarder le jeton.
 """
 from __future__ import annotations
 
@@ -50,7 +65,14 @@ DELAI_MAX = 600              # s : au-delà, « pas de réponse, voir Portainer 
 PRESSE = 300                 # s : après un ordre, la ronde relit plus vite pendant 5 min
 RESULTAT_VISIBLE = 1800      # s : le résultat (« déjà à jour »…) reste écrit sur la tuile 30 min
 DELAI_APPEL = 15.0           # s : délai d'un appel ordinaire à Portainer
-DELAI_RECREATE = 900.0       # s : la recréation télécharge l'image (lente) ; on n'attend pas sa réponse pour suivre
+DELAI_MAJ = 900              # s : une mise à jour par Watchtower peut attendre son verrou (05:00) : 15 min avant « pas de réponse »
+DELAI_WATCHTOWER = 660.0     # s : Watchtower coupe lui-même une réponse au-delà de 10 min (la mise à jour continue)
+DELAI_ESSAI = 8.0            # s : « Vérifier » de la fiche Watchtower
+DELAI_DEMARRAGE = 60.0       # s : « Allumer et mettre à jour » attend que le conteneur tourne avant d'appeler Watchtower
+ETIQUETTE_WATCHTOWER = "com.centurylinklabs.watchtower.enable"
+MAJ = ("mettre-a-jour", "allumer-et-mettre-a-jour")
+# Paramètre image de Watchtower : dépôt sans étiquette (ex. ghcr.io/exemple/bac-a-sable) ; pas de virgule (séparateur)
+IMAGE_VALIDE = re.compile(r"^[a-z0-9][a-z0-9._/-]{0,254}$")
 JOURNAL = "journal-ecritures.jsonl"
 ETAT = "conteneurs.json"
 JOURNAL_MAX = 2000           # lignes ; au-delà, les 1000 dernières sont gardées
@@ -91,6 +113,22 @@ def _date_docker(texte) -> str | None:
     return (d if d.tzinfo else d.replace(tzinfo=timezone.utc)).isoformat(timespec="seconds")
 
 
+def image_pour_watchtower(nom: str) -> tuple[str, str]:
+    """Config.Image → (paramètre image de Watchtower, raison du refus). Watchtower compare le nom avant le premier « : »
+    (pkg/filters, matchImageAndTag) : on lui donne exactement ce nom, sans l'étiquette."""
+    n = (nom or "").strip()
+    if not n:
+        return "", "image du conteneur inconnue"
+    if "@" in n or re.fullmatch(r"sha256:[0-9a-fA-F]+", n):
+        return "", "image épinglée par empreinte (…@sha256) : Watchtower ne la met pas à jour"
+    if "/" in n and ":" in n.split("/")[0]:
+        return "", "image d'un registre avec numéro de port : non prise en charge"
+    base = n.split(":")[0]
+    if not IMAGE_VALIDE.match(base):
+        return "", f"nom d'image inattendu (« {base} »)"
+    return base, ""
+
+
 def jour_mois(iso: str | None) -> str:
     if not iso:
         return ""
@@ -110,19 +148,20 @@ class ErreurPortainer(Exception):
 
 PHRASES_STATUT = {401: "Portainer refuse la clé d'API (401)",
                   403: "Portainer refuse l'accès à l'utilisateur de la clé (403) : voir l'équipe « anneau » et l'accès à la stack"}
+PHRASE_ORDRE_403 = "Portainer refuse : vérifier l'accès de l'équipe « anneau » à la stack"
 
 
 class Portainer:
     """Appels à l'API de Portainer (relais Docker). `transport` : un faux Portainer dans les tests."""
 
     def __init__(self, url: str, cle: str, env: str = "", transport: httpx.AsyncBaseTransport | None = None,
-                 delai: float = DELAI_APPEL, delai_recreate: float = DELAI_RECREATE):
+                 delai: float = DELAI_APPEL):
         self.url = url.rstrip("/")
         self._cle = cle
         self._env_regle = (env or "").strip()
         self._env: str | None = self._env_regle or None
         self._transport = transport
-        self.delai, self.delai_recreate = delai, delai_recreate
+        self.delai = delai
 
     def __repr__(self) -> str:                       # jamais la clé, même dans une trace
         return f"Portainer({self.url!r}, env={self._env!r})"
@@ -208,19 +247,103 @@ class Portainer:
             return None
 
     async def ordre(self, nom: str, action: str) -> int:
-        """stop ou start : rend le code HTTP (204 fait, 304 déjà dans cet état)."""
+        """stop ou start : rend le code HTTP (204 fait, 304 déjà dans cet état). 0.17.1 : un 403 ici (lecture permise,
+        ordre refusé) dit d'aller voir l'accès de l'équipe « anneau » à la stack."""
         env = await self.environnement()
         r = await self._demande("POST", self._docker(env, f"containers/{nom}/{action}"), delai=60)
+        if r.status_code == 403:
+            raise ErreurPortainer(PHRASE_ORDRE_403, 403)
         self._refus(r)
         return r.status_code
 
-    async def recreer(self, ident: str) -> int:
-        """Recrée le conteneur avec la dernière image (Portainer ≥ 2.19). Lent : la réponse n'est pas le résultat."""
-        env = await self.environnement()
-        r = await self._demande("POST", f"/api/docker/{env}/containers/{ident}/recreate", corps={"PullImage": True},
-                                delai=self.delai_recreate)
-        self._refus(r)
-        return r.status_code
+
+# ================================================================ Watchtower (client, 0.17.1)
+
+class ErreurWatchtower(Exception):
+    """`conclut` : la demande n'a pas pu partir ou a été refusée net (rien n'a changé) ; sinon on relit l'état réel."""
+
+    def __init__(self, phrase: str, statut: int | None = None, conclut: bool = True):
+        super().__init__(phrase)
+        self.phrase, self.statut, self.conclut = phrase, statut, conclut
+
+
+PHRASE_JETON = "jeton refusé par Watchtower"
+PHRASE_INJOIGNABLE = "Watchtower ne répond pas"
+
+
+class Watchtower:
+    """API HTTP de Watchtower (nickfedor/watchtower). `transport` : un faux Watchtower dans les tests."""
+
+    def __init__(self, url: str, jeton: str, transport: httpx.AsyncBaseTransport | None = None,
+                 delai: float = DELAI_WATCHTOWER, delai_essai: float = DELAI_ESSAI):
+        self.url = url.rstrip("/")
+        self._jeton = jeton
+        self._transport = transport
+        self.delai, self.delai_essai = delai, delai_essai
+        self.dernier_refus = ""                      # heure du dernier 401/403 sur /v1/update (« Vérifier » le redit)
+
+    def __repr__(self) -> str:                       # jamais le jeton, même dans une trace
+        return f"Watchtower({self.url!r})"
+
+    async def _demande(self, methode: str, chemin: str, params: dict | None = None,
+                       delai: float | None = None) -> httpx.Response:
+        try:
+            async with httpx.AsyncClient(base_url=self.url, transport=self._transport, timeout=delai or self.delai_essai,
+                                         follow_redirects=False) as c:
+                return await c.request(methode, chemin, params=params,
+                                       headers={"Authorization": f"Bearer {self._jeton}", "User-Agent": "anneau",
+                                                "Accept": "application/json"})
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            raise ErreurWatchtower(PHRASE_INJOIGNABLE) from exc
+        except httpx.TimeoutException as exc:          # la demande est partie : Watchtower travaille peut-être encore
+            raise ErreurWatchtower("Watchtower n'a pas répondu à temps", conclut=False) from exc
+        except httpx.HTTPError as exc:
+            raise ErreurWatchtower(f"liaison avec Watchtower coupée ({exc.__class__.__name__})", conclut=False) from exc
+
+    async def mettre_a_jour(self, image: str) -> dict:
+        """POST /v1/update?image=<image> : rend le résumé quand Watchtower a FINI (la demande peut attendre son verrou)."""
+        r = await self._demande("POST", "/v1/update", params={"image": image}, delai=self.delai)
+        if r.status_code == 200:
+            self.dernier_refus = ""
+            try:
+                d = r.json()
+            except ValueError:
+                d = {}
+            resume_ = (d.get("summary") if isinstance(d, dict) else None) or {}
+            return {k: int(resume_.get(k) or 0) for k in ("scanned", "updated", "failed", "restarted", "skipped")
+                    if isinstance(resume_.get(k, 0), (int, float))}
+        if r.status_code in (401, 403):
+            self.dernier_refus = maintenant()
+            raise ErreurWatchtower(f"{PHRASE_JETON} ({r.status_code})", r.status_code)
+        if r.status_code == 429:
+            raise ErreurWatchtower("Watchtower refuse : trop de demandes (429), réessayer dans une minute", 429)
+        if r.status_code in (404, 405):
+            raise ErreurWatchtower(f"Watchtower n'a pas l'API de mise à jour ({r.status_code}) : WATCHTOWER_HTTP_API_UPDATE"
+                                   f"=true et nickfedor/watchtower 1.19 ou plus récent", r.status_code)
+        raise ErreurWatchtower(f"Watchtower a répondu {r.status_code}", r.status_code, conclut=False)
+
+    async def essai(self) -> tuple[bool, str]:
+        """Sans effet : GET /v1/containers puis /v1/metrics (lecture, s'ils sont activés). JAMAIS /v1/update."""
+        for chemin, quoi in (("/v1/containers", "WATCHTOWER_HTTP_API_CONTAINERS"), ("/v1/metrics", "WATCHTOWER_HTTP_API_METRICS")):
+            r = await self._demande("GET", chemin)
+            if r.status_code == 200:
+                n = ""
+                if chemin == "/v1/containers":
+                    try:
+                        n = f" ({int(r.json().get('count'))} conteneurs surveillés)"
+                    except (ValueError, TypeError, AttributeError):
+                        n = ""
+                return True, f"Watchtower répond, jeton accepté{n}."
+            if r.status_code in (401, 403):
+                return False, PHRASE_JETON + "."
+            if r.status_code == 429:
+                return False, "Watchtower refuse : trop de demandes (429)."
+        if self.dernier_refus:
+            quand = datetime.fromisoformat(self.dernier_refus).strftime("%d/%m à %H:%M")
+            return False, f"Watchtower répond, mais {PHRASE_JETON} à la dernière mise à jour (le {quand})."
+        # 160 caractères au plus (fiche « Connexion ») : le jeton sera vérifié à la première mise à jour
+        return True, ("Watchtower répond ; adresse et jeton présents. Jeton vérifié à la première mise à jour, ou ici "
+                      "si WATCHTOWER_HTTP_API_CONTAINERS est activé.")
 
 
 def lire_stats(s: dict | None) -> dict | None:
@@ -250,6 +373,7 @@ def resume(d: dict) -> dict:
             "running": bool(etat.get("Running")), "image": str(d.get("Image") or ""),
             "image_nom": str(config.get("Image") or ""),
             "projet": str((config.get("Labels") or {}).get(ETIQUETTE_PROJET) or ""),
+            "watchtower": str((config.get("Labels") or {}).get(ETIQUETTE_WATCHTOWER) or ""),
             "redemarrage": str(((d.get("HostConfig") or {}).get("RestartPolicy") or {}).get("Name") or "")}
 
 
@@ -262,8 +386,15 @@ class Refus(Exception):
 
 
 class Conteneurs:
-    def __init__(self, data: Path, portainer: Portainer | None, horloge: Callable[[], float] = time.time):
+    def __init__(self, data: Path, portainer: Portainer | None, horloge: Callable[[], float] = time.time,
+                 watchtower: Watchtower | None = None, watchtower_manque: str = "",
+                 delai_demarrage: float = DELAI_DEMARRAGE):
         self.data, self.portainer, self._horloge = data, portainer, horloge
+        self.watchtower = watchtower                 # 0.17.1 : « Mettre à jour » ; None : pas de bouton
+        self.watchtower_manque = watchtower_manque or ("Watchtower n'est pas relié (ANNEAU_WATCHTOWER_URL, "
+                                                       "ANNEAU_WATCHTOWER_JETON)")
+        self.delai_demarrage = delai_demarrage
+        self._lectures = 0                           # numéro de la relecture : un état lu APRÈS la réponse de Watchtower
         self.etats: dict[str, dict] = {}        # clé de tuile → resume() + image_date + lu_le, ou {"erreur"}
         self._dates: dict[str, str | None] = {}  # identifiant d'image → date de création
         self.erreur = ""                         # dernière erreur de lecture (Portainer injoignable…)
@@ -273,7 +404,9 @@ class Conteneurs:
         self.reveil: asyncio.Event | None = None  # posé par main : réveille la ronde après un ordre
         m = self._lire_memoire()
         self.ordres: dict[str, dict] = m.get("ordres", {})
-        self.recreate_absent: str = m.get("recreate_absent", "")
+        for o in self.ordres.values():               # après un redémarrage, toute relecture est postérieure
+            if isinstance(o, dict) and "wt_lecture" in o:
+                o["wt_lecture"] = -1
 
     @property
     def actif(self) -> bool:
@@ -291,8 +424,7 @@ class Conteneurs:
         try:
             self.data.mkdir(parents=True, exist_ok=True)
             neuf = self.data / (ETAT + ".nouveau")
-            neuf.write_text(json.dumps({"ordres": self.ordres, "recreate_absent": self.recreate_absent},
-                                       ensure_ascii=False, indent=1), encoding="utf-8")
+            neuf.write_text(json.dumps({"ordres": self.ordres}, ensure_ascii=False, indent=1), encoding="utf-8")
             os.replace(neuf, self.data / ETAT)
         except OSError as exc:
             log.warning("État des conteneurs non enregistré : %s", exc)
@@ -333,6 +465,7 @@ class Conteneurs:
         if not self.actif:
             return
         marquees = [s for s in fichier.services if s.conteneur]
+        self._lectures += 1
         if self.version is None:
             self.version = await self.portainer.statut() or ""
         erreurs = []
@@ -349,7 +482,8 @@ class Conteneurs:
             if r["image"] and r["image"] not in self._dates:
                 img = await self.portainer.image(r["image"])
                 self._dates[r["image"]] = _date_docker((img or {}).get("Created"))
-            self.etats[s.cle] = {**r, "image_date": self._dates.get(r["image"]), "lu_le": maintenant()}
+            self.etats[s.cle] = {**r, "image_date": self._dates.get(r["image"]), "lu_le": maintenant(),
+                                 "lecture": self._lectures}
         for k in [k for k in self.etats if k not in {s.cle for s in marquees}]:
             del self.etats[k]
         self.erreur = erreurs[0] if erreurs else ""
@@ -378,6 +512,18 @@ class Conteneurs:
             return f"le conteneur n'a pas l'étiquette {ETIQUETTE_PROJET}={PROJET} (il n'est pas de la stack)"
         return ""
 
+    def raison_maj(self, e: dict | None) -> str:
+        """0.17.1 : pourquoi « Mettre à jour » est absent pour ce conteneur (vide : le bouton est là)."""
+        if self.watchtower is None:
+            return f"« Mettre à jour » absent : {self.watchtower_manque}."
+        if not e or e.get("absent"):
+            return ""
+        if str(e.get("watchtower") or "").strip().lower() == "false":
+            return (f"« Mettre à jour » absent : le conteneur porte l'étiquette {ETIQUETTE_WATCHTOWER}=false "
+                    f"(Watchtower ne le met jamais à jour).")
+        _, raison = image_pour_watchtower(e.get("image_nom", ""))
+        return f"« Mettre à jour » absent : {raison}." if raison else ""
+
     def en_cours(self, cle: str) -> bool:
         return (self.ordres.get(cle) or {}).get("etat") == "en_cours"
 
@@ -403,8 +549,8 @@ class Conteneurs:
                 raise Refus(403, "Lecture seule : l'Anneau ne donne aucun ordre à Portainer.")
             if self.en_cours(s.cle):
                 raise Refus(409, f"Un ordre est déjà en cours pour {s.nom}.")
-            if geste in ("mettre-a-jour", "allumer-et-mettre-a-jour") and self.recreate_absent:
-                raise Refus(409, self.recreate_absent)
+            if geste in MAJ and self.watchtower is None:
+                raise Refus(409, f"« Mettre à jour » absent : {self.watchtower_manque}.")
             try:
                 d = await self.portainer.inspecter(s.conteneur)
             except ErreurPortainer as exc:
@@ -416,10 +562,16 @@ class Conteneurs:
                 img = await self.portainer.image(e["image"])
                 self._dates[e["image"]] = _date_docker((img or {}).get("Created"))
             e["image_date"] = self._dates.get(e["image"])
-            self.etats[s.cle] = {**e, "lu_le": maintenant()}
+            self.etats[s.cle] = {**e, "lu_le": maintenant(), "lecture": self._lectures}
             raison = self.barriere(s, e)
             if raison:
                 raise Refus(403, f"Refusé : {raison}.")
+            image = ""
+            if geste in MAJ:
+                raison = self.raison_maj(e)
+                if raison:
+                    raise Refus(409, raison)
+                image, _ = image_pour_watchtower(e["image_nom"])
             if geste == "allumer" and e["running"]:
                 raise Refus(409, f"{s.nom} est déjà allumé.")
             if geste == "eteindre" and not e["running"]:
@@ -430,18 +582,18 @@ class Conteneurs:
         t = self._horloge()
         ordre = {"geste": geste, "tuile": s.nom, "conteneur": s.conteneur, "etat": "en_cours", "debut": maintenant(),
                  "debut_t": t, "id_avant": e["id"], "image_avant": e["image"], "date_avant": e.get("image_date"),
-                 "phrase": EN_COURS[geste], "detail": "", "demarre": False}
+                 "phrase": EN_COURS[geste], "detail": "", "demarre": False, "image_param": image}
         self.ordres[s.cle] = ordre
         self._garder()
         self.noter(geste, s.nom, "lancé", conteneur=s.conteneur)
-        tache = asyncio.create_task(self._executer(s.cle, s.nom, s.conteneur, geste, e["id"]))
+        tache = asyncio.create_task(self._executer(s.cle, s.nom, s.conteneur, geste, image))
         self._taches.add(tache)
         tache.add_done_callback(self._taches.discard)
         if self.reveil is not None:
             self.reveil.set()
         return dict(ordre)
 
-    async def _executer(self, cle: str, nom: str, conteneur: str, geste: str, ident: str) -> None:
+    async def _executer(self, cle: str, nom: str, conteneur: str, geste: str, image: str) -> None:
         """L'appel lui-même. Sa réponse ne dit pas le résultat (sauf un refus net) : c'est le suivi qui conclut."""
         try:
             if geste == "eteindre":
@@ -449,13 +601,13 @@ class Conteneurs:
             elif geste == "allumer":
                 statut = await self.portainer.ordre(conteneur, "start")
             else:
-                statut = await self.portainer.recreer(ident)
-                if statut in (404, 405):
-                    v = f" (version {self.version})" if self.version else ""
-                    self.recreate_absent = (f"« Mettre à jour » absent : ce Portainer{v} n'a pas la recréation de "
-                                            f"conteneur (Portainer 2.19 ou plus récent).")
-                    self._finir(cle, "echec", "Portainer n'a pas la recréation : rien n'a changé.")
-                    return
+                if geste == "allumer-et-mettre-a-jour":
+                    await self.portainer.ordre(conteneur, "start")
+                    if not await self._attendre_marche(cle, conteneur):
+                        self._finir(cle, "echec", "le conteneur n'a pas démarré : pas de mise à jour, voir Portainer.")
+                        return
+                await self._par_watchtower(cle, geste, image)
+                return
             if statut >= 400 and statut not in (404,):
                 o = self.ordres.get(cle)
                 if o and o.get("etat") == "en_cours":
@@ -479,6 +631,47 @@ class Conteneurs:
             if self.reveil is not None:
                 self.reveil.set()
 
+    async def _attendre_marche(self, cle: str, conteneur: str) -> bool:
+        """« Allumer et mettre à jour » : Watchtower ignore un conteneur arrêté, on attend donc qu'il tourne."""
+        fin = time.monotonic() + self.delai_demarrage
+        while True:
+            d = await self.portainer.inspecter(conteneur)
+            if d and (d.get("State") or {}).get("Running"):
+                o = self.ordres.get(cle)
+                if o:
+                    o["demarre"] = True
+                    self._garder()
+                return True
+            if time.monotonic() >= fin:
+                return False
+            await asyncio.sleep(min(1.0, max(self.delai_demarrage / 20, 0.01)))
+
+    async def _par_watchtower(self, cle: str, geste: str, image: str) -> None:
+        """POST /v1/update?image=… ; la réponse arrive quand Watchtower a fini (ou jamais : coupure, redémarrage)."""
+        o = self.ordres.get(cle)
+        if not o:
+            return
+        o["wt"] = "attente"
+        self._garder()
+        avant = "allumé, mais " if geste == "allumer-et-mettre-a-jour" else ""
+        try:
+            r = await self.watchtower.mettre_a_jour(image)
+        except ErreurWatchtower as exc:
+            o = self.ordres.get(cle)
+            if exc.conclut:
+                if o:
+                    o["wt"] = "refus"
+                self._finir(cle, "echec", f"{avant}{exc.phrase} : pas de mise à jour.")
+                return
+            if o and o.get("etat") == "en_cours":
+                o.update(wt="perdu", detail=f"{exc.phrase} ; l'état réel est relu.")
+                self._garder()
+            return
+        o = self.ordres.get(cle)
+        if o and o.get("etat") == "en_cours":
+            o.update(wt="fini", wt_resume=r, wt_lecture=self._lectures)
+            self._garder()
+
     def _finir(self, cle: str, etat: str, phrase: str) -> None:
         o = self.ordres.get(cle)
         if not o or o.get("etat") != "en_cours":
@@ -500,40 +693,63 @@ class Conteneurs:
             if s is None or s.conteneur != o.get("conteneur"):
                 self._finir(cle, "echec", "la tuile a changé dans le fichier des services.")
                 continue
-            if self._horloge() - o.get("debut_t", 0) > DELAI_MAX:
-                self._finir(cle, "delai", "pas de réponse, voir Portainer.")
+            maj = o["geste"] in MAJ
+            if self._horloge() - o.get("debut_t", 0) > (DELAI_MAJ if maj else DELAI_MAX):
+                self._finir(cle, "delai", "pas de réponse, voir Watchtower et Portainer." if maj
+                            else "pas de réponse, voir Portainer.")
                 continue
             e = self.etats.get(cle)
             if not e or e.get("absent"):
-                continue                                    # recréation en plein milieu (ancien renommé) : on attend
+                continue                                    # recréation en plein milieu : on attend
             if o["geste"] == "eteindre":
                 if e.get("statut") == "exited":
                     self._finir(cle, "fini", "éteint.")
                 continue
-            if o["geste"] in ("mettre-a-jour", "allumer-et-mettre-a-jour") and e.get("id") == o.get("id_avant"):
-                continue                                    # pas encore recréé
+            if maj:
+                await self._suivre_maj(cle, o, e, s, repond)
+                continue
             if not e.get("running"):
-                if o["geste"] != "allumer" and not o.get("demarre") and e.get("statut") in ("created", "exited"):
-                    o["demarre"] = True                     # recréé mais pas démarré : on le démarre une fois
-                    self._garder()
-                    try:
-                        await self.portainer.ordre(s.conteneur, "start")
-                    except ErreurPortainer as exc:
-                        o["detail"] = exc.phrase
                 continue
-            try:
-                vivant = bool(await repond(s))
-            except Exception:                               # noqa: BLE001
-                vivant = False
-            if not vivant:
-                continue
-            if o["geste"] == "allumer":
+            if await self._vivant(s, repond):
                 self._finir(cle, "fini", "allumé.")
-            elif e.get("image") == o.get("image_avant"):
-                self._finir(cle, "fini", "déjà à jour.")
-            else:
-                avant, apres = jour_mois(o.get("date_avant")), jour_mois(e.get("image_date"))
-                self._finir(cle, "fini", f"image du {avant} → {apres}." if avant and apres else "nouvelle image.")
+
+    @staticmethod
+    async def _vivant(s, repond) -> bool:
+        try:
+            return bool(await repond(s))
+        except Exception:                                   # noqa: BLE001
+            return False
+
+    async def _suivre_maj(self, cle: str, o: dict, e: dict, s, repond) -> bool:
+        """0.17.1 : fin d'une mise à jour par Watchtower, jugée à l'état réel. Nouvelle empreinte d'image + conteneur en
+        marche + /health : « image du JJ/MM → JJ/MM ». Même empreinte : « déjà à jour » seulement quand Watchtower a
+        répondu ET que l'état a été relu après sa réponse (sinon il travaille peut-être encore, ou attend son verrou)."""
+        wt = o.get("wt", "")
+        neuve = bool(e.get("image")) and e.get("image") != o.get("image_avant")
+        repondu = wt == "fini" and e.get("lecture", 0) > o.get("wt_lecture", 10 ** 12)
+        if not e.get("running"):
+            if repondu:
+                self._finir(cle, "echec", "le conteneur n'est pas en marche après le passage de Watchtower : voir Portainer.")
+            return False
+        if not neuve:
+            if not repondu:
+                return False
+            r = o.get("wt_resume") or {}
+            if r.get("failed"):
+                self._finir(cle, "echec", "Watchtower signale un échec (voir son journal) : image inchangée.")
+                return False
+            if r and not r.get("scanned"):
+                self._finir(cle, "echec", "Watchtower n'a trouvé aucun conteneur en marche de cette image (étiquette, "
+                                          "portée ?) : rien n'a changé.")
+                return False
+        if not await self._vivant(s, repond):
+            return False
+        if neuve:
+            avant, apres = jour_mois(o.get("date_avant")), jour_mois(e.get("image_date"))
+            self._finir(cle, "fini", f"image du {avant} → {apres}." if avant and apres else "nouvelle image.")
+        else:
+            self._finir(cle, "fini", "déjà à jour.")
+        return True
 
     # ------------------------------------------------------------ pour l'écran
     def vue(self, s, lecture_seule: bool) -> dict | None:
@@ -564,7 +780,7 @@ class Conteneurs:
                 age = None
         return {"gerable": not raison, "pourquoi": raison, "statut": statut, "phrase": phrase, "ordre": ordre,
                 "image_date": date, "image_age": age, "redemarrage": (e or {}).get("redemarrage", ""),
-                "maj": not self.recreate_absent, "maj_pourquoi": self.recreate_absent,
+                "maj": not raison and not self.raison_maj(e), "maj_pourquoi": self.raison_maj(e),
                 "lecture_seule": lecture_seule, "erreur": self.erreur}
 
     async def stats(self, s) -> dict:
@@ -587,8 +803,10 @@ class Conteneurs:
         v = f"Portainer {self.version}, " if self.version else ""
         return True, f"{v}environnement {env}."
 
-    def derniere_ecriture(self) -> str | None:
+    def derniere_ecriture(self, gestes: tuple[str, ...] | None = None) -> str | None:
         for l in self.journal(200):
+            if gestes is not None and l.get("quoi") not in gestes:
+                continue
             if l.get("resultat", "").startswith(("fini", "lancé")):
                 return l.get("quand")
         return None

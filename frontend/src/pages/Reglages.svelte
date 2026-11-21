@@ -4,6 +4,7 @@
   // ce que Home Assistant a envoyé, puis la version et la déconnexion.
   // 0.13 : section « Versions » (en service, dernière publiée, mise à jour le), sans couleur pour un retard.
   // 0.17 : section « Connexion » (fiches communes, contrat 3) : Portainer (ce que l'Anneau y lit et y écrit) et GitHub ;
+  // 0.17.1 : et Watchtower (« Mettre à jour ») ;
   //    la dernière collecte dit les applis éteintes (« éteinte, pas sauvegardée cette nuit »).
   import { onMount } from 'svelte'
   import { api } from '$lib/api.js'

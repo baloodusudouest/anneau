@@ -22,6 +22,7 @@ carte ; messages seulement avec le jeton commun ou une session) et copie_base (n
 POST /api/conteneurs/{cle}/{geste} (session + en-tête Origin exactement celui de l'Anneau ; jamais en lecture seule),
 GET /api/conteneurs/{cle}/stats, GET /api/conteneurs/journal ; fiches « Connexion » de l'Anneau lui-même
 (/api/maison/services : Portainer, GitHub) ; journal des écritures (journal-ecritures.jsonl) ;
+0.17.1 — « Mettre à jour » par l'API HTTP de Watchtower (ANNEAU_WATCHTOWER_*), fiche « Connexion » Watchtower ;
 puis l'interface. Le chiffrement et le déchiffrement de l'export des variables se font dans la page (HTTPS seulement) :
 le serveur ne reçoit jamais que la clé publique et du texte déjà chiffré.
 """
@@ -206,7 +207,10 @@ async def cycle(app: FastAPI):
     sauvegardes.demarrer(cfg.data)
     portainer = conteneurs.Portainer(cfg.portainer_url, cfg.portainer_cle, cfg.portainer_env,
                                      transport=ETAT.get("transport_portainer")) if cfg.portainer else None
-    gestion = ETAT.get("conteneurs") or conteneurs.Conteneurs(cfg.data, portainer)
+    watchtower = conteneurs.Watchtower(cfg.watchtower_url, cfg.watchtower_jeton,
+                                       transport=ETAT.get("transport_watchtower")) if cfg.watchtower else None
+    gestion = ETAT.get("conteneurs") or conteneurs.Conteneurs(cfg.data, portainer, watchtower=watchtower,
+                                                              watchtower_manque=cfg.watchtower_manque())
     reveil = asyncio.Event()
     gestion.reveil = reveil
     ETAT.update(cfg=cfg, sessions=Sessions(APPLI, cfg.password, _lire_generation(cfg)), veille=veille,
@@ -267,11 +271,33 @@ CONNEXIONS.ajouter(
     "portainer", "Portainer",
     lit="L'état, l'image, la mémoire et le processeur des seuls conteneurs marqués « conteneur: » dans le fichier "
         "des services (relus à chaque tour de veille).",
-    ecrit="Sur ordre depuis la fiche d'une tuile marquée : arrêter, démarrer, ou recréer avec la dernière image (ce seul "
-          "conteneur, jamais la stack). Chaque ordre est noté au journal des écritures.",
+    ecrit="Sur ordre depuis la fiche d'une tuile marquée : arrêter ou démarrer ce seul conteneur (jamais la stack). La "
+          "mise à jour passe par Watchtower. Chaque ordre est noté au journal des écritures.",
     regle=lambda: bool(_cfg_ou_vide() and _cfg_ou_vide().portainer), reglage="ANNEAU_PORTAINER_URL",
     essai=_essai_portainer,
-    derniere_ecriture=lambda: ETAT["conteneurs"].derniere_ecriture() if ETAT.get("conteneurs") else None)
+    derniere_ecriture=lambda: ETAT["conteneurs"].derniere_ecriture(("allumer", "eteindre", "allumer-et-mettre-a-jour"))
+    if ETAT.get("conteneurs") else None)
+
+
+async def _essai_watchtower():
+    """0.17.1 : sans effet (GET /v1/containers, /v1/metrics) ; JAMAIS /v1/update depuis « Vérifier »."""
+    c = ETAT.get("conteneurs")
+    if c is None or c.watchtower is None:
+        return False, "Pas réglé."
+    try:
+        return await c.watchtower.essai()
+    except conteneurs.ErreurWatchtower as exc:
+        return False, exc.phrase + "."
+
+
+CONNEXIONS.ajouter(
+    "watchtower", "Watchtower",
+    lit="Rien ; « Vérifier » regarde seulement s'il répond (sans rien mettre à jour).",
+    ecrit="Sur ordre « Mettre à jour » depuis la fiche d'une tuile marquée : demande à Watchtower de mettre à jour les "
+          "conteneurs en marche de son image (POST /v1/update?image=…). Chaque ordre est noté au journal des écritures.",
+    regle=lambda: bool(_cfg_ou_vide() and _cfg_ou_vide().watchtower), reglage="ANNEAU_WATCHTOWER_URL",
+    essai=_essai_watchtower,
+    derniere_ecriture=lambda: ETAT["conteneurs"].derniere_ecriture(conteneurs.MAJ) if ETAT.get("conteneurs") else None)
 CONNEXIONS.ajouter(
     "github", "GitHub",
     lit="La carte de la maison (carte.json du dépôt d'Atlas, chaque heure, jeton en lecture seule) et les étiquettes "

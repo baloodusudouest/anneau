@@ -25,13 +25,28 @@ class Config:
     portainer_url: str = ""          # 0.17 : adresse de Portainer ; vide : pas de boutons Allumer / Éteindre / Mettre à jour
     portainer_cle: str = ""          # 0.17 : clé d'API de l'utilisateur Portainer « anneau » (X-API-Key) ; jamais montrée ni écrite
     portainer_env: str = ""          # 0.17 : numéro de l'environnement ; vide : le premier environnement Docker de /api/endpoints
+    watchtower_url: str = ""         # 0.17.1 : adresse de l'API HTTP de Watchtower ; vide : pas de « Mettre à jour »
+    watchtower_jeton: str = ""       # 0.17.1 : même valeur que WATCHTOWER_HTTP_API_TOKEN ; jamais montré ni écrit
 
     def __repr__(self) -> str:       # 0.17 : jamais un secret dans une trace
-        return f"Config(data={self.data!s}, portainer_url={self.portainer_url!r}, portainer_env={self.portainer_env!r})"
+        return (f"Config(data={self.data!s}, portainer_url={self.portainer_url!r}, portainer_env={self.portainer_env!r}, "
+                f"watchtower_url={self.watchtower_url!r})")
 
     @property
     def portainer(self) -> bool:
         return bool(self.portainer_url and self.portainer_cle)
+
+    @property
+    def watchtower(self) -> bool:
+        return bool(self.watchtower_url and self.watchtower_jeton)
+
+    def watchtower_manque(self) -> str:
+        """Pourquoi Watchtower n'est pas relié (vide s'il l'est) : le nom de la variable vide, jamais sa valeur."""
+        if not self.watchtower_url:
+            return "Watchtower n'est pas relié (ANNEAU_WATCHTOWER_URL vide)"
+        if not self.watchtower_jeton:
+            return "Watchtower n'est pas relié (ANNEAU_WATCHTOWER_JETON vide)"
+        return ""
 
 
 def charger() -> Config:
@@ -48,4 +63,6 @@ def charger() -> Config:
         portainer_url=os.environ.get("ANNEAU_PORTAINER_URL", "").strip().rstrip("/"),
         portainer_cle=os.environ.get("ANNEAU_PORTAINER_CLE", "").strip(),
         portainer_env=os.environ.get("ANNEAU_PORTAINER_ENV", "").strip(),
+        watchtower_url=os.environ.get("ANNEAU_WATCHTOWER_URL", "").strip().rstrip("/"),
+        watchtower_jeton=os.environ.get("ANNEAU_WATCHTOWER_JETON", "").strip(),
     )

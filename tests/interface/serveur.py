@@ -13,7 +13,9 @@ l'Anneau ne sauvegardant que lui-même.
 se donne par le champ `version` de leur corps dans sante.json.
 0.17 : un faux Portainer (tests/faux_portainer.py, dans le même processus) ; Séries et Films sont marqués `conteneur:`
 (ils ne répondent que si leur conteneur tourne ; recréation lente : 1,5 s ; une image plus récente attend), Musique est
-marquée mais son conteneur n'a pas l'étiquette de la stack (pas de boutons)."""
+marquée mais son conteneur n'a pas l'étiquette de la stack (pas de boutons).
+0.17.1 : la mise à jour passe par un faux Watchtower (tests/faux_watchtower.py, lent : 1,5 s) qui agit sur les conteneurs
+du faux Portainer."""
 from __future__ import annotations
 
 import json
@@ -29,6 +31,7 @@ from app import main, services
 from app.config import Config
 from app.veille import Veille
 from tests.faux_portainer import CLE as CLE_PORTAINER, FauxPortainer
+from tests.faux_watchtower import JETON as JETON_WATCHTOWER, FauxWatchtower
 
 MDP, SECRET = "essai-essai-essai", "secret-de-demonstration"
 
@@ -96,7 +99,7 @@ CONTENEURS = {"s=series": "series", "s=films": "films", "s=musique": "musique"}
 
 def faux_portainer() -> FauxPortainer:
     """0.17 : Séries (redémarrage « always ») et Films tournent sur une image du 10/11 ; celle du 20/11 attend."""
-    f = FauxPortainer(lenteur=1.5)
+    f = FauxPortainer()
     for nom, redemarrage in (("series", "always"), ("films", "unless-stopped")):
         image = f"ghcr.io/exemple/{nom}:latest"
         ancienne = f.image(image, "2026-11-10T05:00:00Z", derniere=False)
@@ -119,6 +122,7 @@ def main_() -> None:
     arret, avance = racine / "arret.txt", racine / "avance.txt"
 
     portainer = faux_portainer()
+    watchtower = FauxWatchtower(portainer, lenteur=1.5)
 
     async def sonder(adresse: str, jeton: str = ""):
         try:
@@ -174,11 +178,12 @@ def main_() -> None:
 
     cfg = Config(password=MDP, data=data, static=Path(__file__).resolve().parents[2] / "app" / "static", secret_ha=SECRET,
                  attente_connexion=False, periode=0.5, sauvegarde_auto=False,   # la collecte se lance par le bouton
-                 portainer_url="http://portainer.exemple:9000", portainer_cle=CLE_PORTAINER)
+                 portainer_url="http://portainer.exemple:9000", portainer_cle=CLE_PORTAINER,
+                 watchtower_url="http://watchtower:8080", watchtower_jeton=JETON_WATCHTOWER)
     main.ETAT.update(cfg=cfg, veille=VeilleDemo(data, services.lire(data / "services.yaml"), ha_attendu=False, sonder=sonder,
                                                 examiner=examiner, horloge=horloge),
                      transport_versions=httpx.MockTransport(faux_github), lire_fiches=lire_fiches,
-                     transport_portainer=portainer.transport())
+                     transport_portainer=portainer.transport(), transport_watchtower=watchtower.transport())
     uvicorn.run(main.app, host="127.0.0.1", port=port, log_level="warning")
 
 
