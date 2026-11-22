@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 0.17.3 — 22 novembre 2026 (barre d'onglets des applis collée en bas)
+- **Téléphone** : le cadre d'une appli ouverte dans l'Anneau descend maintenant jusqu'au bord bas, sans bordure. La barre d'onglets de l'appli, désormais collée en bas (socle 0.12.1, demande de Julien du 22/11/2026), se pose juste au-dessus de la barre d'accueil de l'iPhone. La barre de l'Anneau reste en haut.
+- **Jamais essayé sur la vraie installation.**
+
 ## 0.17.2 — 21 novembre 2026 (« Vérifier » de la fiche GitHub)
 - Panne signalée par Julien : Réglages › Connexion › GitHub › « Vérifier » ne faisait rien. La fiche n'avait aucun essai branché : le bouton renvoyait la fiche telle quelle, sans message.
 - « Vérifier » lit maintenant les informations de `carte.json` dans le dépôt réglé (`ANNEAU_ATLAS_DEPOT`) avec `ANNEAU_GITHUB_JETON`, en lecture seule (la copie locale de la carte ne change pas) : « répond » (jeton accepté, fichier lisible, demandes restantes) ou la raison (jeton refusé ou expiré, carte introuvable ou dépôt invisible, GitHub injoignable, autre code). Le jeton n'apparaît jamais dans la phrase.

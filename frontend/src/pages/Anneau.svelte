@@ -419,14 +419,17 @@
      dessous. À côté d'une colonne d'icônes, le cadre n'avait que les trois quarts de l'écran et les applis y débordaient. */
   @media (max-width: 899px) {
     .reduit { grid-template-columns: 3rem minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); gap: 0.45rem 0.5rem;
-              padding: calc(0.4rem + env(safe-area-inset-top)) max(0.35rem, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(0.35rem, env(safe-area-inset-left)); }
+              padding: calc(0.4rem + env(safe-area-inset-top)) max(0.35rem, env(safe-area-inset-right)) 0 max(0.35rem, env(safe-area-inset-left)); }
     .retour { max-width: 3rem; }
     .colonne { grid-row: 1; grid-column: 2; flex-direction: row; justify-content: space-between; overflow-x: auto; overflow-y: hidden; }
     .colonne button { flex: none; width: 2.75rem; height: 2.75rem; border-left: 0; border-bottom: 2px solid transparent; }
     .colonne button[aria-current='true'] { border-bottom-color: var(--app); }
     .colonne .reglages { margin-top: 0; }
     .reduit > .pastilles { grid-row: 2; grid-column: 1 / -1; }
-    .contenu { grid-row: 3; grid-column: 1 / -1; border-radius: 0.7rem 0.7rem 0 0; }
+    /* 0.17.3 : le cadre descend jusqu'au bord bas ; la barre d'onglets de l'appli (collée en bas, socle 0.12.1) se pose
+       juste au-dessus de la barre d'accueil de l'iPhone, sans bande ni bordure dessous */
+    .contenu { grid-row: 3; grid-column: 1 / -1; border-radius: 0.7rem 0.7rem 0 0; border-bottom: 0;
+               padding-bottom: env(safe-area-inset-bottom); }
   }
   .fiche { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.8rem; padding: 1.5rem; text-align: center; }
   .fiche h1 { font-size: 3.4rem; margin: 0; }

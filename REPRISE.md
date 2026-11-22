@@ -2,6 +2,8 @@
 
 Fichier à lire en premier dans une nouvelle session, et à mettre à jour à chaque fin de session, dans le même commit que le code.
 
+## État (22/11/2026) — 0.17.3 : `pages/Anneau.svelte`, vue réduite sur téléphone : plus de marge basse, `.contenu` sans bordure basse, `padding-bottom: env(safe-area-inset-bottom)`. Jamais essayé sur la vraie installation.
+
 ## État (21/11/2026)
 
 - **0.17.2 (21/11/2026)** : « Vérifier » de la fiche GitHub (Réglages › Connexion) ne faisait rien (aucun `essai` déclaré dans `CONNEXIONS`). `carte.essai(depot, jeton, transport)` (lecture seule de `contents/carte.json`) et `_essai_github` dans `app/main.py` (`ETAT["transport_github"]` pour les tests). Tests : `test_essai_github_lecture_seule`, `test_verifier_github_repond_ou_dit_pourquoi`. Toute fiche ajoutée à `CONNEXIONS` sans `essai=` a un « Vérifier » muet : en déclarer un. **Jamais essayé sur la vraie installation.**
