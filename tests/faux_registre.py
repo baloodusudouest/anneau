@@ -21,6 +21,8 @@ class FauxRegistres:
         self.injoignables: set[str] = set()
         self.prives: set[str] = set()                            # dépôts dont le jeton anonyme est refusé
         self.sans_jeton_valide = 0
+        self.identifiant = "Basic " + __import__("base64").b64encode(b"proprietaire:jeton-ghcr-fictif").decode()
+        self.auth_vues: list[str] = []                           # en-têtes Authorization reçus par les services de jetons
 
     def publier(self, hote: str, depot: str, etiquette: str, texte: str) -> str:
         d = empreinte(texte)
@@ -43,7 +45,8 @@ class FauxRegistres:
         if hote in ("auth.docker.io", "ghcr.io") and chemin.endswith("/token") or chemin == "/token":
             scope = r.url.params.get("scope", "")
             depot = scope.split(":")[1] if scope.count(":") >= 2 else ""
-            if depot in self.prives:
+            self.auth_vues.append(r.headers.get("authorization", ""))
+            if depot in self.prives and r.headers.get("authorization") != self.identifiant:
                 return httpx.Response(401, json={"errors": [{"code": "UNAUTHORIZED"}]})
             return httpx.Response(200, json={"token": f"jeton-{depot}"})
         if hote == "lscr.io":

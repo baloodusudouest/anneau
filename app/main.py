@@ -240,7 +240,8 @@ async def cycle(app: FastAPI):
                                                               watchtower_manque=cfg.watchtower_manque())
     mises = ETAT.get("majs") or majs.MisesAJour(cfg.data, portainer, watchtower=watchtower,
                                                 watchtower_manque=cfg.watchtower_manque(),
-                                                registres=registres.Registres(ETAT.get("transport_registres")),
+                                                registres=registres.Registres(ETAT.get("transport_registres"),
+                                                                              identifiants={"ghcr.io": (cfg.ghcr_utilisateur, cfg.ghcr_jeton)}),
                                                 noter=gestion.noter)
     reveil = asyncio.Event()
     gestion.reveil = reveil

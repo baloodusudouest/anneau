@@ -3,15 +3,18 @@ publiée d'un dépôt GitHub (versions figées dans la stack).
 
 Lecture seule : une demande HEAD du manifeste (« /v2/<dépôt>/manifests/<étiquette> »), avec le jeton anonyme que le
 registre donne lui-même (en-tête WWW-Authenticate: Bearer realm=…,service=…,scope=…). Rien n'est téléchargé : chez
-Docker Hub, une demande HEAD ne compte pas dans la limite des téléchargements anonymes. Aucun secret : l'Anneau ne lit que
-des images publiques.
+Docker Hub, une demande HEAD ne compte pas dans la limite des téléchargements anonymes.
+0.18.2 : une image privée (Dîme, sur ghcr.io) se lit avec un identifiant du registre (ANNEAU_GHCR_JETON, jeton GitHub
+« read:packages ») : il n'est envoyé qu'au service de jetons de CE registre, jamais montré ni écrit.
 
 Une image est à jour quand l'empreinte du registre figure parmi les RepoDigests de l'image locale (Docker garde
 l'empreinte de l'index multi-architecture quand l'image a été tirée par son étiquette : c'est elle que le registre rend).
 """
 from __future__ import annotations
 
+import base64
 import re
+from urllib.parse import urlparse
 
 import httpx
 
@@ -87,24 +90,39 @@ def _defi(entete: str) -> dict[str, str]:
 class Registres:
     """`transport` : faux registres dans les tests. Les jetons anonymes sont gardés le temps d'une vérification."""
 
-    def __init__(self, transport: httpx.AsyncBaseTransport | None = None, delai: float = DELAI):
+    def __init__(self, transport: httpx.AsyncBaseTransport | None = None, delai: float = DELAI,
+                 identifiants: dict[str, tuple[str, str]] | None = None):
         self._transport = transport
         self.delai = delai
         self._jetons: dict[tuple[str, str, str], str] = {}
+        # 0.18.2 : { "ghcr.io": (utilisateur, jeton) } — seulement pour les registres qui en ont besoin
+        self._identifiants = {h.lower(): v for h, v in (identifiants or {}).items() if v and v[1]}
+
+    def __repr__(self) -> str:                           # jamais un secret dans une trace
+        return f"Registres(identifiants={sorted(self._identifiants)})"
 
     def oublier(self) -> None:
         self._jetons.clear()
 
-    async def _jeton(self, c: httpx.AsyncClient, defi: dict[str, str]) -> str:
+    async def _jeton(self, c: httpx.AsyncClient, defi: dict[str, str], hote: str = "") -> str:
         cle_ = (defi.get("realm", ""), defi.get("service", ""), defi.get("scope", ""))
         if cle_ in self._jetons:
             return self._jetons[cle_]
         if not cle_[0].startswith(("https://", "http://")):
             raise ErreurRegistre("le registre demande une connexion inattendue")
         params = {k: v for k, v in (("service", cle_[1]), ("scope", cle_[2])) if v}
-        r = await c.get(cle_[0], params=params)
+        # L'identifiant n'est donné qu'au service de jetons du registre auquel il appartient (même hôte)
+        ident = self._identifiants.get((urlparse(cle_[0]).hostname or "").lower())
+        if ident and (urlparse(cle_[0]).hostname or "").lower() == hote.lower():
+            brut = base64.b64encode(f"{ident[0]}:{ident[1]}".encode()).decode()
+            r = await c.get(cle_[0], params=params, headers={"Authorization": f"Basic {brut}"})
+            if r.status_code in (401, 403):
+                raise ErreurRegistre(f"{hote} refuse le jeton (ANNEAU_GHCR_JETON expiré ou sans « read:packages » ?)")
+        else:
+            r = await c.get(cle_[0], params=params)
         if r.status_code != 200:
-            raise ErreurRegistre(f"le registre refuse un accès anonyme ({r.status_code}) : image privée ?")
+            conseil = " : poser ANNEAU_GHCR_JETON (jeton GitHub read:packages)" if hote == "ghcr.io" else " : image privée ?"
+            raise ErreurRegistre(f"le registre refuse un accès anonyme ({r.status_code}){conseil}")
         try:
             d = r.json()
         except ValueError as exc:
@@ -126,7 +144,7 @@ class Registres:
                 for _ in range(2):                       # un registre qui redirige (lscr.io → ghcr.io) en redemande un
                     if r.status_code != 401:
                         break
-                    jeton = await self._jeton(c, _defi(r.headers.get("www-authenticate", "")))
+                    jeton = await self._jeton(c, _defi(r.headers.get("www-authenticate", "")), r.url.host or hote)
                     r = await c.head(str(r.url), headers={"Authorization": f"Bearer {jeton}"})
                 if r.status_code == 200 and not r.headers.get("docker-content-digest"):
                     auth = r.request.headers.get("authorization")

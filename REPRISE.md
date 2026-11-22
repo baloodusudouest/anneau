@@ -2,6 +2,8 @@
 
 Fichier à lire en premier dans une nouvelle session, et à mettre à jour à chaque fin de session, dans le même commit que le code.
 
+## État (22/11/2026) — 0.18.2 : `registres.Registres(identifiants={"ghcr.io": (utilisateur, jeton)})` : authentification Basic au seul service de jetons du même hôte ; `Config.ghcr_jeton` (`ANNEAU_GHCR_JETON`), `ghcr_utilisateur`. Watchtower : `DOCKER_CONFIG=/config` + dossier `${DOCKER_ROOT}/watchtower`. Test `test_image_privee_lue_avec_le_jeton_ghcr`. Jamais essayé sur la vraie installation.
+
 ## État (22/11/2026) — 0.18.1 : `registres.FIGEE` n'accepte plus qu'un numéro complet (x.y.z) ; une étiquette incomplète (« 3 », « 1 », « 16-alpine ») est comparée par empreinte. « protégé » seulement sur les lignes à bouton. Jamais essayé sur la vraie installation.
 
 ## État (22/11/2026) — 0.18.0 : les applis de la stack à mettre à jour dans « À faire quand tu veux » (`app/majs.py`, `app/registres.py`, `lib/MisesAJour.svelte`, routes `/api/majs/verifier` et `/api/majs/<ligne>/mettre-a-jour`, `figees:` dans `services.yaml`, état dans `/data/majs.json`). Détection par les registres (Portainer CE n'a pas `image_status`). Jamais essayé sur la vraie installation.

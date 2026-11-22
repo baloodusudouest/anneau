@@ -27,6 +27,8 @@ class Config:
     portainer_env: str = ""          # 0.17 : numéro de l'environnement ; vide : le premier environnement Docker de /api/endpoints
     watchtower_url: str = ""         # 0.17.1 : adresse de l'API HTTP de Watchtower ; vide : pas de « Mettre à jour »
     watchtower_jeton: str = ""       # 0.17.1 : même valeur que WATCHTOWER_HTTP_API_TOKEN ; jamais montré ni écrit
+    ghcr_utilisateur: str = "baloodusudouest"   # 0.18.2 : compte GitHub propriétaire des images privées
+    ghcr_jeton: str = ""             # 0.18.2 : jeton GitHub classic « read:packages » (images privées de ghcr.io) ; jamais montré ni écrit
 
     def __repr__(self) -> str:       # 0.17 : jamais un secret dans une trace
         return (f"Config(data={self.data!s}, portainer_url={self.portainer_url!r}, portainer_env={self.portainer_env!r}, "
@@ -65,4 +67,6 @@ def charger() -> Config:
         portainer_env=os.environ.get("ANNEAU_PORTAINER_ENV", "").strip(),
         watchtower_url=os.environ.get("ANNEAU_WATCHTOWER_URL", "").strip().rstrip("/"),
         watchtower_jeton=os.environ.get("ANNEAU_WATCHTOWER_JETON", "").strip(),
+        ghcr_utilisateur=os.environ.get("ANNEAU_GHCR_UTILISATEUR", "").strip() or "baloodusudouest",
+        ghcr_jeton=os.environ.get("ANNEAU_GHCR_JETON", "").strip(),
     )

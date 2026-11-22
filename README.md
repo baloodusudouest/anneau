@@ -112,3 +112,10 @@ python -m tests.interface.serveur /tmp/anneau 8094      # Anneau de démonstrati
 ```
 
 À lire avant de toucher au code : [`REPRISE.md`](REPRISE.md), puis [`docs/dossier.md`](docs/dossier.md).
+
+## Images privées (0.18.2)
+
+Dîme est publiée en image privée sur ghcr.io. Pour la vérifier et la mettre à jour :
+- l'Anneau lit `ANNEAU_GHCR_JETON` (jeton GitHub classic, droit `read:packages` ; compte `ANNEAU_GHCR_UTILISATEUR`, `baloodusudouest` par défaut). Il ne l'envoie qu'au service de jetons de ghcr.io, jamais à un autre registre, et ne l'écrit nulle part ;
+- Watchtower lit `/config/config.json` (`DOCKER_CONFIG=/config`, dossier `${DOCKER_ROOT}/watchtower` en lecture seule) : `{"auths": {"ghcr.io": {"auth": "<base64 de baloodusudouest:JETON>"}}}`. Un dossier plutôt qu'un fichier monté : un fichier remplacé (nouveau jeton) ne serait pas relu.
+

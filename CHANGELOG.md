@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.18.2 — 22 novembre 2026 (images privées : Dîme)
+- Signalé par Julien : « Dîme : le registre refuse un accès anonyme (401) : image privée ? ». L'image de Dîme est privée sur ghcr.io : l'Anneau ne pouvait pas la comparer, et Watchtower, sans identifiant, ne pouvait pas la mettre à jour (ni par le bouton, ni la nuit). Choix de Julien : un jeton pour les deux, l'image reste privée.
+- `ANNEAU_GHCR_JETON` (jeton GitHub classic `read:packages`, compte `ANNEAU_GHCR_UTILISATEUR`, `baloodusudouest` par défaut) : envoyé seulement au service de jetons de ghcr.io (jamais à Docker Hub ni ailleurs), jamais montré ni écrit. Sans lui : « poser ANNEAU_GHCR_JETON » ; jeton refusé : « expiré ou sans read:packages ? ».
+- Watchtower : `DOCKER_CONFIG=/config` et le dossier `${DOCKER_ROOT}/watchtower` (fichier `config.json`, ghcr.io seulement) dans la stack ; voir le README.
+- Tests : 175 du serveur. **Jamais essayé sur la vraie installation.**
+
 ## 0.18.1 — 22 novembre 2026 (étiquettes qui suivent les versions)
 - Signalé par Julien le soir même de la 0.18.0 : « immich_server : version 3.4.2 publiée, tu as 3 ». L'étiquette « 3 » (`IMMICH_VERSION=3`) n'est pas figée : l'éditeur la déplace à chaque 3.x et Watchtower la suit chaque nuit. Une étiquette n'est plus « figée » que si elle porte un numéro complet (1.19.0, v2.3.1, 1.2.3-alpine) ; une étiquette incomplète (« 3 », « 1 », « 16-alpine », « 11.8-noble ») est comparée par empreinte, comme `latest` : elle n'apparaît que si une image plus récente attend vraiment, avec le bouton.
 - La mention « Conteneur protégé… » ne s'écrit plus que sur les lignes qui ont un bouton à confirmer (plus sur les versions figées).

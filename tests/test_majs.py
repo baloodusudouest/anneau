@@ -280,3 +280,25 @@ def test_protection():
     assert "base" in majs.protection("galerie-db", "ghcr.io/immich-app/postgres:14-vectorchord0.4.3")
     assert "base" in majs.protection("cache", "docker.io/valkey/valkey:8-bookworm")
     assert majs.protection("dime", "ghcr.io/baloodusudouest/dime:latest") == ""
+
+
+def test_image_privee_lue_avec_le_jeton_ghcr(monde):
+    """0.18.2 : l'image privée (Dîme) se lit avec l'identifiant de ghcr.io ; il ne part jamais vers un autre registre ;
+    un jeton refusé le dit, sans jamais le montrer."""
+    import asyncio
+    from app.registres import ErreurRegistre, Registres
+    _, reg = monde
+    d = reg.publier("ghcr.io", "exemple/secret", "latest", "secret-v2")
+    sans = Registres(reg.transport())
+    with pytest.raises(ErreurRegistre, match="ANNEAU_GHCR_JETON"):
+        asyncio.run(sans.empreinte("ghcr.io/exemple/secret:latest"))
+    avec = Registres(reg.transport(), identifiants={"ghcr.io": ("proprietaire", "jeton-ghcr-fictif")})
+    reg.auth_vues.clear()
+    assert asyncio.run(avec.empreinte("ghcr.io/exemple/secret:latest")) == d
+    assert asyncio.run(avec.empreinte("redis:latest"))            # Docker Hub : jamais l'identifiant de ghcr.io
+    assert reg.auth_vues[0].startswith("Basic ") and all(not a for a in reg.auth_vues[1:])
+    assert "jeton-ghcr-fictif" not in repr(avec)
+    faux = Registres(reg.transport(), identifiants={"ghcr.io": ("proprietaire", "perime")})
+    with pytest.raises(ErreurRegistre, match="refuse le jeton") as e:
+        asyncio.run(faux.empreinte("ghcr.io/exemple/secret:latest"))
+    assert "perime" not in str(e.value)
