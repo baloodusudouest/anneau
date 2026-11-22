@@ -15,7 +15,10 @@ se donne par le champ `version` de leur corps dans sante.json.
 (ils ne répondent que si leur conteneur tourne ; recréation lente : 1,5 s ; une image plus récente attend), Musique est
 marquée mais son conteneur n'a pas l'étiquette de la stack (pas de boutons).
 0.17.1 : la mise à jour passe par un faux Watchtower (tests/faux_watchtower.py, lent : 1,5 s) qui agit sur les conteneurs
-du faux Portainer."""
+du faux Portainer.
+0.18 : de faux registres (tests/faux_registre.py) : Séries, Films, « lecteur » (sans tuile) et « base-lecteur » (une base de
+données, double confirmation) ont une image plus récente publiée ; « galerie-server » est figée en v1.2.0 (v1.3.0
+publiée). La liste se vérifie par POST /api/majs/verifier (le test le demande)."""
 from __future__ import annotations
 
 import json
@@ -31,6 +34,7 @@ from app import main, services
 from app.config import Config
 from app.veille import Veille
 from tests.faux_portainer import CLE as CLE_PORTAINER, FauxPortainer
+from tests.faux_registre import FauxRegistres, empreinte
 from tests.faux_watchtower import JETON as JETON_WATCHTOWER, FauxWatchtower
 
 MDP, SECRET = "essai-essai-essai", "secret-de-demonstration"
@@ -46,6 +50,8 @@ familles:
   - {{ nom: Maison, icone: maison }}
   - {{ nom: Collecte, icone: descente }}
   - {{ nom: Machines, icone: serveur }}
+figees:
+  - {{ conteneur: "galerie-*", depot: exemple-org/galerie, variable: GALERIE_VERSION }}
 machines:
   - {{ nom: Grand NAS, sonde: "{base}/health?machine=grand", famille: Machines }}
 services:
@@ -97,14 +103,22 @@ def faux_github(req: httpx.Request) -> httpx.Response:
 CONTENEURS = {"s=series": "series", "s=films": "films", "s=musique": "musique"}
 
 
-def faux_portainer() -> FauxPortainer:
-    """0.17 : Séries (redémarrage « always ») et Films tournent sur une image du 10/11 ; celle du 20/11 attend."""
+def faux_portainer(reg: FauxRegistres | None = None) -> FauxPortainer:
+    """0.17 : Séries (redémarrage « always ») et Films tournent sur une image du 10/11 ; celle du 20/11 attend.
+    0.18 : la même image du 20/11 est publiée dans le faux registre ; « lecteur » et « base-lecteur » aussi en retard."""
     f = FauxPortainer()
-    for nom, redemarrage in (("series", "always"), ("films", "unless-stopped")):
-        image = f"ghcr.io/exemple/{nom}:latest"
-        ancienne = f.image(image, "2026-11-10T05:00:00Z", derniere=False)
-        f.image(image, "2026-11-20T05:00:00Z")
+    reg = reg or FauxRegistres()
+    for nom, redemarrage in (("series", "always"), ("films", "unless-stopped"), ("lecteur", "unless-stopped"),
+                             ("base-lecteur", "unless-stopped")):
+        image = f"ghcr.io/exemple/{nom}:latest" if nom != "base-lecteur" else "ghcr.io/exemple/redis:latest"
+        depot = image.split("/", 1)[1].rsplit(":", 1)[0]
+        neuve = reg.publier("ghcr.io", depot, "latest", f"{nom}-20-11")
+        ancienne = f.image(image, "2026-11-10T05:00:00Z", derniere=False, empreinte=empreinte(f"{nom}-10-11"))
+        f.image(image, "2026-11-20T05:00:00Z", empreinte=neuve)
         f.ajouter(nom, ancienne, image, redemarrage=redemarrage)
+    galerie = "ghcr.io/exemple/galerie-server:v1.2.0"
+    f.ajouter("galerie-server", f.image(galerie, "2026-11-01T05:00:00Z", empreinte=empreinte("galerie")), galerie)
+    reg.publications["exemple-org/galerie"] = "v1.3.0"
     f.ajouter("musique", f.image("ghcr.io/exemple/musique:latest", "2026-11-15T05:00:00Z"), projet="autre")
     return f
 
@@ -121,7 +135,8 @@ def main_() -> None:
     sante = racine / "sante.json"
     arret, avance = racine / "arret.txt", racine / "avance.txt"
 
-    portainer = faux_portainer()
+    registres_ = FauxRegistres()
+    portainer = faux_portainer(registres_)
     watchtower = FauxWatchtower(portainer, lenteur=1.5)
 
     async def sonder(adresse: str, jeton: str = ""):
@@ -183,7 +198,8 @@ def main_() -> None:
     main.ETAT.update(cfg=cfg, veille=VeilleDemo(data, services.lire(data / "services.yaml"), ha_attendu=False, sonder=sonder,
                                                 examiner=examiner, horloge=horloge),
                      transport_versions=httpx.MockTransport(faux_github), lire_fiches=lire_fiches,
-                     transport_portainer=portainer.transport(), transport_watchtower=watchtower.transport())
+                     transport_portainer=portainer.transport(), transport_watchtower=watchtower.transport(),
+                     transport_registres=registres_.transport())
     uvicorn.run(main.app, host="127.0.0.1", port=port, log_level="warning")
 
 

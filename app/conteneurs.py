@@ -227,6 +227,20 @@ class Portainer:
             raise ErreurPortainer("réponse de Portainer illisible") from exc
         return d if isinstance(d, dict) else None
 
+    async def lister(self, projet: str = PROJET) -> list[dict]:
+        """0.18 : les conteneurs (allumés ou non) qui portent l'étiquette com.docker.compose.project=<projet>."""
+        env = await self.environnement()
+        r = await self._demande("GET", self._docker(env, "containers/json"),
+                                params={"all": "1", "filters": json.dumps({"label": [f"{ETIQUETTE_PROJET}={projet}"]})})
+        self._refus(r)
+        if r.status_code != 200:
+            raise ErreurPortainer(f"Portainer a répondu {r.status_code} à la liste des conteneurs", r.status_code)
+        try:
+            liste = r.json()
+        except ValueError as exc:
+            raise ErreurPortainer("liste des conteneurs illisible") from exc
+        return [x for x in liste if isinstance(x, dict)] if isinstance(liste, list) else []
+
     async def image(self, ident: str) -> dict | None:
         env = await self.environnement()
         try:

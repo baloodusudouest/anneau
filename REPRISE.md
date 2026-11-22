@@ -2,6 +2,8 @@
 
 Fichier à lire en premier dans une nouvelle session, et à mettre à jour à chaque fin de session, dans le même commit que le code.
 
+## État (22/11/2026) — 0.18.0 : les applis de la stack à mettre à jour dans « À faire quand tu veux » (`app/majs.py`, `app/registres.py`, `lib/MisesAJour.svelte`, routes `/api/majs/verifier` et `/api/majs/<ligne>/mettre-a-jour`, `figees:` dans `services.yaml`, état dans `/data/majs.json`). Détection par les registres (Portainer CE n'a pas `image_status`). Jamais essayé sur la vraie installation.
+
 ## État (22/11/2026) — 0.17.3 : `pages/Anneau.svelte`, vue réduite sur téléphone : plus de marge basse, `.contenu` sans bordure basse, `padding-bottom: env(safe-area-inset-bottom)`. Jamais essayé sur la vraie installation.
 
 ## État (21/11/2026)
@@ -97,6 +99,7 @@ Fichier à lire en premier dans une nouvelle session, et à mettre à jour à ch
 - `app/veille.py` : la sonde et les règles d'une panne (trois échecs, trois réussites, machine qui emporte ses services, arrêt attendu, seuil des disques, Home Assistant muet). Mémoire : `pannes.json` dans le dossier de données, rien d'autre.
 - `app/main.py` : `/api/etat`, `/api/pannes/vue`, `/api/recharger`, `/api/ha/etat` (ouverte par le secret), les routes de sauvegarde (0.8).
 - `app/sauvegardes.py` (0.8) : collecte des réglages des applis maison, fichiers `sauvegardes/`, tuile « Sauvegarde ratée », exports chiffrés.
+- `app/majs.py` (0.18) : la liste des applis à mettre à jour, les ordres par Watchtower et leur suivi ; `app/registres.py` : empreintes des registres et dernière publication GitHub. `tests/faux_registre.py` : les faux.
 - `app/conteneurs.py` (0.17) : Portainer, Watchtower (0.17.1), barrières, ordres, suivi, journal des écritures. `tests/faux_portainer.py`, `tests/faux_watchtower.py` : les faux.
 - `frontend/src/lib/Cercle.svelte` : l'anneau (arcs, dépliage). `pages/Anneau.svelte` : l'écran et la vue réduite. `lib/icones.js` : les pictogrammes que le fichier appelle par leur nom.
 - `tests/interface/serveur.py` : l'Anneau de démonstration ; `morts.txt` dit quelles adresses ne répondent plus.
@@ -108,6 +111,8 @@ Fichier à lire en premier dans une nouvelle session, et à mettre à jour à ch
 3. « Ouvrir » sur iPhone : où s'ouvre le service, et comment on revient.
 4. La police de plume et les halos sur un écran réel (lisibilité au soleil).
 5. Preuve de vie : arrêter un service sans enjeu, voir la panne s'ouvrir en trois minutes, puis se clore.
+6. (0.18) Le conteneur de l'Anneau joint-il ghcr.io, registry-1.docker.io, auth.docker.io, lscr.io et api.github.com ? Les images non vérifiées et leur raison sont dans le volet de la liste.
+7. (0.18) Mettre à jour l'Anneau depuis la liste : la page se coupe quelques secondes ; au retour, la ligne doit dire « mis à jour. ».
 
 ## Prochaines étapes
 

@@ -800,3 +800,38 @@ def test_018_reglages_connexion_portainer(page):
         page.screenshot(path=f"{os.environ['CAPTURES']}/anneau-connexion-{page.ecran}.png", full_page=True)
     page.get_by_role("link", name="Revenir à l'anneau").click()
     page.locator("svg.anneau").wait_for()
+
+
+def test_019_applis_a_mettre_a_jour_dans_a_faire(page):
+    """0.18 : « À faire quand tu veux » : une ligne repliée « N applis à mettre à jour » ; dépliée, une ligne par appli
+    avec « Mettre à jour » (confirmation sur la ligne), la version figée sans bouton, la base de données en double
+    confirmation. PC : « lecteur » (une confirmation) ; iPhone : « base-lecteur » (deux). Serveur partagé."""
+    r = page.evaluate("fetch('/api/majs/verifier', {method: 'POST'}).then((r) => r.status)")
+    assert r == 200
+    page.reload()
+    page.locator("svg.anneau").wait_for()
+    zone = page.get_by_role("region", name="À faire quand tu veux")
+    deplier = zone.get_by_role("button", name=re.compile(r"applis? à mettre à jour"))
+    deplier.click()
+    liste = zone.get_by_role("list", name="Applis à mettre à jour")
+    galerie = liste.get_by_role("listitem").filter(has_text="galerie-server")
+    assert "version 1.3.0 publiée, tu as 1.2.0 : changer GALERIE_VERSION dans la stack" in galerie.inner_text()
+    assert galerie.get_by_role("button").count() == 0
+    if page.ecran == "pc":
+        nom, etapes = "lecteur", ["Mettre à jour"]
+    else:
+        nom, etapes = "base-lecteur", ["Continuer", "Oui, je confirme"]
+        assert "Base de données : une nouvelle version" in liste.get_by_role("listitem").filter(has=page.locator("b", has_text=re.compile(f"^{nom}$"))).first.inner_text()
+    ligne = liste.get_by_role("listitem").filter(has=page.locator("b", has_text=re.compile(f"^{nom}$"))).first
+    ligne.get_by_role("button", name=f"Mettre à jour {nom}").click()
+    groupe = ligne.get_by_role("group", name=f"Confirmer la mise à jour de {nom}")
+    groupe.get_by_role("button", name="Annuler").click()                     # annuler ne lance rien
+    assert groupe.count() == 0
+    ligne.get_by_role("button", name=f"Mettre à jour {nom}").click()
+    for etape in etapes:
+        groupe.get_by_role("button", name=etape).click()
+    ligne = page.get_by_role("list", name="Applis à mettre à jour").get_by_role("listitem").filter(has=page.locator("b", has_text=re.compile(f"^{nom}$"))).first
+    ligne.get_by_text("mis à jour.").wait_for(timeout=20000)
+    assert not _deborde(page)
+    if os.environ.get("CAPTURES"):
+        page.screenshot(path=f"{os.environ['CAPTURES']}/anneau-majs-{page.ecran}.png", full_page=True)

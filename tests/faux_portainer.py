@@ -7,7 +7,8 @@ Routes imitées (toutes exigent l'en-tête X-API-Key ; mauvaise clé : 401) :
   POST /api/endpoints/{env}/docker/containers/{nom}/stop        204, ou 304 déjà arrêté
   POST /api/endpoints/{env}/docker/containers/{nom}/start       204, ou 304 déjà démarré
   GET  /api/endpoints/{env}/docker/containers/{nom}/stats       ?stream=false : un relevé
-  GET  /api/endpoints/{env}/docker/images/{id}/json             date de création de l'image
+  GET  /api/endpoints/{env}/docker/images/{id}/json             date de création de l'image (0.18 : RepoDigests, étiquette version)
+  GET  /api/endpoints/{env}/docker/containers/json?all=1&filters={"label":[…]}   0.18 : liste filtrée par étiquette
 0.17.1 : plus de route recreate (l'Anneau ne s'en sert plus : la mise à jour passe par Watchtower, tests/faux_watchtower.py,
 qui agit sur les mêmes conteneurs par `remplacer`).
 Accès : un conteneur listé dans `caches` rend 403 (l'utilisateur standard n'y a pas accès) ; un conteneur de
@@ -40,6 +41,8 @@ class FauxPortainer:
         self.conteneurs: dict[str, dict] = {}
         self.images: dict[str, str] = {}          # identifiant d'image → date de création
         self.dernieres: dict[str, str] = {}       # nom d'image (dépôt:étiquette) → identifiant de la dernière image
+        self.empreintes: dict[str, str] = {}      # 0.18 : identifiant d'image → empreinte du registre (RepoDigests)
+        self.versions: dict[str, str] = {}        # 0.18 : identifiant d'image → étiquette org.opencontainers.image.version
         self.caches: set[str] = set()
         self.refus_ordres: set[str] = set()       # lecture permise, stop/start refusés (403)
         self.figes: set[str] = set()              # conteneurs qui acceptent stop/start (204) sans jamais changer d'état
@@ -48,9 +51,13 @@ class FauxPortainer:
         self.app = self._application()
 
     # ------------------------------------------------------------ fabrication
-    def image(self, nom_image: str, date: str, derniere: bool = True) -> str:
+    def image(self, nom_image: str, date: str, derniere: bool = True, empreinte: str = "", version: str = "") -> str:
         ident = "sha256:" + _ident()
         self.images[ident] = date
+        if empreinte:
+            self.empreintes[ident] = empreinte
+        if version:
+            self.versions[ident] = version
         if derniere:
             self.dernieres[nom_image] = ident
         return ident
@@ -121,6 +128,27 @@ class FauxPortainer:
         def environnements():
             return moi.environnements
 
+        @app.get("/api/endpoints/{env}/docker/containers/json")
+        def lister(env: str, request: Request):
+            if not env_ok(env):
+                return JSONResponse({"message": "Unable to find an environment"}, status_code=404)
+            import json as _json
+            filtres = _json.loads(request.query_params.get("filters") or "{}")
+            voulues = [x.split("=", 1) for x in filtres.get("label", [])]
+            tous = request.query_params.get("all") in ("1", "true")
+            sortie = []
+            for nom, c in moi.conteneurs.items():
+                if nom in moi.caches:
+                    continue
+                labels = c["Config"].get("Labels") or {}
+                if any(labels.get(k) != v for k, v in voulues):
+                    continue
+                if not tous and not c["State"]["Running"]:
+                    continue
+                sortie.append({"Id": c["Id"], "Names": ["/" + nom], "Image": c["Config"]["Image"], "ImageID": c["Image"],
+                               "State": c["State"]["Status"], "Labels": labels})
+            return sortie
+
         @app.get("/api/endpoints/{env}/docker/containers/{ref}/json")
         def inspecter(env: str, ref: str):
             if not env_ok(env):
@@ -167,7 +195,13 @@ class FauxPortainer:
         def image(env: str, ident: str):
             if ident not in moi.images:
                 return JSONResponse({"message": "No such image"}, status_code=404)
-            return {"Id": ident, "Created": moi.images[ident]}
+            d = {"Id": ident, "Created": moi.images[ident]}
+            depot = next((c["Config"]["Image"].rsplit(":", 1)[0] for c in moi.conteneurs.values() if c["Image"] == ident), "")
+            if ident in moi.empreintes:
+                d["RepoDigests"] = [f"{depot or 'exemple/inconnu'}@{moi.empreintes[ident]}"]
+            if ident in moi.versions:
+                d["Config"] = {"Labels": {"org.opencontainers.image.version": moi.versions[ident]}}
+            return d
 
         return app
 

@@ -12,6 +12,8 @@
   // 0.17 : une tuile marquée « conteneur: » s'allume, s'éteint et se met à jour depuis sa fiche (Portainer) : éteinte, elle
   //    est grise et « Ouvrir » laisse la place à « Allumer » ; affichée dans le cadre, le bouton « État » mène aux boutons.
   //    Pendant un ordre, la phrase est écrite sur la tuile et l'écran se relit toutes les 2,5 s.
+  // 0.18 : « À faire quand tu veux » montre aussi les applis de la stack à mettre à jour (une ligne repliée, un bouton par
+  //    appli : MisesAJour.svelte) ; pendant une mise à jour, l'écran se relit toutes les 2,5 s.
   import { onMount } from 'svelte'
   import { api } from '$lib/api.js'
   import { duree, secondes } from '$lib/temps.js'
@@ -19,6 +21,7 @@
   import Icone from '$lib/Icone.svelte'
   import FichesAppli from '$lib/FichesAppli.svelte'
   import Conteneur from '$lib/Conteneur.svelte'
+  import MisesAJour from '$lib/MisesAJour.svelte'
   import { Button } from '$lib/components/ui/button/index.js'
 
   let { ondeconnecte, onreglages } = $props()
@@ -42,7 +45,7 @@
     return () => { clearInterval(a); clearInterval(b); mq.removeEventListener('change', suivre) }
   })
   // 0.17 : un ordre en cours chez Portainer : relire toutes les 2,5 s jusqu'à sa fin
-  const ordreEnCours = $derived((e?.familles || []).some((f) => f.services.some((s) => s.conteneur?.ordre?.etat === 'en_cours')))
+  const ordreEnCours = $derived((e?.familles || []).some((f) => f.services.some((s) => s.conteneur?.ordre?.etat === 'en_cours')) || !!e?.majs?.en_cours)
   $effect(() => {
     if (!ordreEnCours) return
     const t = setInterval(lire, 2500)
@@ -52,17 +55,19 @@
   const familles = $derived(e?.familles || [])
   const pannes = $derived(e?.pannes || [])
   const aFaire = $derived(e?.a_faire || [])
+  const majs = $derived(e?.majs?.actif && (e.majs.nombre || e.majs.lignes.some((x) => x.ordre)) ? e.majs : null)   // 0.18
+  const nbFaire = $derived(aFaire.length + (majs ? 1 : 0))
   const aTraiter = $derived(e?.a_traiter || [])   // 0.8 : « Sauvegarde ratée » (rien vers Home Assistant)
   const surveiller = $derived(e?.surveiller || [])  // 0.12 : tuiles orange (jamais comptées en panne)
   // 0.12 : la veille de l'Anneau est-elle arrêtée ? Le serveur le dit ; si l'API ne répond plus, le navigateur le calcule
   // à partir de la dernière boucle connue (pas avant : l'horloge du navigateur peut différer de celle du serveur).
   const veilleArretee = $derived(!!e?.veille && (e.veille.arretee || (!!erreur && tic - new Date(e.veille.derniere).getTime() > 600000)))
-  const nbChoses = $derived(aFaire.length + aTraiter.length)
+  const nbChoses = $derived(nbFaire + aTraiter.length)
   // l'état écrit sur l'anneau : la panne passe devant ce qui est à faire
   const etats = $derived(Object.fromEntries(familles.map((f) => [f.cle, f.etat === 'panne' ? 'panne' : aFaire.some((x) => x.famille === f.nom) ? 'faire' : f.etat === 'inconnu' ? 'inconnu' : ''])))
   const centre = $derived(!e ? null
     : pannes.length ? { rang: 'panne', grand: `${pannes.length} en panne`, petit: nbChoses ? `${nbChoses} chose${nbChoses > 1 ? 's' : ''} à faire` : '' }
-    : { rang: aFaire.length ? 'faire' : '', grand: 'Tout va bien', petit: nbChoses ? `${nbChoses} chose${nbChoses > 1 ? 's' : ''} à faire quand tu veux` : '' })
+    : { rang: nbFaire ? 'faire' : '', grand: 'Tout va bien', petit: nbChoses ? `${nbChoses} chose${nbChoses > 1 ? 's' : ''} à faire quand tu veux` : '' })
   const familleOuverte = $derived(familles.find((f) => f.cle === ouverte))
   const familleDuService = $derived(service ? familles.find((f) => f.cle === service.famille) : null)
   const leService = $derived(familleDuService?.services.find((s) => s.cle === service.cle) || null)
@@ -290,10 +295,13 @@
           </ul>
         </section>
       {/if}
-      {#if aFaire.length}
+      {#if nbFaire}
         <section class="rang faire" aria-label="À faire quand tu veux">
-          <h2><span>À faire quand tu veux</span><span>{aFaire.length}</span></h2>
-          <ul>{#each aFaire as x (x.cle)}<li><span>{x.phrase}{#if x.famille}<small>{x.famille}</small>{/if}</span></li>{/each}</ul>
+          <h2><span>À faire quand tu veux</span><span>{nbFaire}</span></h2>
+          <ul>
+            {#each aFaire as x (x.cle)}<li><span>{x.phrase}{#if x.famille}<small>{x.famille}</small>{/if}</span></li>{/each}
+            {#if majs}<MisesAJour m={majs} {tic} onfait={lire} />{/if}
+          </ul>
         </section>
       {/if}
       {#if aTraiter.length}
@@ -309,7 +317,7 @@
           </ul>
         </section>
       {/if}
-      {#if !pannes.length && !surveiller.length && !aFaire.length && !aTraiter.length && e.fraicheur.sonde}
+      {#if !pannes.length && !surveiller.length && !nbFaire && !aTraiter.length && e.fraicheur.sonde}
         <p class="text-sm text-muted-foreground">Rien à signaler. Touche une famille pour voir ses services.</p>
       {/if}
     </div>

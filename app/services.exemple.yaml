@@ -16,6 +16,11 @@ familles:
   - { nom: Maison, icone: maison }
   - { nom: Machines, icone: serveur }
 
+# 0.18 : applis dont la version est écrite dans la stack (étiquette = numéro de version) : l'Anneau dit dans « À faire »
+# qu'une version plus récente est publiée sur GitHub, sans bouton (il faut changer la variable dans la stack).
+figees:
+  - { conteneur: "galerie-*", depot: exemple-org/galerie, variable: GALERIE_VERSION }
+
 machines:
   - { nom: Grand NAS, sonde: "http://192.0.2.10:5000", famille: Machines }   # sa panne colore « Machines »
   - { nom: Petit NAS, sonde: "http://192.0.2.20:8080", famille: Machines }

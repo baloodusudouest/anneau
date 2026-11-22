@@ -41,7 +41,7 @@ from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 import time
 
-from . import carte, conteneurs, fiches, maison, sauvegardes, stack, versions
+from . import carte, conteneurs, fiches, maison, majs, registres, sauvegardes, stack, versions
 
 from . import __version__
 from .auth import COMMUN, DUREE, Sessions, en_https
@@ -76,6 +76,7 @@ def _lire_generation(cfg: Config) -> int:
 # l'Anneau tourne comme avant et son /health n'a pas de tâches.
 TACHE_VEILLE, TACHE_COLLECTE, TACHE_CARTE = "veille", "collecte-de-nuit", "relecture-de-la-carte"
 TACHE_VERSIONS = "versions-publiees"          # 0.13
+TACHE_MAJS = "mises-a-jour-des-applis"       # 0.18
 
 
 def _registre():
@@ -104,6 +105,8 @@ def _declarer(cfg: Config) -> None:
         if cfg.atlas_depot:
             r.declarer(TACHE_CARTE, periode_s=3600, type="reguliere")
         r.declarer(TACHE_VERSIONS, periode_s=versions.HEURE, type="reguliere")
+        if cfg.portainer:
+            r.declarer(TACHE_MAJS, periode_s=majs.PERIODE, type="reguliere")
 
 
 PERIODE_PRESSEE = 5                            # 0.17 : secondes entre deux tours pendant les 5 min qui suivent un ordre
@@ -122,6 +125,12 @@ async def un_tour(veille: Veille) -> None:
     await veille.tour()
     if c is not None and c.actif:
         await c.suivre(veille.fichier, veille.repond)
+    m = ETAT.get("majs")                           # 0.18 : une mise à jour lancée depuis « À faire » est-elle finie ?
+    if m is not None and m.en_cours():
+        try:
+            await m.suivre()
+        except Exception:                          # noqa: BLE001
+            log.exception("Suivi des mises à jour interrompu")
 
 
 async def _ronde(veille: Veille, periode: int) -> None:
@@ -133,7 +142,9 @@ async def _ronde(veille: Veille, periode: int) -> None:
         except Exception:                          # une ronde ratée ne doit jamais arrêter la veille
             log.exception("Ronde de sonde interrompue")
         c = ETAT.get("conteneurs")
-        attente = min(periode, PERIODE_PRESSEE) if c is not None and c.presse() else periode
+        m = ETAT.get("majs")
+        presse = (c is not None and c.presse()) or (m is not None and m.presse())
+        attente = min(periode, PERIODE_PRESSEE) if presse else periode
         if reveil is None:
             await asyncio.sleep(attente)
             continue
@@ -174,6 +185,22 @@ async def _versions_publiees(cfg: Config) -> None:
         await asyncio.sleep(300)
 
 
+async def _verifier_majs() -> None:
+    """0.18 : les images de la stack comparées à leur registre toutes les 6 h (rattrapé au démarrage, après 1 min)."""
+    await asyncio.sleep(60)
+    while True:
+        try:
+            m = ETAT.get("majs")
+            if m is not None and m.a_verifier():
+                async with _tour(TACHE_MAJS):
+                    await m.verifier(ETAT["veille"].fichier, ETAT["veille"].versions_des_tuiles())
+                    if m.erreur:
+                        raise RuntimeError(m.erreur)
+        except Exception:
+            log.exception("Vérification des mises à jour interrompue")
+        await asyncio.sleep(300)
+
+
 async def _sauvegarde_quotidienne(cfg: Config) -> None:
     """0.8 : chaque jour à l'heure de Réglages › Sauvegarde (rattrapée au démarrage si elle est passée)."""
     while True:
@@ -211,10 +238,15 @@ async def cycle(app: FastAPI):
                                        transport=ETAT.get("transport_watchtower")) if cfg.watchtower else None
     gestion = ETAT.get("conteneurs") or conteneurs.Conteneurs(cfg.data, portainer, watchtower=watchtower,
                                                               watchtower_manque=cfg.watchtower_manque())
+    mises = ETAT.get("majs") or majs.MisesAJour(cfg.data, portainer, watchtower=watchtower,
+                                                watchtower_manque=cfg.watchtower_manque(),
+                                                registres=registres.Registres(ETAT.get("transport_registres")),
+                                                noter=gestion.noter)
     reveil = asyncio.Event()
     gestion.reveil = reveil
+    mises.reveil = reveil
     ETAT.update(cfg=cfg, sessions=Sessions(APPLI, cfg.password, _lire_generation(cfg)), veille=veille,
-                reglages=reglages, verrou_collecte=asyncio.Lock(), conteneurs=gestion, reveil=reveil)
+                reglages=reglages, verrou_collecte=asyncio.Lock(), conteneurs=gestion, reveil=reveil, majs=mises)
     # 0.10.5 : la génération des sessions de l'Anneau sert aussi au cookie commun ; « Se déconnecter » l'augmente
     # et les autres applis la lisent dans /externe/services : les cookies communs d'avant ne valent plus nulle part
     maison.definir_generation_commune(_generation_commune)
@@ -223,8 +255,9 @@ async def cycle(app: FastAPI):
     atlas = asyncio.create_task(_relire_carte(cfg)) if cfg.veille and cfg.atlas_depot else None
     collecte = asyncio.create_task(_sauvegarde_quotidienne(cfg)) if cfg.veille and cfg.sauvegarde_auto else None
     publiees = asyncio.create_task(_versions_publiees(cfg)) if cfg.veille else None
+    verif = asyncio.create_task(_verifier_majs()) if cfg.veille and mises.actif else None
     yield
-    for t in (ronde, atlas, collecte, publiees):
+    for t in (ronde, atlas, collecte, publiees, verif):
         if t:
             t.cancel()
             with suppress(asyncio.CancelledError):
@@ -417,7 +450,8 @@ def etat(request: Request):
             s["fiches"] = s.get("cle") in maisons
             t = tuiles.get(s.get("cle"))                         # 0.17 : conteneur gérable depuis la fiche
             s["conteneur"] = gestion.vue(t, seule) if gestion is not None and t is not None else None
-    return {**e, "a_traiter": _a_traiter(), "version": __version__}
+    m = ETAT.get("majs")                                         # 0.18 : applis de la stack à mettre à jour
+    return {**e, "a_traiter": _a_traiter(), "version": __version__, "majs": m.vue(seule) if m is not None else None}
 
 
 # ================================================================ conteneurs (0.17 : Portainer)
@@ -483,6 +517,37 @@ async def ordre_conteneur(cle: str, geste: str, request: Request):
     t = _tuile(cle)
     try:
         ordre = await gestion.ordonner(t, geste, _lecture_seule())
+    except conteneurs.Refus as r:
+        raise HTTPException(r.statut, r.phrase) from None
+    return JSONResponse({"ordre": ordre}, status_code=202)
+
+
+# ================================================================ applis à mettre à jour (0.18)
+
+@app.post("/api/majs/verifier")
+async def verifier_majs(request: Request):
+    """« Vérifier maintenant » : relit la stack chez Portainer et les registres (lecture seule)."""
+    _verifier_origine(request)
+    m = ETAT["majs"]
+    if not m.actif:
+        raise HTTPException(404, "Portainer n'est pas réglé (ANNEAU_PORTAINER_URL, ANNEAU_PORTAINER_CLE).")
+    async with _tour(TACHE_MAJS):
+        await m.verifier(ETAT["veille"].fichier, ETAT["veille"].versions_des_tuiles())
+    return m.vue(_lecture_seule())
+
+
+@app.post("/api/majs/{ident}/mettre-a-jour")
+async def mettre_a_jour_appli(ident: str, request: Request, corps: dict = Body(default={})):
+    """Mettre à jour une appli de la liste. `ident` : une ligne de la liste lue par l'Anneau, jamais un nom libre ;
+    `protege: true` = la double confirmation d'un conteneur protégé ou d'une base de données."""
+    m = ETAT["majs"]
+    try:
+        _verifier_origine(request)
+    except HTTPException as exc:
+        m.noter(f"refusé : {exc.detail}", ident)
+        raise
+    try:
+        ordre = await m.ordonner(ident, bool((corps or {}).get("protege") is True), _lecture_seule())
     except conteneurs.Refus as r:
         raise HTTPException(r.statut, r.phrase) from None
     return JSONResponse({"ordre": ordre}, status_code=202)

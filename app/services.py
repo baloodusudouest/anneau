@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 import yaml
 
 from .conteneurs import verifier_nom
+from .registres import DEPOT_GITHUB
 from .versions import DEPOT_VALIDE
 
 EXEMPLE = Path(__file__).parent / "services.exemple.yaml"
@@ -81,6 +82,7 @@ class Fichier:
     modifie_le: str = ""
     exemple: bool = False
     erreurs: tuple[str, ...] = field(default=())
+    figees: tuple[dict, ...] = ()   # 0.18 : versions figées dans la stack : {conteneur (motif), depot (GitHub), variable}
 
 
 def adresse_https(f: Fichier, port: int | None) -> str:
@@ -145,6 +147,30 @@ def _conteneur(valeur, nom: str, erreurs: list[str]) -> str:
     if erreur:
         erreurs.append(f"{nom} : {erreur}")
     return v
+
+
+def _figees(brut, erreurs: list[str]) -> tuple[dict, ...]:
+    """0.18 : « figees: » — une ligne par appli dont la version est écrite dans la stack (IMMICH_VERSION…) :
+    { conteneur: immich-*, depot: immich-app/immich, variable: IMMICH_VERSION }. L'Anneau dit qu'une version plus récente
+    est publiée sur GitHub, sans bouton (il faut changer la variable dans la stack)."""
+    sortie = []
+    for x in brut or []:
+        if not isinstance(x, dict):
+            erreurs.append("figees : une ligne illisible écartée.")
+            continue
+        motif, depot = str(x.get("conteneur") or "").strip(), str(x.get("depot") or "").strip()
+        variable = str(x.get("variable") or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.*-]{0,127}", motif):
+            erreurs.append(f"figees : conteneur « {motif} » invalide, ligne écartée.")
+            continue
+        if not DEPOT_GITHUB.match(depot):
+            erreurs.append(f"figees : dépôt « {depot} » invalide (propriétaire/dépôt), ligne écartée.")
+            continue
+        if variable and not re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", variable):
+            erreurs.append(f"figees : variable « {variable} » invalide, ignorée.")
+            variable = ""
+        sortie.append({"conteneur": motif, "depot": depot, "variable": variable})
+    return tuple(sortie)
 
 
 def _cadre(valeur) -> bool | None:
@@ -267,4 +293,4 @@ def comprendre(texte: str, exemple: bool = False, modifie_le: str = "") -> Fichi
         famille_ha=str(reglages.get("famille_ha", "")).strip() if str(reglages.get("famille_ha", "")).strip() in connues else "",
         lu_le=datetime.now().astimezone().isoformat(timespec="seconds"),
         modifie_le=modifie_le,
-        exemple=exemple, erreurs=tuple(erreurs))
+        exemple=exemple, figees=_figees(brut.get("figees"), erreurs), erreurs=tuple(erreurs))
