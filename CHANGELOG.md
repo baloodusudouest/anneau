@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.18.1 — 22 novembre 2026 (étiquettes qui suivent les versions)
+- Signalé par Julien le soir même de la 0.18.0 : « immich_server : version 3.4.2 publiée, tu as 3 ». L'étiquette « 3 » (`IMMICH_VERSION=3`) n'est pas figée : l'éditeur la déplace à chaque 3.x et Watchtower la suit chaque nuit. Une étiquette n'est plus « figée » que si elle porte un numéro complet (1.19.0, v2.3.1, 1.2.3-alpine) ; une étiquette incomplète (« 3 », « 1 », « 16-alpine », « 11.8-noble ») est comparée par empreinte, comme `latest` : elle n'apparaît que si une image plus récente attend vraiment, avec le bouton.
+- La mention « Conteneur protégé… » ne s'écrit plus que sur les lignes qui ont un bouton à confirmer (plus sur les versions figées).
+- Va avec le passage de Watchtower sur l'étiquette `1` dans la stack (choix de Julien du 22/11/2026 : suit les 1.x, jamais une 2.0 sans lui) ; la ligne `figees:` de Watchtower ne sert plus.
+- Tests : 174 du serveur. **Jamais essayé sur la vraie installation.**
+
 ## 0.18.0 — 22 novembre 2026 (les applis à mettre à jour dans « À faire quand tu veux »)
 - Demande de Julien du 22/11/2026 : voir, à côté de « Mise à jour du système disponible pour Synology », quelles applications sont à mettre à jour. Choix : **toutes les applis de la stack homelab**, en **une ligne repliée** « N applis à mettre à jour » qui se déplie, avec **un bouton « Mettre à jour » sur chaque ligne**, **même pour les conteneurs protégés** (double confirmation), et les **versions figées** dites sans bouton. Sans Conseil. Dossier : `docs/ajout-0.18.0.md`.
 - **Détection** : Portainer CE n'a pas d'API qui dise si une image est en retard (la route `image_status` n'existe que dans la version payante ; vérifié dans le code de Portainer CE du 20/11/2026). L'Anneau lit la liste des conteneurs de la stack chez Portainer (`GET …/containers/json?all=1&filters={"label":["com.docker.compose.project=homelab"]}`), l'empreinte de leur image (`RepoDigests`), puis l'empreinte publiée dans le registre de chaque image (`HEAD /v2/<dépôt>/manifests/<étiquette>`, jeton anonyme donné par le registre ; ghcr.io, Docker Hub, lscr.io qui redirige vers ghcr.io). Lecture seule, rien n'est téléchargé. Toutes les 6 h (première fois 1 min après le démarrage) et sur « Vérifier maintenant ». Nouvelle tâche de fond `mises-a-jour-des-applis`.

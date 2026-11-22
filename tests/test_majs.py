@@ -60,6 +60,8 @@ def monde():
     reg.prives.add("exemple/secret")
     appli("immich-server", "ghcr.io/exemple/galerie-server:v2.3.0")
     appli("watchtower", "veilleur/watchtower:1.19.0", hote="registry-1.docker.io")
+    appli("immich-ml", "ghcr.io/exemple/galerie-ml:3")                     # 0.18.1 : « 3 » suit les 3.x, à jour
+    appli("veilleur-suivi", "veilleur/veilleur:1", a_jour=False, hote="registry-1.docker.io")   # « 1 », en retard
     reg.publications.update({"exemple-org/galerie": "v2.4.1", "exemple-org/veilleur": "v1.19.0"})
     return p, reg
 
@@ -116,8 +118,12 @@ def test_decouper_les_noms_d_image():
     for faux in ("ghcr.io/a/b@sha256:" + "0" * 64, "sha256:abc", "", "ghcr.io/A/../b"):
         with pytest.raises(registres.ErreurRegistre):
             registres.decouper(faux)
-    assert registres.est_figee("ghcr.io/x/y:v2.3.0") and registres.est_figee("postgres:16.4-alpine")
+    assert registres.est_figee("ghcr.io/x/y:v2.3.0") and registres.est_figee("postgres:16.4.2-alpine")
     assert not registres.est_figee("ghcr.io/x/y:latest") and not registres.est_figee("ghcr.io/x/y")
+    # 0.18.1 : une étiquette incomplète suit les versions (Immich « 3 », Watchtower « 1 », postgres « 16-alpine »)
+    for suit in ("ghcr.io/immich-app/immich-server:3", "nickfedor/watchtower:1", "postgres:16-alpine",
+                 "mariadb:11.8-noble", "ghcr.io/x/y:v3"):
+        assert not registres.est_figee(suit), suit
 
 
 def test_figees_lues_et_verifiees():
@@ -143,8 +149,10 @@ def test_la_liste_des_applis_a_mettre_a_jour(client, monde):
     v = verifier(client)
     par = {x["id"]: x for x in v["lignes"]}
     # à jour, d'un autre projet, ou figée sans version plus récente : absents
-    assert set(par) == {"dime", "anneau", "cache-redis", "bazarr", "dormeur", "immich-server"}
-    assert v["nombre"] == 6
+    assert set(par) == {"dime", "anneau", "cache-redis", "bazarr", "dormeur", "immich-server", "veilleur-suivi"}
+    assert v["nombre"] == 7
+    # 0.18.1 : « 3 » à jour par empreinte (pas « 3.4.2 publiée, tu as 3 ») ; « 1 » en retard : ligne avec bouton
+    assert "immich-ml" not in par and par["veilleur-suivi"]["sorte"] == "maj" and par["veilleur-suivi"]["bouton"]
     assert par["dime"]["nom"] == "Dîme" and par["dime"]["bouton"] and not par["dime"]["protege"]
     assert par["dime"]["phrase"] == "nouvelle image publiée"                # pas de version publiée connue ici
     assert "protégé" in par["anneau"]["protege"] and par["anneau"]["bouton"]
@@ -152,7 +160,7 @@ def test_la_liste_des_applis_a_mettre_a_jour(client, monde):
     assert par["bazarr"]["bouton"]                                          # lscr.io → ghcr.io suivi
     assert not par["dormeur"]["bouton"] and "allumer d'abord" in par["dormeur"]["pourquoi"]
     g = par["immich-server"]
-    assert g["sorte"] == "figee" and not g["bouton"]
+    assert g["sorte"] == "figee" and not g["bouton"] and g["protege"] == ""          # 0.18.1 : pas de « protégé » sans bouton
     assert g["phrase"] == "version 2.4.1 publiée, tu as 2.3.0 : changer GALERIE_VERSION dans la stack"
     assert [n["nom"] for n in v["non_verifiees"]] == ["secret"] and "anonyme" in v["non_verifiees"][0]["raison"]
     assert v["erreur"] == "" and v["lu_le"]
@@ -176,7 +184,7 @@ def test_mettre_a_jour_depuis_la_liste(client, monde):
     tour(client)
     x = lignes(client)["dime"]
     assert x["ordre"]["etat"] == "fini" and x["ordre"]["phrase"] == "mis à jour." and not x["bouton"]
-    assert client.get("/api/etat").json()["majs"]["nombre"] == 5
+    assert client.get("/api/etat").json()["majs"]["nombre"] == 6
     journal = client.get("/api/conteneurs/journal").json()["lignes"]
     assert journal[0]["resultat"] == "fini : mis à jour." and journal[0]["liste"] == "a-faire"
     # vérifiée de nouveau : à jour, elle n'y est plus du tout une fois le résultat effacé

@@ -387,7 +387,8 @@ class MisesAJour:
             pourquoi = self._bouton(ligne, lecture_seule) if ligne.get("sorte") == "maj" and ident in self.lignes else ""
             sortie.append({"id": ident, "nom": ligne.get("nom"), "sorte": ligne.get("sorte"), "phrase": ligne.get("phrase", ""),
                            "version": ligne.get("version", ""), "version_neuve": ligne.get("version_neuve", ""),
-                           "protege": ligne.get("protege", ""), "ordre": ordre,
+                           # 0.18.1 : la protection ne se dit que là où il y a un bouton à confirmer
+                           "protege": ligne.get("protege", "") if ligne.get("sorte") == "maj" else "", "ordre": ordre,
                            "bouton": ligne.get("sorte") == "maj" and ident in self.lignes and not pourquoi,
                            "pourquoi": pourquoi})
         sortie.sort(key=lambda x: (x["sorte"] != "maj", (x["nom"] or "").lower()))

@@ -26,8 +26,10 @@ ACCEPTE = ", ".join([
 DELAI = 15.0
 GITHUB = "https://api.github.com"
 DEPOT_GITHUB = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}/[A-Za-z0-9._-]{1,100}$")
-# une étiquette « figée » : un numéro de version (v2.3.1, 1.19.0, 16, 16.4-alpine…), pas latest / release / main
-FIGEE = re.compile(r"^v?\d+(\.\d+){0,3}([-+_.][0-9A-Za-z.+_-]+)?$")
+# une étiquette « figée » : un numéro de version complet (v2.3.1, 1.19.0, 1.2.3-alpine). 0.18.1 : une étiquette
+# incomplète (« 3 », « 16-alpine », « 11.8-noble ») suit les versions (l'éditeur la déplace à chaque publication) :
+# elle n'est pas figée, l'empreinte du registre la compare comme une étiquette latest.
+FIGEE = re.compile(r"^v?\d+\.\d+\.\d+([-+_.][0-9A-Za-z.+_-]+)?$")
 VERSION = re.compile(r"v?(\d+)(?:\.(\d+))?(?:\.(\d+))?")
 
 
@@ -64,7 +66,7 @@ def etiquette(ref: str) -> str:
 
 
 def est_figee(ref: str) -> bool:
-    """L'étiquette est un numéro de version : Watchtower ne fera jamais passer à la version suivante."""
+    """L'étiquette est un numéro de version complet : Watchtower ne fera jamais passer à la version suivante."""
     return bool(FIGEE.match(etiquette(ref)))
 
 
