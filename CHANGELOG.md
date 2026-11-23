@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 0.18.3 — 23 novembre 2026 (listes déroulantes lisibles en sombre)
+
+- **Listes déroulantes illisibles sur PC** (constaté par Julien dans Dîme, 23/11/2026) : la liste ouverte d'un `<select>` gardait un fond blanc tout en reprenant le texte crème de l'appli. `frontend/src/app.css` reprend le bloc du socle 0.12.2 (« Listes déroulantes (socle 0.12.2) ») : choix aux couleurs des menus, titres de groupe en gras, choix désactivés en gris.
+- Jamais essayé sur la vraie installation.
+
 ## 0.18.2 — 22 novembre 2026 (images privées : Dîme)
 - Signalé par Julien : « Dîme : le registre refuse un accès anonyme (401) : image privée ? ». L'image de Dîme est privée sur ghcr.io : l'Anneau ne pouvait pas la comparer, et Watchtower, sans identifiant, ne pouvait pas la mettre à jour (ni par le bouton, ni la nuit). Choix de Julien : un jeton pour les deux, l'image reste privée.
 - `ANNEAU_GHCR_JETON` (jeton GitHub classic `read:packages`, compte `ANNEAU_GHCR_UTILISATEUR`, `baloodusudouest` par défaut) : envoyé seulement au service de jetons de ghcr.io (jamais à Docker Hub ni ailleurs), jamais montré ni écrit. Sans lui : « poser ANNEAU_GHCR_JETON » ; jeton refusé : « expiré ou sans read:packages ? ».
