@@ -752,6 +752,10 @@ class Conteneurs:
             if r.get("failed"):
                 self._finir(cle, "echec", "Watchtower signale un échec (voir son journal) : image inchangée.")
                 return False
+            if r.get("skipped") and not r.get("scanned"):
+                self._finir(cle, "echec", "Watchtower a sauté le conteneur : il n'a pas pu lire l'image (identifiants des images privées dans "
+                                          "config.json, registre injoignable ?), voir le journal de Watchtower : rien n'a changé.")
+                return False
             if r and not r.get("scanned"):
                 self._finir(cle, "echec", "Watchtower n'a trouvé aucun conteneur en marche de cette image (étiquette, "
                                           "portée ?) : rien n'a changé.")

@@ -2,6 +2,8 @@
 
 Fichier à lire en premier dans une nouvelle session, et à mettre à jour à chaque fin de session, dans le même commit que le code.
 
+## État (23/11/2026) — 0.18.4 : `app/majs.py` et `app/conteneurs.py` lisent `skipped` (« Watchtower a sauté le conteneur ») ; faux Watchtower : `saut`. Jamais essayé sur la vraie installation.
+
 ## État (23/11/2026) — 0.18.3 : listes déroulantes lisibles en sombre (`frontend/src/app.css`, bloc « Listes déroulantes (socle 0.12.2) » : `select option, select optgroup` aux couleurs `--popover`). Jamais essayé sur la vraie installation.
 
 ## État (22/11/2026) — 0.18.2 : `registres.Registres(identifiants={"ghcr.io": (utilisateur, jeton)})` : authentification Basic au seul service de jetons du même hôte ; `Config.ghcr_jeton` (`ANNEAU_GHCR_JETON`), `ghcr_utilisateur`. Watchtower : `DOCKER_CONFIG=/config` + dossier `${DOCKER_ROOT}/watchtower`. Test `test_image_privee_lue_avec_le_jeton_ghcr`. Jamais essayé sur la vraie installation.

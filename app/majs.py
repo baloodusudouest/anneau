@@ -360,6 +360,9 @@ class MisesAJour:
                 self._finir(ident, "echec", "le conteneur n'est pas en marche après le passage de Watchtower : voir Portainer.")
             elif r.get("failed"):
                 self._finir(ident, "echec", "Watchtower signale un échec (voir son journal) : image inchangée.")
+            elif r.get("skipped") and not r.get("scanned"):
+                self._finir(ident, "echec", "Watchtower a sauté le conteneur : il n'a pas pu lire l'image (identifiants des images privées dans "
+                                            "config.json, registre injoignable ?), voir le journal de Watchtower : rien n'a changé.")
             elif r and not r.get("scanned"):
                 self._finir(ident, "echec", "Watchtower n'a trouvé aucun conteneur en marche de cette image : rien n'a changé.")
             elif not neuve:

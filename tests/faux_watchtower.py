@@ -39,6 +39,7 @@ class FauxWatchtower:
         self.containers_api, self.metrics_api = containers_api, metrics_api
         self.verrou = asyncio.Lock()
         self.echec: set[str] = set()              # conteneurs dont la mise à jour échoue (failed)
+        self.saut: set[str] = set()               # 0.18.4 : image illisible (config.json mal formé, registre) : skipped
         self.appels: list[tuple[str, str, str]] = []   # (méthode, chemin, requête)
         self.jetons_vus: set[str] = set()
         self.app = self._application()
@@ -61,6 +62,9 @@ class FauxWatchtower:
                 continue
             nom_image = c["Config"]["Image"]
             if images is not None and nom_image.split(":")[0] not in [i.split(":")[0] for i in images]:
+                continue
+            if nom in self.saut:                      # « Could not check container for updates » : ni scanned ni failed
+                r["skipped"] += 1
                 continue
             r["scanned"] += 1
             if nom in self.echec:

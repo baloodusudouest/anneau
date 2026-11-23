@@ -459,6 +459,16 @@ def test_watchtower_signale_un_echec(client, faux, wt):
     assert "signale un échec" in tuile(client, "Bac à sable")["conteneur"]["ordre"]["phrase"]
 
 
+def test_watchtower_saute_le_conteneur(client, faux, wt):
+    """0.18.4 : image illisible (config.json mal formé) : skipped, pas « aucun conteneur »."""
+    wt.saut.add("bac-a-sable")
+    tour(client)
+    assert ordre(client, "bac-a-sable", "mettre-a-jour").status_code == 202
+    assert attendre(lambda: main.ETAT["conteneurs"].ordres["bac-a-sable"].get("wt") == "fini")
+    tour(client)
+    assert tuile(client, "Bac à sable")["conteneur"]["ordre"]["phrase"].startswith("Watchtower a sauté le conteneur")
+
+
 def test_portainer_refuse_l_ordre(client, faux):
     faux.refus_ordres.add("bac-a-sable")
     tour(client)

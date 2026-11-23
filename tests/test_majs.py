@@ -66,7 +66,7 @@ def monde():
     return p, reg
 
 
-def _client(tmp_path, monde, lecture_seule=False, wt_jeton=JETON):
+def _client(tmp_path, monde, lecture_seule=False, wt_jeton=JETON, saut=()):
     p, reg = monde
     main.ETAT.clear()
     (tmp_path / "services.yaml").write_text(FICHIER, encoding="utf-8")
@@ -81,6 +81,7 @@ def _client(tmp_path, monde, lecture_seule=False, wt_jeton=JETON):
     cfg = Config(password=MDP, data=tmp_path, static=tmp_path / "static", attente_connexion=False, veille=False,
                  sauvegarde_auto=False, portainer_url=URL, portainer_cle=CLE, watchtower_url=URL_WT, watchtower_jeton=wt_jeton)
     wt = FauxWatchtower(p)
+    wt.saut.update(saut)
     main.ETAT.update(cfg=cfg, veille=veille, transport_portainer=p.transport(), transport_watchtower=wt.transport(),
                      transport_registres=reg.transport())
     return TestClient(main.app)
@@ -235,6 +236,21 @@ def test_echec_de_watchtower(tmp_path, monde):
         assert attendre(lambda: main.ETAT["majs"].ordres["dime"]["etat"] == "echec")
         x = lignes(c)["dime"]
         assert "jeton refusé" in x["ordre"]["phrase"] and x["bouton"]
+    main.ETAT.clear()
+
+
+def test_watchtower_saute_le_conteneur(tmp_path, monde):
+    """0.18.4 (panne du 23/11/2026) : config.json mal formé, Watchtower « Could not check container for updates » :
+    scanned=0, skipped=1. Le message dit que le conteneur a été sauté, pas qu'il n'existe pas."""
+    with _client(tmp_path, monde, saut={"dime"}) as c:
+        c.post("/api/connexion", json={"mot_de_passe": MDP})
+        verifier(c)
+        assert c.post("/api/majs/dime/mettre-a-jour", headers=ORIGINE).status_code == 202
+        assert attendre(lambda: main.ETAT["majs"].ordres["dime"].get("wt") == "fini")
+        tour(c)
+        assert main.ETAT["majs"].ordres["dime"]["etat"] == "echec"
+        phrase = lignes(c)["dime"]["ordre"]["phrase"]
+        assert phrase.startswith("Watchtower a sauté le conteneur") and "config.json" in phrase
     main.ETAT.clear()
 
 

@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 0.18.4 — 23 novembre 2026 (« Watchtower a sauté le conteneur »)
+
+- **Message trompeur** (panne du 23/11/2026, Dîme et cinq autres applis) : Watchtower ne pouvait pas lire l'image (`config.json` mal formé, puis ghcr.io qui refuse le jeton : « denied ») ; il répond alors `scanned=0, skipped=1`, et l'Anneau disait « aucun conteneur en marche de cette image ». Il dit maintenant : « Watchtower a sauté le conteneur : il n'a pas pu lire l'image (identifiants des images privées dans config.json, registre injoignable ?), voir le journal de Watchtower : rien n'a changé. » (bouton des lignes à mettre à jour et des fiches).
+- Tests : 227 (dont 2 nouveaux, faux Watchtower qui saute un conteneur). Jamais essayé sur la vraie installation.
+
 ## 0.18.3 — 23 novembre 2026 (listes déroulantes lisibles en sombre)
 
 - **Listes déroulantes illisibles sur PC** (constaté par Julien dans Dîme, 23/11/2026) : la liste ouverte d'un `<select>` gardait un fond blanc tout en reprenant le texte crème de l'appli. `frontend/src/app.css` reprend le bloc du socle 0.12.2 (« Listes déroulantes (socle 0.12.2) ») : choix aux couleurs des menus, titres de groupe en gras, choix désactivés en gris.
