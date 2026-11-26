@@ -23,6 +23,9 @@ POST /api/conteneurs/{cle}/{geste} (session + en-tête Origin exactement celui d
 GET /api/conteneurs/{cle}/stats, GET /api/conteneurs/journal ; fiches « Connexion » de l'Anneau lui-même
 (/api/maison/services : Portainer, GitHub) ; journal des écritures (journal-ecritures.jsonl) ;
 0.17.1 — « Mettre à jour » par l'API HTTP de Watchtower (ANNEAU_WATCHTOWER_*), fiche « Connexion » Watchtower ;
+0.19 — GET /api/https (ce que voit le serveur) ; la clé publique et le rangement d'un export exigent une page sûre (403,
+ANNEAU_GARDE_HTTPS=non pour le dépannage) ; POST /api/reveil/{cle} (réveil du PC par le webhook de Home Assistant,
+ANNEAU_HA_URL, ANNEAU_HA_WEBHOOK_REVEIL), fiche « Connexion » Home Assistant ;
 puis l'interface. Le chiffrement et le déchiffrement de l'export des variables se font dans la page (HTTPS seulement) :
 le serveur ne reçoit jamais que la clé publique et du texte déjà chiffré.
 """
@@ -41,7 +44,7 @@ from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 import time
 
-from . import carte, conteneurs, fiches, maison, majs, registres, sauvegardes, stack, versions
+from . import carte, conteneurs, fiches, maison, majs, registres, reveil as reveils, sauvegardes, stack, versions
 
 from . import __version__
 from .auth import COMMUN, DUREE, Sessions, en_https
@@ -125,6 +128,9 @@ async def un_tour(veille: Veille) -> None:
     await veille.tour()
     if c is not None and c.actif:
         await c.suivre(veille.fichier, veille.repond)
+    r = ETAT.get("reveil_pc")                      # 0.19 : un réveil demandé : la tuile répond-elle ?
+    if r is not None and r.en_cours():
+        await r.suivre({t.cle: t for t in veille.fichier.services}, veille.repond)
     m = ETAT.get("majs")                           # 0.18 : une mise à jour lancée depuis « À faire » est-elle finie ?
     if m is not None and m.en_cours():
         try:
@@ -143,7 +149,8 @@ async def _ronde(veille: Veille, periode: int) -> None:
             log.exception("Ronde de sonde interrompue")
         c = ETAT.get("conteneurs")
         m = ETAT.get("majs")
-        presse = (c is not None and c.presse()) or (m is not None and m.presse())
+        rp = ETAT.get("reveil_pc")                  # 0.19 : un réveil en cours presse aussi la ronde
+        presse = (c is not None and c.presse()) or (m is not None and m.presse()) or (rp is not None and rp.en_cours())
         attente = min(periode, PERIODE_PRESSEE) if presse else periode
         if reveil is None:
             await asyncio.sleep(attente)
@@ -243,11 +250,14 @@ async def cycle(app: FastAPI):
                                                 registres=registres.Registres(ETAT.get("transport_registres"),
                                                                               identifiants={"ghcr.io": (cfg.ghcr_utilisateur, cfg.ghcr_jeton)}),
                                                 noter=gestion.noter)
+    reveil_pc = ETAT.get("reveil_pc") or reveils.Reveil(cfg.ha_url, cfg.ha_webhook_reveil, noter=gestion.noter,
+                                                       transport=ETAT.get("transport_ha"))
     reveil = asyncio.Event()
     gestion.reveil = reveil
     mises.reveil = reveil
     ETAT.update(cfg=cfg, sessions=Sessions(APPLI, cfg.password, _lire_generation(cfg)), veille=veille,
-                reglages=reglages, verrou_collecte=asyncio.Lock(), conteneurs=gestion, reveil=reveil, majs=mises)
+                reglages=reglages, verrou_collecte=asyncio.Lock(), conteneurs=gestion, reveil=reveil, majs=mises,
+                reveil_pc=reveil_pc)
     # 0.10.5 : la génération des sessions de l'Anneau sert aussi au cookie commun ; « Se déconnecter » l'augmente
     # et les autres applis la lisent dans /externe/services : les cookies communs d'avant ne valent plus nulle part
     maison.definir_generation_commune(_generation_commune)
@@ -332,6 +342,25 @@ CONNEXIONS.ajouter(
     regle=lambda: bool(_cfg_ou_vide() and _cfg_ou_vide().watchtower), reglage="ANNEAU_WATCHTOWER_URL",
     essai=_essai_watchtower,
     derniere_ecriture=lambda: ETAT["conteneurs"].derniere_ecriture(conteneurs.MAJ) if ETAT.get("conteneurs") else None)
+async def _essai_ha():
+    """0.19 : Home Assistant répond-il ? JAMAIS le webhook depuis « Vérifier »."""
+    r = ETAT.get("reveil_pc")
+    if r is None or not r.actif:
+        return False, (_cfg_ou_vide().reveil_manque() if _cfg_ou_vide() else "Pas réglé.")
+    return await r.essai()
+
+
+CONNEXIONS.ajouter(
+    "home-assistant", "Home Assistant",
+    lit="Rien : Home Assistant envoie lui-même l'état des machines à l'Anneau (secret ANNEAU_SECRET_HA). « Vérifier » "
+        "regarde seulement s'il répond.",
+    ecrit="Sur ordre « Réveiller le PC » depuis la fiche d'une tuile marquée « reveil: true » : appelle le webhook de "
+          "réveil de Home Assistant, qui envoie le signal Wake-on-LAN. Chaque ordre est noté au journal des écritures.",
+    regle=lambda: bool(_cfg_ou_vide() and _cfg_ou_vide().reveil), reglage="ANNEAU_HA_URL",
+    essai=_essai_ha,
+    derniere_ecriture=lambda: ETAT["conteneurs"].derniere_ecriture(("reveil",)) if ETAT.get("conteneurs") else None)
+
+
 def _essai_github():
     """0.17.2 : lit les informations de carte.json avec le jeton (lecture seule, rien n'est enregistré)."""
     cfg = _cfg_ou_vide()
@@ -436,6 +465,56 @@ def _https(request: Request) -> bool:
     return (request.headers.get("x-forwarded-proto") or request.url.scheme) == "https"
 
 
+LOCAUX = ("localhost", "127.0.0.1", "::1", "[::1]")
+
+
+def _https_par(request: Request) -> str:
+    """0.19 : d'où l'Anneau tient que la page est sûre : « direct » (servie en https), « relais » (X-Forwarded-Proto de
+    Tailscale Serve), « origine » (en-tête Origin du navigateur, envoyé à chaque écriture), « machine » (localhost : rien
+    ne quitte la machine, comme pour le navigateur), ou « » (http sur le réseau). La garde protège Julien d'une page
+    ouverte par erreur en http : un client qui forge ces en-têtes a déjà la session, il n'apprend rien de plus."""
+    if request.url.scheme == "https":
+        return "direct"
+    if request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower() == "https":
+        return "relais"
+    if request.headers.get("origin", "").strip().lower().startswith("https://"):
+        return "origine"
+    return "machine" if _hote_brut(request) in LOCAUX else ""
+
+
+def _hote_brut(request: Request) -> str:
+    """L'hôte de l'en-tête Host, sans le port ([::1] garde ses crochets)."""
+    h = (request.headers.get("host") or "").strip().lower()
+    if h.startswith("["):
+        return h.split("]")[0] + "]"
+    return h.rsplit(":", 1)[0] if ":" in h else h
+
+
+HTTPS_REQUIS = "Les secrets ne s'écrivent qu'en https : ouvre l'Anneau par son adresse https (Tailscale). Tailscale en panne : " \
+               "ANNEAU_GARDE_HTTPS=non dans la stack, le temps du dépannage."
+
+
+def _exiger_https(request: Request) -> None:
+    """0.19 (écart de l'audit) : écrire la clé publique ou ranger un export chiffré exige une page sûre, vérifié ici et
+    plus seulement dans le navigateur. La lecture et le téléchargement des exports (du texte chiffré) restent permis."""
+    if ETAT["cfg"].garde_https and not _https_par(request):
+        raise HTTPException(403, HTTPS_REQUIS)
+
+
+def _exiger_ecriture() -> None:
+    """0.19 (écart de l'audit) : en lecture seule, l'Anneau n'envoie aucun ordre à un autre service (Portainer, Watchtower,
+    Home Assistant). Ce qu'il écrit dans son propre dossier reste permis, comme dans le socle."""
+    if _lecture_seule():
+        raise HTTPException(403, "Lecture seule (MAISON_LECTURE_SEULE ou ANNEAU_LECTURE_SEULE) : aucun ordre n'est envoyé.")
+
+
+@app.get("/api/https")
+def diagnostic_https(request: Request):
+    """0.19 : ce que voit le serveur (étape zéro du conseil) : page sûre ou non, et par quel signal. Aucun secret."""
+    return {"https": bool(_https_par(request)), "par": _https_par(request), "garde": ETAT["cfg"].garde_https,
+            "relais": request.headers.get("x-forwarded-proto", ""), "lecture_seule": _lecture_seule()}
+
+
 def _a_traiter() -> list[dict]:
     return sauvegardes.a_traiter(ETAT["cfg"].data, cle_publique=ETAT["reglages"].get("cle_publique"))
 
@@ -451,8 +530,42 @@ def etat(request: Request):
             s["fiches"] = s.get("cle") in maisons
             t = tuiles.get(s.get("cle"))                         # 0.17 : conteneur gérable depuis la fiche
             s["conteneur"] = gestion.vue(t, seule) if gestion is not None and t is not None else None
+            s["reveil"] = _vue_reveil(t, seule) if t is not None else None            # 0.19
+            b = tuiles.get(t.besoin) if t is not None and t.besoin else None          # 0.19 : « besoin: Pc de calcul »
+            s["besoin"] = {"cle": b.cle, "nom": b.nom, "reveil": _vue_reveil(b, seule)} if b is not None else None
     m = ETAT.get("majs")                                         # 0.18 : applis de la stack à mettre à jour
     return {**e, "a_traiter": _a_traiter(), "version": __version__, "majs": m.vue(seule) if m is not None else None}
+
+
+# ================================================================ réveil du PC (0.19 : webhook de Home Assistant)
+
+def _eteint(t) -> bool:
+    """La tuile ne répond pas d'après la veille (arrêt attendu, panne ou pas encore sondée)."""
+    return ETAT["veille"].suivi.get("service:" + t.cle, {}).get("etat") != "ok"
+
+
+def _vue_reveil(t, seule: bool) -> dict | None:
+    r = ETAT.get("reveil_pc")
+    return r.vue(t, _eteint(t), seule, ETAT["cfg"].reveil_manque()) if r is not None else None
+
+
+@app.post("/api/reveil/{cle}")
+async def reveiller(cle: str, request: Request):
+    """Réveiller la machine d'une tuile marquée « reveil: true » : session, en-tête Origin de l'Anneau, jamais en lecture
+    seule, seulement si elle est éteinte. Le corps est ignoré ; l'identifiant du webhook reste côté serveur."""
+    r = ETAT["reveil_pc"]
+    try:
+        _verifier_origine(request)
+    except HTTPException as exc:
+        ETAT["conteneurs"].noter("reveil", cle, f"refusé : {exc.detail}")
+        raise
+    t = _tuile(cle)
+    try:
+        ordre = await r.ordonner(t, _eteint(t), _lecture_seule(), ETAT["cfg"].reveil_manque())
+    except reveils.Refus as x:
+        raise HTTPException(x.statut, x.phrase) from None
+    ETAT["reveil"].set()                           # la ronde se presse pour suivre le réveil
+    return JSONResponse({"ordre": ordre}, status_code=202)
 
 
 # ================================================================ conteneurs (0.17 : Portainer)
@@ -748,9 +861,10 @@ def lire_cle():
 
 
 @app.put("/api/cle-publique")
-def changer_cle(corps: dict = Body(...)):
-    """0.11.2 (audit M7) : remplacer ou retirer une clé déjà posée exige la clé actuelle (« actuelle ») ; sinon les
+def changer_cle(request: Request, corps: dict = Body(...)):
+    """0.19 : https exigé (_exiger_https). 0.11.2 (audit M7) : remplacer ou retirer une clé déjà posée exige la clé actuelle (« actuelle ») ; sinon les
     exports déjà rangés ne seraient plus lisibles qu'avec une clé que personne n'a vérifiée."""
+    _exiger_https(request)
     try:
         cle_age = sauvegardes.valider_cle(str(corps.get("cle_publique", "")))
     except ValueError as exc:
@@ -850,7 +964,8 @@ def liste_variables():
 
 @app.post("/api/variables-chiffrees")
 async def ranger_variables(request: Request):
-    """L'export des variables, chiffré par Atlas dans le navigateur avec la clé publique. Jamais de texte clair."""
+    """L'export des variables, chiffré dans le navigateur avec la clé publique. Jamais de texte clair. 0.19 : https exigé."""
+    _exiger_https(request)
     try:
         if int(request.headers.get("content-length") or 0) > sauvegardes.TAILLE_VARIABLES:
             raise HTTPException(413, "Fichier trop gros (1 Mo au plus).")

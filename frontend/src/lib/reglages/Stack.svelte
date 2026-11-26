@@ -1,4 +1,8 @@
 <script>
+  // 0.19 — Réglages › Stack et variables (ancienne page Variables, 0.10). Le téléchargement de services.yaml est passé
+  // dans Réglages › Services. Depuis la 0.19, le serveur refuse lui aussi d'écrire la clé publique ou un export en http
+  // (403) ; lire et télécharger un export chiffré restent permis. La ligne « Vu par l'Anneau » dit par quel signal le
+  // serveur sait que la page est sûre (étape zéro du conseil).
   // 0.10 : les variables de la stack et leur export chiffré, en un seul endroit (avant : Atlas › Fichiers).
   //  - la stack : homelab.yml importé dans l'Anneau (variables attendues), téléchargements de homelab.yml et services.yaml ;
   //  - la clé : paire age générée ici (la clé privée est montrée une fois, jamais gardée ni envoyée), clé publique et empreinte ;
@@ -133,20 +137,17 @@
     setTimeout(() => URL.revokeObjectURL(url), 2000)
   }
 
-  onMount(() => { lireStack(); lireCle(); lireExports() })
+  // 0.19 : ce que voit le serveur (https, par quel signal, garde coupée ou non)
+  let vu = $state(null)
+  async function lireHttps() { try { vu = await api.get('/api/https') } catch { vu = null } }
+  const PAR = { direct: 'servie en https', relais: 'https par le relais Tailscale Serve', origine: 'https d\'après le navigateur', machine: 'ouverte sur la machine même' }
+
+  onMount(() => { lireStack(); lireCle(); lireExports(); lireHttps() })
   const ko = (n) => n < 1024 ? `${n} o` : `${Math.round(n / 102.4) / 10} Ko`
   const ancien = $derived(exports[0] ? (Date.now() - new Date(exports[0].nom.slice(0, 10) + 'T12:00:00').getTime()) / 86400000 > 30 : false)
 </script>
 
-<main class="mx-auto max-w-3xl px-[max(1rem,env(safe-area-inset-left))] pt-[calc(1.25rem+env(safe-area-inset-top))] pb-[calc(2rem+env(safe-area-inset-bottom))] md:px-8 md:pt-8">
-  <header class="mb-5 flex flex-wrap items-end justify-between gap-3">
-    <div><p class="etiquette">L'Anneau</p><h1 class="titre">Variables</h1></div>
-    <nav class="flex flex-wrap gap-x-4 gap-y-1 text-sm" aria-label="Pages">
-      <a class="underline underline-offset-4" href="#/reglages">Réglages</a>
-      <a class="underline underline-offset-4" href="#/sauvegardes">Sauvegardes</a>
-      <a class="underline underline-offset-4" href="#/">Revenir à l'anneau</a>
-    </nav>
-  </header>
+<div class="stack">
 
   {#if message}<p class="sticky top-2 z-10 mb-3 break-words rounded-xl border border-[var(--app)] bg-card px-4 py-2 text-sm" role="status" id="message-variables">{message}</p>{/if}
 
@@ -156,7 +157,7 @@
       peut être modifiée en route et lire ce qu'on y colle.
       {#if pile.adresse_https}
         <!-- 0.10.1 : adresse tirée des tuiles https (Tailscale Serve) ; Tailscale doit être allumé sur l'appareil -->
-        <a class="font-semibold underline" href="{pile.adresse_https}/#/variables" id="lien-https">Ouvrir cette page en https</a>
+        <a class="font-semibold underline" href="{pile.adresse_https}/#/reglages/stack" id="lien-https">Ouvrir cette page en https</a>
         (<code class="break-all">{pile.adresse_https}</code>, Tailscale allumé sur cet appareil),
       {:else}
         Ouvre l'Anneau par son adresse <strong>https</strong> (Tailscale, port 9094),
@@ -165,8 +166,12 @@
     </p>
   {/if}
 
+  {#if vu}
+    <p class="mb-3 text-xs text-muted-foreground" id="vu-par-l-anneau">Vu par l'Anneau : page {vu.https ? PAR[vu.par] : 'en http'}{vu.garde ? '' : ' · garde https coupée (ANNEAU_GARDE_HTTPS=non)'}.</p>
+  {/if}
+
   <!-- ===================================================== la stack -->
-  <section class="rounded-2xl border bg-card p-5" aria-label="Fichiers de la stack">
+  <section class="rounded-2xl border bg-card p-5" aria-label="Fichiers de la stack" id="section-fichiers" tabindex="-1">
     <h2 class="text-lg font-semibold">Fichiers de la stack</h2>
     <p class="mt-1 text-sm">
       {#if pile.present}<code>homelab.yml</code> importé il y a {duree(pile.le)} : {pile.services.length} service(s), {pile.variables.length} variable(s).
@@ -177,12 +182,11 @@
     <div class="mt-3 flex flex-wrap items-center gap-3">
       <Button onclick={() => champStack?.click()}>Importer homelab.yml</Button>
       {#if pile.present}<a class="inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="/api/stack/fichier" download="homelab.yml">Télécharger homelab.yml</a>{/if}
-      <a class="inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="/api/services/fichier" download="services.yaml">Télécharger services.yaml</a>
     </div>
   </section>
 
   <!-- ===================================================== la clé -->
-  <section class="mt-3 rounded-2xl border bg-card p-5" aria-label="Clé de chiffrement">
+  <section class="mt-3 rounded-2xl border bg-card p-5" aria-label="Clé de chiffrement" id="section-cle" tabindex="-1">
     <h2 class="text-lg font-semibold">Clé de chiffrement</h2>
     <p class="mt-1 text-sm" aria-label="Clé publique">
       {#if cle}Clé publique : <code class="break-all">{cle}</code><br /><span class="text-muted-foreground">Empreinte à comparer avec la copie du coffre : <strong class="text-foreground">{empreinte(cle)}</strong></span>
@@ -212,13 +216,13 @@
         <label class="grid min-w-0 flex-1 basis-60 gap-1 text-sm" for="cle-publique">Ou poser une clé publique (age1…)
           <input id="cle-publique" type="text" autocomplete="off" spellcheck="false" bind:value={cleSaisie} placeholder="age1…" class="h-11 min-w-0 rounded-xl border bg-background px-3 text-base" />
         </label>
-        <Button variant="outline" onclick={enregistrerSaisie}>Enregistrer la clé</Button>
+        <Button variant="outline" onclick={enregistrerSaisie} disabled={!securise}>Enregistrer la clé</Button>
       </div>
     {/if}
   </section>
 
   <!-- ===================================================== chiffrer -->
-  <section class="mt-3 rounded-2xl border bg-card p-5" aria-label="Chiffrer l'export de Portainer">
+  <section class="mt-3 rounded-2xl border bg-card p-5" aria-label="Chiffrer l'export de Portainer" id="section-chiffrer" tabindex="-1">
     <h2 class="text-lg font-semibold">Chiffrer l'export de Portainer</h2>
     <p class="mt-1 text-sm text-muted-foreground">Dans Portainer › Stacks › homelab › Editor › Environment variables › <em>Advanced mode</em> : tout copier, coller ici. Le texte est chiffré dans la page avec la clé publique ; seul le texte chiffré part vers l'Anneau. À refaire après chaque changement de variable.</p>
     {#if ancien}<p class="mt-2 text-sm text-[var(--app)]">Le dernier export a plus de 30 jours.</p>{/if}
@@ -234,7 +238,7 @@
   </section>
 
   <!-- ===================================================== exports -->
-  <section class="mt-3 rounded-2xl border bg-card p-5" aria-label="Exports chiffrés">
+  <section class="mt-3 rounded-2xl border bg-card p-5" aria-label="Exports chiffrés" id="section-exports" tabindex="-1">
     <h2 class="text-lg font-semibold">Exports chiffrés</h2>
     {#if exports.length}
       <ul class="mt-2 divide-y text-sm" aria-label="Liste des exports">
@@ -257,7 +261,7 @@
   </section>
 
   <!-- ===================================================== variables -->
-  <section class="mt-3 rounded-2xl border bg-card p-5" aria-label="Variables de la stack">
+  <section class="mt-3 rounded-2xl border bg-card p-5" aria-label="Variables de la stack" id="section-variables" tabindex="-1">
     <h2 class="text-lg font-semibold">Variables de la stack</h2>
     {#if valeurs}
       <div class="mt-2 grid gap-2 rounded-xl border p-3 text-sm" role="group" aria-label="Valeurs ouvertes">
@@ -314,4 +318,8 @@
       <Button variant="outline" onclick={changerCoffre}>Enregistrer le nom</Button>
     </div>
   </section>
-</main>
+</div>
+
+<style>
+  section:focus { outline: none; }
+</style>

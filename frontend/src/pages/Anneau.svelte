@@ -21,6 +21,7 @@
   import Icone from '$lib/Icone.svelte'
   import FichesAppli from '$lib/FichesAppli.svelte'
   import Conteneur from '$lib/Conteneur.svelte'
+  import Reveil from '$lib/Reveil.svelte'
   import MisesAJour from '$lib/MisesAJour.svelte'
   import { Button } from '$lib/components/ui/button/index.js'
 
@@ -44,8 +45,8 @@
     const a = setInterval(lire, 20000), b = setInterval(() => (tic = Date.now()), 5000)
     return () => { clearInterval(a); clearInterval(b); mq.removeEventListener('change', suivre) }
   })
-  // 0.17 : un ordre en cours chez Portainer : relire toutes les 2,5 s jusqu'à sa fin
-  const ordreEnCours = $derived((e?.familles || []).some((f) => f.services.some((s) => s.conteneur?.ordre?.etat === 'en_cours')) || !!e?.majs?.en_cours)
+  // 0.17 : un ordre en cours chez Portainer : relire toutes les 2,5 s jusqu'à sa fin ; 0.19 : un réveil en cours aussi
+  const ordreEnCours = $derived((e?.familles || []).some((f) => f.services.some((s) => s.conteneur?.ordre?.etat === 'en_cours' || s.reveil?.ordre?.etat === 'attente')) || !!e?.majs?.en_cours)
   $effect(() => {
     if (!ordreEnCours) return
     const t = setInterval(lire, 2500)
@@ -77,7 +78,7 @@
   const ETATS_TACHE = { ok: 'ok', en_retard: 'en retard', bloquee: 'bloquée', jamais: 'pas encore passée', erreur: 'dernier essai en erreur' }
   const octets = (n) => (n == null ? '' : n < 1048576 ? `${Math.max(1, Math.round(n / 1024))} Ko` : `${(n / 1048576).toFixed(1).replace('.', ',')} Mo`)
   const periode = (n) => (!n ? '' : n % 86400 === 0 ? (n === 86400 ? 'chaque jour' : `tous les ${n / 86400} j`) : n % 3600 === 0 ? (n === 3600 ? 'chaque heure' : `toutes les ${n / 3600} h`) : n >= 60 ? `toutes les ${Math.round(n / 60)} min` : `toutes les ${n} s`)
-  const aFiche = (s) => !!s && (!!s.sante || !!s.version_phrase || !!s.fiches || !!s.conteneur)   // 0.13 : santé ou version ; 0.16 : fiches ; 0.17 : conteneur
+  const aFiche = (s) => !!s && (!!s.sante || !!s.version_phrase || !!s.fiches || !!s.conteneur || !!s.besoin)   // 0.13 : santé ou version ; 0.16 : fiches ; 0.17 : conteneur ; 0.19 : besoin d'une machine à réveiller
   const phraseConteneur = (s) => s.conteneur?.phrase || ''
   const tourne = (s) => s.conteneur?.ordre?.etat === 'en_cours'
   const allumable = (s) => !!s.conteneur?.gerable && s.conteneur.statut === 'exited'
@@ -199,6 +200,9 @@
           {#if leService.conteneur}
             {#key leService.cle}<Conteneur s={leService} onfait={lire} />{/key}
           {/if}
+          <!-- 0.19 : réveiller la machine (tuile « reveil: true ») ou celle dont l'appli a besoin (« besoin: ») -->
+          {#if leService.reveil}<Reveil cible={leService} onfait={lire} />{/if}
+          {#if leService.besoin}<Reveil cible={leService.besoin} besoin appli={leService.nom} onfait={lire} />{/if}
           {#if leService.fiches}
             {#key leService.cle}<FichesAppli cle={leService.cle} nom={leService.nom} />{/key}
           {/if}
@@ -234,6 +238,8 @@
           <!-- 0.17 : conteneur arrêté : « Allumer » et « Allumer et mettre à jour » à la place de « Ouvrir » -->
           {#if !allumable(leService)}<Button onclick={() => dehors(leService)}>Ouvrir {leService.nom}</Button>{/if}
           {#if leService.conteneur}{#key leService.cle}<Conteneur s={leService} onfait={lire} />{/key}{/if}
+          {#if leService.reveil}<Reveil cible={leService} onfait={lire} />{/if}
+          {#if leService.besoin}<Reveil cible={leService.besoin} besoin appli={leService.nom} onfait={lire} />{/if}
           {#if !allumable(leService)}<p class="text-sm text-muted-foreground">{leService.cadre ? (leService.etat === 'eteint' ? 'Éteint : rien à afficher ici.' : 'En panne : rien à afficher ici.') : `${leService.nom} s'ouvre à côté, toujours dans la même fenêtre : ${leService.hors_cadre}.`}</p>{/if}
         </div>
       {/if}
@@ -243,6 +249,10 @@
   {#if !leService}
   <!-- ───────────── L'anneau ───────────── -->
   <div class="accueil">
+    <!-- 0.19 : raccourci vers Réglages › Maison (carte, disques, pannes closes), à côté de la roue -->
+    <a class="roue maison" href="#/reglages/maison" aria-label="Maison : carte, disques et pannes" title="Maison">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5"/><path d="M6.5 10v9h11v-9"/><path d="M10.5 19v-5h3v5"/></svg>
+    </a>
     <button type="button" class="roue" aria-label="Réglages" onclick={onreglages}>
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M5 7.500h6M15 7.500h4M5 16.500h3M12 16.500h7" /><circle cx="13" cy="7.500" r="2" /><circle cx="10" cy="16.500" r="2" /></svg>
     </button>
@@ -311,7 +321,7 @@
             {#each aTraiter as x (x.cle)}
               <li>
                 <span>{x.phrase}{#if x.detail}<small>{x.detail}</small>{/if}</span>
-                <button type="button" class="lien" onclick={() => (x.cle === 'export-variables' ? (location.hash = '#/variables') : onreglages?.())} aria-label={'Voir : ' + x.phrase}>Voir</button>
+                <button type="button" class="lien" onclick={() => (location.hash = x.cle === 'export-variables' ? '#/reglages/stack/exports' : '#/reglages/sauvegardes')} aria-label={'Voir : ' + x.phrase}>Voir</button>
               </li>
             {/each}
           </ul>
@@ -342,6 +352,7 @@
   .roue { position: absolute; top: calc(0.75rem + env(safe-area-inset-top)); right: max(1rem, env(safe-area-inset-right)); z-index: 2; display: grid; place-items: center;
           width: 2.75rem; height: 2.75rem; border-radius: 9999px; color: var(--muted-foreground); background: none; border: 1px solid var(--border); }
   .roue:hover { color: var(--foreground); }
+  .roue.maison { right: calc(max(1rem, env(safe-area-inset-right)) + 3.25rem); }
   .frais { font-size: 0.8rem; color: var(--muted-foreground); text-align: center; }
   @media (min-width: 900px) { .frais { text-align: left; } }
   .avis { font-size: 0.85rem; border: 1px solid var(--border); border-radius: 0.9rem; padding: 0.6rem 0.9rem; color: var(--muted-foreground); }

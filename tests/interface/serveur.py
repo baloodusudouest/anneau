@@ -18,12 +18,15 @@ marquée mais son conteneur n'a pas l'étiquette de la stack (pas de boutons).
 du faux Portainer.
 0.18 : de faux registres (tests/faux_registre.py) : Séries, Films, « lecteur » (sans tuile) et « base-lecteur » (une base de
 données, double confirmation) ont une image plus récente publiée ; « galerie-server » est figée en v1.2.0 (v1.3.0
-publiée). La liste se vérifie par POST /api/majs/verifier (le test le demande)."""
+publiée). La liste se vérifie par POST /api/majs/verifier (le test le demande).
+0.19 : l'Ordinateur de calcul est marqué `reveil: true` et Numérisation en a besoin (`besoin:`) ; un faux Home Assistant
+reçoit le webhook et « réveille » le PC une seconde plus tard (il retire s=calcul de morts.txt)."""
 from __future__ import annotations
 
 import json
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -58,7 +61,7 @@ services:
   - {{ nom: Répertoire, famille: Proches, locale: "{base}/health?s=repertoire", sonde: "{base}/health?s=repertoire", icone: carnet, machine: Grand NAS, depot: repertoire }}
   - {{ nom: Arbre, famille: Proches, locale: "{base}/health?s=arbre", sonde: "{base}/health?s=arbre", icone: arbre, machine: Grand NAS, depot: arbre }}
   - {{ nom: Photothèque, famille: Photos, locale: "{base}/health?s=phototheque", icone: soleil, machine: Grand NAS }}
-  - {{ nom: Numérisation, famille: Photos, locale: "{base}/health?s=numerisation", icone: numerisation, machine: Grand NAS }}
+  - {{ nom: Numérisation, famille: Photos, locale: "{base}/health?s=numerisation", icone: numerisation, machine: Grand NAS, besoin: Ordinateur de calcul }}
   - {{ nom: Cinéma, famille: Médias, locale: "{base}/health?s=cinema", icone: disque }}
   - {{ nom: Statistiques, famille: Médias, locale: "{base}/health?s=statistiques", icone: courbes, machine: Grand NAS }}
   - {{ nom: Livres lus, famille: Médias, locale: "{base}/health?s=livres", icone: casque, machine: Grand NAS }}
@@ -66,7 +69,7 @@ services:
   - {{ nom: Séries, famille: Collecte, locale: "{base}/health?s=series", icone: ecran, conteneur: series }}
   - {{ nom: Films, famille: Collecte, locale: "{base}/health?s=films", icone: pellicule, conteneur: films }}
   - {{ nom: Musique, famille: Collecte, locale: "{base}/health?s=musique", icone: musique, conteneur: musique }}
-  - {{ nom: Ordinateur de calcul, famille: Machines, locale: "{base}/health?s=calcul", icone: processeur, arret_attendu: true }}
+  - {{ nom: Ordinateur de calcul, famille: Machines, locale: "{base}/health?s=calcul", icone: processeur, arret_attendu: true, reveil: true, cadre: false }}
 """
 
 
@@ -191,15 +194,27 @@ def main_() -> None:
             return 200, {**f, "verifie_le": "2026-11-20T08:00:00+01:00"}
         return 200, {"contrat": 3, "appli": "repertoire", "simule": False, "services": fiches_demo}
 
+    def faux_ha(requete: httpx.Request) -> httpx.Response:
+        """0.19 : le webhook de réveil ; le PC répond une seconde plus tard. /api/ : 401 (sans jeton), comme HA."""
+        if requete.url.path == "/api/":
+            return httpx.Response(401)
+        if requete.url.path.startswith("/api/webhook/"):
+            def reveiller():
+                time.sleep(1)
+                morts.write_text("\n".join(m for m in morts.read_text().split() if m != "s=calcul") + "\n")
+            threading.Thread(target=reveiller, daemon=True).start()
+        return httpx.Response(200)
+
     cfg = Config(password=MDP, data=data, static=Path(__file__).resolve().parents[2] / "app" / "static", secret_ha=SECRET,
                  attente_connexion=False, periode=0.5, sauvegarde_auto=False,   # la collecte se lance par le bouton
                  portainer_url="http://portainer.exemple:9000", portainer_cle=CLE_PORTAINER,
-                 watchtower_url="http://watchtower:8080", watchtower_jeton=JETON_WATCHTOWER)
+                 watchtower_url="http://watchtower:8080", watchtower_jeton=JETON_WATCHTOWER,
+                 ha_url="http://ha.exemple:8123", ha_webhook_reveil="webhook-de-demonstration")
     main.ETAT.update(cfg=cfg, veille=VeilleDemo(data, services.lire(data / "services.yaml"), ha_attendu=False, sonder=sonder,
                                                 examiner=examiner, horloge=horloge),
                      transport_versions=httpx.MockTransport(faux_github), lire_fiches=lire_fiches,
                      transport_portainer=portainer.transport(), transport_watchtower=watchtower.transport(),
-                     transport_registres=registres_.transport())
+                     transport_registres=registres_.transport(), transport_ha=httpx.MockTransport(faux_ha))
     uvicorn.run(main.app, host="127.0.0.1", port=port, log_level="warning")
 
 

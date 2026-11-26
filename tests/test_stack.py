@@ -7,6 +7,8 @@ import pytest
 from app import sauvegardes, services, stack
 from tests.test_sauvegardes import ARMURE, CLE_AGE, client, connecter, env, faux, fichier  # noqa: F401  (fixtures)
 
+HTTPS = {"X-Forwarded-Proto": "https"}   # 0.19 : écrire un secret exige https (relais Tailscale Serve)
+
 STACK = """# Stack d'essai
 services:
 
@@ -106,10 +108,10 @@ def test_tuile_export_ancien(tmp_path):
 
 def test_tuile_export_dans_l_etat(client):
     connecter(client)
-    assert client.put("/api/cle-publique", json={"cle_publique": CLE_AGE}).status_code == 200
+    assert client.put("/api/cle-publique", json={"cle_publique": CLE_AGE}, headers=HTTPS).status_code == 200
     phrases = [x["phrase"] for x in client.get("/api/etat").json()["a_traiter"]]
     assert "Export des variables ancien" in phrases
-    assert client.post("/api/variables-chiffrees", content=ARMURE, headers={"Content-Type": "text/plain"}).status_code == 200
+    assert client.post("/api/variables-chiffrees", content=ARMURE, headers={"Content-Type": "text/plain", **HTTPS}).status_code == 200
     phrases = [x["phrase"] for x in client.get("/api/etat").json()["a_traiter"]]
     assert "Export des variables ancien" not in phrases
 

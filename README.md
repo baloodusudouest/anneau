@@ -12,7 +12,7 @@ Depuis la 0.8 : **la sauvegarde des réglages** des applis maison (voir plus bas
 
 1. Ajouter le service de [`docker-compose.yml`](docker-compose.yml) à la stack, avec les variables de [`.env.example`](.env.example).
 2. Écrire `services.yaml` sur le modèle de [`app/services.exemple.yaml`](app/services.exemple.yaml) : familles, machines, services (adresse locale, adresse du réseau privé, icône ; `cadre: false` pour un service qui doit toujours s'ouvrir à côté ; `depot:` et `version_url:` pour les versions, voir plus bas). Sans ce fichier, l'Anneau montre l'exemple.
-3. Ouvrir `http://<NAS>:8094`, se connecter avec le mot de passe commun, puis Réglages › « Importer un fichier » (ou poser le fichier dans le dossier de données, puis « Recharger le fichier »).
+3. Ouvrir `http://<NAS>:8094`, se connecter avec le mot de passe commun, puis Réglages › Services › « Importer un fichier » (ou poser le fichier dans le dossier de données, puis « Relire le fichier »).
 
 ## Variables
 
@@ -25,9 +25,36 @@ Depuis la 0.8 : **la sauvegarde des réglages** des applis maison (voir plus bas
 | `ANNEAU_PORTAINER_URL` | 0.17 : adresse de Portainer. Vide : pas de boutons Allumer / Éteindre / Mettre à jour. |
 | `ANNEAU_PORTAINER_CLE` | 0.17 : clé d'API d'un utilisateur Portainer standard « anneau » (en-tête `X-API-Key`). Jamais écrite dans un journal, une page ni la sauvegarde. |
 | `ANNEAU_PORTAINER_ENV` | 0.17 : numéro de l'environnement Docker dans Portainer. Vide : le premier environnement Docker local (`Type` 1) de `GET /api/endpoints`. |
-| `ANNEAU_LECTURE_SEULE` / `MAISON_LECTURE_SEULE` | « oui » : aucun ordre à Portainer (boutons grisés, routes 403). |
+| `ANNEAU_LECTURE_SEULE` / `MAISON_LECTURE_SEULE` | « oui » : aucun ordre à un autre service — Portainer, Watchtower, Home Assistant (boutons grisés, routes 403, bandeau dans Réglages). Ce que l'Anneau écrit dans son propre dossier reste permis. |
+| `ANNEAU_HA_URL` | 0.19 : adresse de Home Assistant vue depuis la stack (`http://<HA>:8123`). Vide : pas de bouton « Réveiller ». |
+| `ANNEAU_HA_WEBHOOK_REVEIL` | 0.19 : identifiant du webhook de réveil du PC dans Home Assistant (long, aléatoire). Jamais affiché, écrit au journal ni sauvegardé. |
+| `ANNEAU_GARDE_HTTPS` | 0.19 : « non » coupe la garde https des secrets (dépannage quand Tailscale est en panne). Vide : garde active. |
 
-Les réglages d'usage (heure de la collecte, clé publique de l'export chiffré) se changent dans Réglages › Sauvegarde et sont gardés dans `reglages.json`.
+Les réglages d'usage (heure de la collecte, clé publique de l'export chiffré) se changent dans Réglages › Sauvegardes et Réglages › Stack et variables, et sont gardés dans `reglages.json`.
+
+## Réglages en cinq thèmes (0.19)
+
+Un seul écran Réglages (la roue, en haut à droite de l'anneau). L'accueil montre cinq thèmes, chacun avec son état, un chiffre et, s'il y a lieu, une pastille avec un texte (rouge lave : en panne ; bleu : à faire ; or : à traiter) :
+
+| Thème | Adresse | Contenu |
+|---|---|---|
+| Services | `#/reglages/services` | fichier des services (importer, relire, télécharger `services.yaml`), versions des tuiles, bac à sable |
+| Stack et variables | `#/reglages/stack` | `homelab.yml`, clé de chiffrement, chiffrer l'export de Portainer, exports chiffrés, variables de la stack |
+| Sauvegardes | `#/reglages/sauvegardes` | collecte de nuit (heure, « Sauvegarder maintenant », dernière collecte), sauvegardes gardées et ce qui a changé, restaurer les réglages de l'Anneau |
+| Connexions | `#/reglages/connexions` | fiches Portainer, Watchtower, GitHub, Home Assistant ; ce que Home Assistant envoie |
+| Maison | `#/reglages/maison` | carte de la maison (pleine largeur), disques, dernières pannes closes ; raccourci « Maison » à côté de la roue |
+
+Dans un thème : le fil, la barre des cinq thèmes (le thème ouvert souligné) et « Revenir à l'anneau ». Une section se vise par un troisième morceau (`#/reglages/stack/exports`, utilisé par la tuile « À traiter »). Les anciennes adresses mènent au bon thème : `#/variables` → Stack et variables, `#/sauvegardes` → Sauvegardes (liste), `#/carte` → Maison.
+
+**Secrets en https, vérifié par le serveur** : `PUT /api/cle-publique` et `POST /api/variables-chiffrees` répondent 403 quand la page n'est pas sûre. Sûre = servie en https, `X-Forwarded-Proto: https` (Tailscale Serve), en-tête `Origin` en `https://` (envoyé par le navigateur à chaque écriture), ou ouverte sur la machine même (`localhost`, `127.0.0.1`, `[::1]`, comme pour le navigateur). Lire et télécharger un export chiffré restent permis en http. `GET /api/https` dit ce que voit le serveur (`https`, `par`, `garde`, `relais`, `lecture_seule`), affiché en haut de Stack et variables. `ANNEAU_GARDE_HTTPS=non` coupe la garde.
+
+## Réveiller le PC de calcul (0.19)
+
+- La tuile marquée `reveil: true` (aujourd'hui « Pc de calcul ») a, quand elle est éteinte, un bouton « Réveiller » dans sa fiche ; une appli marquée `besoin: <nom de cette tuile>` (Millésime) le montre aussi dans sa fiche « État ». Un `besoin:` qui ne désigne aucune tuile `reveil: true` est signalé et ignoré.
+- `POST /api/reveil/{tuile}` (session ; en-tête `Origin` de l'Anneau ; jamais en lecture seule ; seulement si la tuile est éteinte ; corps ignoré) appelle `POST {ANNEAU_HA_URL}/api/webhook/{ANNEAU_HA_WEBHOOK_REVEIL}` sans corps. Home Assistant envoie le paquet Wake-on-LAN. L'Anneau n'a aucun jeton de Home Assistant.
+- Suivi par la sonde habituelle de la tuile (ronde pressée à 5 s) : « Réveillé : il répond. », ou au-delà de 3 min « Pas réveillé : vérifie le Wake-on-LAN… ». Après un réveil raté, un nouvel ordre attend 1 min.
+- Réglages › Connexions › Home Assistant › « Vérifier » : `GET {ANNEAU_HA_URL}/api/` (401 attendu = Home Assistant répond). **N'appelle jamais le webhook.**
+- Chaque ordre (refusé, lancé, fini, perdu) va au journal des écritures (`quoi: reveil`).
 
 ## Sauvegarde des réglages (0.8)
 
@@ -38,7 +65,7 @@ Chaque jour à l'heure réglée (03:30 par défaut), ou par « Sauvegarder maint
 - Tuile « Sauvegarde ratée » (rang « À traiter », en or) : dernière collecte avec des ratées, fichier non écrit, ou rien de réussi depuis 36 h. Rien n'est envoyé à Home Assistant.
 - Pour « Restaurer » dans chaque appli (jeton commun) : `GET /externe/sauvegardes/{appli}` → `{"dates": [...]}` ; `?le=AAAA-MM-JJ` → `{"le", "version", "reglages"}`.
 - Pour Atlas (même origine, session) : `GET /api/sauvegardes`, `GET /api/sauvegardes/{date}`, `GET/PUT /api/cle-publique`, `POST /api/variables-chiffrees` (seulement un fichier chiffré par age, 1 Mo au plus ; rangé dans `sauvegardes/variables/`, 30 gardés), `GET /api/variables-chiffrees[/{nom}]`.
-- L'Anneau rend aussi sa propre sauvegarde (`GET /externe/sauvegarde`, sans la clé publique) et restaure ses réglages depuis Réglages › Restaurer.
+- L'Anneau rend aussi sa propre sauvegarde (`GET /externe/sauvegarde`, sans la clé publique) et restaure ses réglages depuis Réglages › Sauvegardes › Restaurer.
 
 Le dossier de l'Anneau, et donc `sauvegardes/`, part avec Hyper Backup.
 
@@ -71,7 +98,7 @@ Deux champs facultatifs de tuile dans `services.yaml` :
 - **Version en service** : champ `version` du `/health` (applis maison), ou `version_url:`. Une lecture sans version ne change rien (la dernière connue reste, `versions-en-service.json`).
 - **Dernière publiée** : gardée dans `versions.json`. GitHub injoignable ou limite atteinte (403/429) : l'ancienne lecture reste ; seule la tâche `versions-publiees` passe en erreur (dans le `/health` de l'Anneau), rien d'autre à l'écran.
 - **Fiche de la tuile** (bouton « État ») : « Version 0.12.0 — dernière publiée 0.12.0 (à jour) » ou « … dernière publiée 0.13.0 : pas encore en service ». **Jamais d'orange** pour un retard.
-- **Réglages › Versions** : tableau tuile, en service, dernière publiée, mise à jour le (`GET /api/versions`, session).
+- **Réglages › Services › Versions** : tableau tuile, en service, dernière publiée, mise à jour le (`GET /api/versions`, session).
 - **Journal** : quand la veille voit la version d'une tuile changer, elle l'ajoute à `journal-versions.json` (tuile, de, vers, le ; 200 entrées au plus).
 - **Fenêtre « Mis à jour depuis votre dernière visite »** : à l'ouverture de l'Anneau après une connexion (ou au premier chargement avec une session valide), s'il y a des changements depuis le dernier « Vu » : « Carnet 2.32.0 → 2.33.0 (cette nuit, 05:04) ». Plusieurs changements d'une même tuile font une ligne. « Vu » enregistre l'heure dans `versions-vues.json` (une pour l'Anneau, pas par navigateur). Routes (session) : `GET /api/versions/nouveautes` → `{"vu_le", "changements": [{"tuile", "cle", "de", "vers", "le"}]}`, `POST /api/versions/vues` (`{"jusqu_a": <le du plus récent montré>}`, facultatif).
 
@@ -89,7 +116,7 @@ Pour ne pas laisser tourner une appli qui sert peu (le Bac à sable…), et pour
 - **Écran** : tuile grise « éteint » (« Ouvrir » remplacé par « Allumer » et « Allumer et mettre à jour », âge de l'image), « démarrage… », « mise à jour en cours… », puis « déjà à jour » ou « image du 20/11 → 21/11 ». Fiche « Conteneur » (fiche de la tuile, ou bouton « État » quand l'appli est dans le cadre) : mémoire et processeur, avertissement si redémarrage `always`, rappel « un redéploiement de la stack le rallume ». Confirmation avant Éteindre et Mettre à jour.
 - **Panne et sauvegarde** : un conteneur `exited` n'est jamais « en panne », et n'est pas demandé à la collecte de la nuit (« éteinte, pas sauvegardée cette nuit », pas de « Sauvegarde ratée »).
 - **Journal des écritures** : `journal-ecritures.jsonl` (une ligne JSON par ordre refusé, lancé, fini : `quand`, `quoi`, `tuile`, `resultat`, `conteneur`).
-- **Réglages › Connexion** : fiches Portainer, Watchtower et GitHub (ce que l'Anneau y lit et y écrit, « Vérifier »). « Vérifier » Watchtower n'envoie jamais `/v1/update` : `GET /v1/containers` puis `/v1/metrics` (s'ils sont activés, le jeton est vérifié), sinon « adresse et jeton présents ».
+- **Réglages › Connexions** : fiches Portainer, Watchtower, GitHub et Home Assistant (0.19) (ce que l'Anneau y lit et y écrit, « Vérifier »). « Vérifier » Watchtower n'envoie jamais `/v1/update` : `GET /v1/containers` puis `/v1/metrics` (s'ils sont activés, le jeton est vérifié), sinon « adresse et jeton présents ».
 
 ## Home Assistant (facultatif)
 

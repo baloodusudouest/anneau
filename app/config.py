@@ -29,10 +29,25 @@ class Config:
     watchtower_jeton: str = ""       # 0.17.1 : même valeur que WATCHTOWER_HTTP_API_TOKEN ; jamais montré ni écrit
     ghcr_utilisateur: str = "baloodusudouest"   # 0.18.2 : compte GitHub propriétaire des images privées
     ghcr_jeton: str = ""             # 0.18.2 : jeton GitHub classic « read:packages » (images privées de ghcr.io) ; jamais montré ni écrit
+    garde_https: bool = True         # 0.19 : l'écriture d'un secret (clé publique, export chiffré) exige https ; « non » = secours
+    ha_url: str = ""                 # 0.19 : adresse de Home Assistant vue depuis la stack (réveil du PC) ; vide : pas de réveil
+    ha_webhook_reveil: str = ""      # 0.19 : identifiant du webhook de réveil du PC dans HA ; jamais montré ni écrit
 
     def __repr__(self) -> str:       # 0.17 : jamais un secret dans une trace
         return (f"Config(data={self.data!s}, portainer_url={self.portainer_url!r}, portainer_env={self.portainer_env!r}, "
-                f"watchtower_url={self.watchtower_url!r})")
+                f"watchtower_url={self.watchtower_url!r}, ha_url={self.ha_url!r})")
+
+    @property
+    def reveil(self) -> bool:
+        return bool(self.ha_url and self.ha_webhook_reveil)
+
+    def reveil_manque(self) -> str:
+        """Pourquoi le réveil n'est pas relié (vide s'il l'est) : le nom de la variable vide, jamais sa valeur."""
+        if not self.ha_url:
+            return "Le réveil n'est pas relié (ANNEAU_HA_URL vide)"
+        if not self.ha_webhook_reveil:
+            return "Le réveil n'est pas relié (ANNEAU_HA_WEBHOOK_REVEIL vide)"
+        return ""
 
     @property
     def portainer(self) -> bool:
@@ -69,4 +84,7 @@ def charger() -> Config:
         watchtower_jeton=os.environ.get("ANNEAU_WATCHTOWER_JETON", "").strip(),
         ghcr_utilisateur=os.environ.get("ANNEAU_GHCR_UTILISATEUR", "").strip() or "baloodusudouest",
         ghcr_jeton=os.environ.get("ANNEAU_GHCR_JETON", "").strip(),
+        garde_https=os.environ.get("ANNEAU_GARDE_HTTPS", "").strip().lower() not in ("non", "no", "false", "0", "off"),
+        ha_url=os.environ.get("ANNEAU_HA_URL", "").strip().rstrip("/"),
+        ha_webhook_reveil=os.environ.get("ANNEAU_HA_WEBHOOK_REVEIL", "").strip(),
     )

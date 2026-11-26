@@ -6,6 +6,7 @@ Depuis la 0.6, il se pose à la main dans le dossier ou s'importe depuis Réglag
 """
 from __future__ import annotations
 
+import dataclasses
 import os
 import re
 import unicodedata
@@ -54,6 +55,9 @@ class Service:
     depot: str = ""             # 0.13 : dépôt GitHub de l'appli (« carnet ») : sa dernière version publiée est lue dans ses étiquettes
     version_url: str = ""       # 0.13 : tuile tierce : adresse qui rend sa version (Immich : /api/server/version), lue sans jeton
     conteneur: str = ""         # 0.17 : container_name de la stack : allumer, éteindre, mettre à jour depuis la fiche (Portainer)
+    reveil: bool = False        # 0.19 : « reveil: true » — machine qu'on réveille depuis sa fiche (webhook de Home Assistant)
+    besoin: str = ""            # 0.19 : clé de la tuile réveillable dont l'appli a besoin (« besoin: Pc de calcul ») ;
+                                #        sa fiche propose « Réveiller » quand cette tuile est éteinte
 
     @property
     def a_sonder(self) -> str:
@@ -139,6 +143,21 @@ def _depot(valeur, nom: str, erreurs: list[str]) -> str:
         erreurs.append(f"{nom} : dépôt « {v} » invalide (lettres, chiffres, « . », « - », « _ »), ignoré.")
         return ""
     return v
+
+
+def _besoins(services: list, erreurs: list[str]) -> list:
+    """0.19 : « besoin: Pc de calcul » devient la clé de cette tuile, qui doit porter « reveil: true » ; sinon le champ
+    est signalé et ignoré (la tuile reste)."""
+    reveillables = {x.nom.lower(): x.cle for x in services if x.reveil} | {x.cle: x.cle for x in services if x.reveil}
+    sortie = []
+    for x in services:
+        if x.besoin:
+            cible = reveillables.get(x.besoin.lower()) or reveillables.get(cle(x.besoin))
+            if not cible or cible == x.cle:
+                erreurs.append(f"{x.nom} : besoin « {x.besoin} » ne désigne aucune tuile avec « reveil: true », ignoré.")
+            x = dataclasses.replace(x, besoin=cible or "")
+        sortie.append(x)
+    return sortie
 
 
 def _conteneur(valeur, nom: str, erreurs: list[str]) -> str:
@@ -272,7 +291,9 @@ def comprendre(texte: str, exemple: bool = False, modifie_le: str = "") -> Fichi
                                 sauvegarde=_sauvegarde(s.get("sauvegarde")),
                                 depot=_depot(s.get("depot"), nom, erreurs),
                                 version_url=_adresse(s.get("version_url"), f"{nom} (version_url)", erreurs),
-                                conteneur=conteneur))
+                                conteneur=conteneur, reveil=s.get("reveil") is True,
+                                besoin=str(s.get("besoin") or "").strip()))
+    services = _besoins(services, erreurs)
     reglages = brut.get("reglages") or {}
     try:
         seuil = float(reglages.get("seuil_disque", 99.8))

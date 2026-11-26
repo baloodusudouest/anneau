@@ -87,7 +87,7 @@ def ouvrir_service(page, nom_famille, nom):
         page.locator("text.service", has_text=nom).click()
     else:
         page.locator(".dessous").get_by_role("button", name=nom).click()
-    page.get_by_role("region", name=nom).wait_for()
+    page.get_by_role("region", name=nom, exact=True).wait_for()
 
 
 def test_1_l_anneau_porte_les_familles_en_texte(page):
@@ -227,7 +227,7 @@ def test_4_une_panne_s_ecrit_en_rouge_puis_se_clot(page, monde):
 def test_5_un_arret_attendu_n_alerte_pas(page):
     assert "panne" not in (famille(page, "Machines").get_attribute("class") or "")
     ouvrir_service(page, "Machines", "Ordinateur de calcul")
-    assert "est éteint (arrêt attendu)" in page.get_by_role("region", name="Ordinateur de calcul").inner_text()
+    assert "est éteint (arrêt attendu)" in page.get_by_role("region", name="Ordinateur de calcul", exact=True).inner_text()
     page.get_by_role("button", name="Revenir à l'anneau").click()
 
 
@@ -247,20 +247,28 @@ def test_6_home_assistant_envoie_un_volume_plein_et_une_mise_a_jour(page, monde)
 
 
 def test_7_reglages_recharger_le_fichier(page):
+    """0.19 : la roue ouvre l'accueil des réglages (5 thèmes) ; Services, puis Maison par la barre des thèmes."""
     page.get_by_role("button", name="Réglages").click()
     page.get_by_role("heading", level=1, name="Réglages").wait_for()
+    themes = page.get_by_label("Thèmes des réglages")
+    services_ = themes.get_by_role("link", name=re.compile("^Services"))
+    services_.filter(has_text="12").wait_for()
+    services_.click()
+    page.get_by_role("heading", level=1, name="Services").wait_for()
     assert "12 service(s) dans 6 famille(s)" in page.get_by_role("region", name="Fichier des services").inner_text()
-    assert "99,8 %" in page.get_by_role("region", name="Disques").inner_text()
-    page.get_by_role("button", name="Recharger le fichier").click()
+    page.get_by_role("button", name="Relire le fichier").click()
     page.locator("#message", has_text="Fichier relu : 12 service(s).").wait_for()
+    page.get_by_role("navigation", name="Thèmes").get_by_role("link", name="Maison", exact=True).click()
+    page.get_by_role("heading", level=1, name="Maison").wait_for()
+    assert "99,8 %" in page.get_by_role("region", name="Disques").inner_text()
     page.get_by_role("link", name="Revenir à l'anneau").click()
     page.locator("svg.anneau").wait_for()
 
 
 def test_8_reglages_importer_le_fichier(page, monde):
-    """0.6 : le fichier se choisit dans Réglages, se confirme, remplace l'ancien ; un mauvais fichier est refusé."""
-    page.get_by_role("button", name="Réglages").click()
-    page.get_by_role("heading", level=1, name="Réglages").wait_for()
+    """0.6 : le fichier se choisit dans Réglages › Services, se confirme, remplace l'ancien ; un mauvais fichier est refusé."""
+    page.goto(page.url.split("#")[0] + "#/reglages/services")
+    page.get_by_role("heading", level=1, name="Services").wait_for()
     bloc = page.get_by_role("region", name="Fichier des services")
     actuel = (monde[1] / "data" / "services.yaml").read_text(encoding="utf-8")
     champ = page.get_by_label("Choisir un fichier services.yaml")
@@ -291,10 +299,12 @@ def test_8_reglages_importer_le_fichier(page, monde):
 
 def test_9_reglages_sauvegarde_et_tuile_a_traiter(page, monde):
     """0.8 : Réglages › Sauvegarde (heure, collecte), Restaurer, et la tuile « Sauvegarde ratée ».
-    0.10 : la liste des fichiers et la clé passent dans les pages Sauvegardes et Variables (tests 10 et 11)."""
+    0.19 : tout dans Réglages › Sauvegardes (collecte, liste, restaurer) ; les exports chiffrés ne sont plus évoqués ici."""
     page.get_by_role("button", name="Réglages").first.click()
     page.get_by_role("heading", level=1, name="Réglages").wait_for()
-    bloc = page.get_by_role("region", name="Sauvegarde")
+    page.get_by_label("Thèmes des réglages").get_by_role("link", name=re.compile("^Sauvegardes")).click()
+    page.get_by_role("heading", level=1, name="Sauvegardes").wait_for()
+    bloc = page.get_by_role("region", name="Sauvegarde", exact=True)
     page.get_by_label("Heure de la collecte").fill("04:10")
     bloc.get_by_role("button", name="Enregistrer l'heure").click()
     page.locator("#message-sauvegarde", has_text="Collecte chaque jour à 04:10.").wait_for()
@@ -302,10 +312,10 @@ def test_9_reglages_sauvegarde_et_tuile_a_traiter(page, monde):
     page.locator("#message-sauvegarde", has_text="Sauvegarde faite : 1 appli(s) lue(s), 2 ratée(s).").wait_for()
     assert "anneau" in bloc.get_by_role("group", name="Dernière collecte").inner_text()
     assert "MAISON_JETON est vide" in bloc.get_by_label("Applis non lues").inner_text()
-    assert "sauvegarde(s) gardée(s)" in bloc.inner_text() and "Export chiffré des variables" in bloc.inner_text()
-    assert bloc.get_by_role("link", name="Voir les sauvegardes").count() == 1
+    assert "Export chiffré" not in page.locator("main").inner_text()                # un seul endroit : Stack et variables
+    page.get_by_role("region", name="Sauvegardes gardées").get_by_label("Liste des sauvegardes").wait_for()
     # Restaurer : l'heure revient à celle de la sauvegarde
-    rest = page.get_by_role("region", name="Restaurer")
+    rest = page.get_by_role("region", name="Restaurer", exact=True)
     page.get_by_label("Heure de la collecte").fill("05:00")
     bloc.get_by_role("button", name="Enregistrer l'heure").click()
     page.locator("#message-sauvegarde", has_text="05:00").wait_for()
@@ -324,15 +334,17 @@ def test_9_reglages_sauvegarde_et_tuile_a_traiter(page, monde):
     assert "Tout va bien" in page.locator("svg.anneau").text_content()                # pas une panne
     assert page.evaluate("document.documentElement.scrollWidth") <= ECRANS[page.ecran]["width"]
     tuile.get_by_role("button", name="Voir : Sauvegarde ratée").click()
-    page.get_by_role("heading", level=1, name="Réglages").wait_for()
+    page.get_by_role("heading", level=1, name="Sauvegardes").wait_for()
     page.get_by_role("link", name="Revenir à l'anneau").click()
     page.locator("svg.anneau").wait_for()
 
 
 def test_10_page_sauvegardes(page):
-    """0.10 : chaque sauvegarde se déplie (versions, réglages, différences, ratées) ; le seul endroit qui les liste."""
+    """0.10 : chaque sauvegarde se déplie (versions, réglages, différences, ratées) ; le seul endroit qui les liste.
+    0.19 : l'ancienne adresse #/sauvegardes mène à Réglages › Sauvegardes, à la liste."""
     page.goto(page.url.split("#")[0] + "#/sauvegardes")
     page.get_by_role("heading", level=1, name="Sauvegardes").wait_for()
+    assert page.url.endswith("#/reglages/sauvegardes/liste")
     liste = page.get_by_label("Liste des sauvegardes")
     liste.get_by_role("button").first.click()
     region = page.get_by_role("region", name=re.compile("^Sauvegarde du "))
@@ -361,7 +373,9 @@ def test_11_page_variables(page, monde, tmp_path):
     """0.10 : homelab.yml importé, paire de clés (privée montrée une fois, jamais gardée), chiffrer et ranger l'export,
     l'ouvrir avec la clé privée, copie pour Portainer ; compatible avec l'outil age ; aucun débordement."""
     page.goto(page.url.split("#")[0] + "#/variables")
-    page.get_by_role("heading", level=1, name="Variables").wait_for()
+    page.get_by_role("heading", level=1, name="Stack et variables").wait_for()
+    assert page.url.endswith("#/reglages/stack")                                  # 0.19 : ancienne adresse redirigée
+    assert "ouverte sur la machine même" in page.locator("#vu-par-l-anneau").inner_text()
     assert page.evaluate("window.isSecureContext")                              # 127.0.0.1 compte comme sûr
     assert page.get_by_role("alert", name="Page non sûre").count() == 0
     # un homelab.yml avec une valeur en clair est refusé, le bon est accepté
@@ -434,11 +448,13 @@ def test_11_page_variables(page, monde, tmp_path):
 
 
 def test_12_carte_de_la_maison_depuis_les_reglages(page):
-    """0.11 : la carte (ex-Atlas) s'ouvre depuis Réglages ; graphe sur PC, liste sur iPhone ; voyants des tuiles."""
-    page.goto(page.url.split("#")[0] + "#/reglages")
+    """0.11 : la carte (ex-Atlas) ; graphe sur PC, liste sur iPhone ; voyants des tuiles.
+    0.19 : en haut de Réglages › Maison, où mène le raccourci « Maison » de l'anneau."""
+    page.goto(page.url.split("#")[0] + "#/")
+    page.locator("svg.anneau").wait_for()
+    page.get_by_role("link", name=re.compile("^Maison : carte")).click()
+    page.get_by_role("heading", level=1, name="Maison").wait_for()
     page.get_by_role("region", name="Carte de la maison").wait_for()
-    page.get_by_role("link", name="Ouvrir la carte").click()
-    page.get_by_role("heading", name="Carte de la maison").wait_for()
     if page.ecran == "pc":
         page.locator(".svelte-flow__node-service").first.wait_for()
         assert page.locator(".svelte-flow__node-service").count() == 6
@@ -604,7 +620,7 @@ def test_15_nouveautes_de_la_nuit_puis_vu_et_section_versions(page, monde):
     time.sleep(0.5)
     assert page.get_by_role("dialog").count() == 0                       # vu : plus rien à la réouverture
     # Réglages › Versions
-    page.goto(page.url.split("#")[0] + "#/reglages")
+    page.goto(page.url.split("#")[0] + "#/reglages/services/versions")
     section = page.get_by_role("region", name="Versions")
     section.get_by_role("row", name=re.compile("Arbre")).wait_for()
     ligne = section.get_by_role("row", name=re.compile("Arbre")).inner_text()
@@ -655,9 +671,9 @@ def test_014_ouvrir_en_grand_depuis_le_cadre(page):
 
 
 def test_015_lien_vers_le_bac_a_sable(page):
-    """0.15 : Réglages ouvre le Bac à sable (adresse de sa tuile, sinon même hôte, port 8104, en http)."""
-    page.get_by_role("button", name="Réglages").click()
-    page.get_by_role("heading", level=1, name="Réglages").wait_for()
+    """0.15 : Réglages › Services ouvre le Bac à sable (adresse de sa tuile, sinon même hôte, port 8104, en http)."""
+    page.goto(page.url.split("#")[0] + "#/reglages/services")
+    page.get_by_role("heading", level=1, name="Services").wait_for()
     lien = page.get_by_role("region", name="Bac à sable").get_by_role("link", name="Ouvrir le bac à sable")
     adresse = lien.get_attribute("href")
     assert adresse.startswith("http://") and adresse.endswith(":8104/"), adresse
@@ -781,9 +797,10 @@ def test_017_conteneur_eteindre_allumer_mettre_a_jour(page):
 
 def test_018_reglages_connexion_portainer(page):
     """0.17 : Réglages › Connexion : la fiche Portainer (ce que l'Anneau lit et écrit), « Vérifier ».
-    0.17.1 : la fiche Watchtower ; « Vérifier » sans effet (adresse et jeton présents)."""
-    page.get_by_role("button", name="Réglages").first.click()
-    page.get_by_role("heading", level=1, name="Réglages").wait_for()
+    0.17.1 : la fiche Watchtower ; « Vérifier » sans effet (adresse et jeton présents).
+    0.19 : dans Réglages › Connexions, avec la fiche Home Assistant (Vérifier n'appelle jamais le webhook)."""
+    page.goto(page.url.split("#")[0] + "#/reglages/connexions")
+    page.get_by_role("heading", level=1, name="Connexions").wait_for()
     zone = page.get_by_role("region", name="Connexion", exact=True)
     zone.get_by_text("conteneur:", exact=False).first.wait_for()
     assert "arrêter ou démarrer ce seul conteneur" in zone.inner_text() and "GitHub" in zone.inner_text()
@@ -795,6 +812,9 @@ def test_018_reglages_connexion_portainer(page):
     assert watchtower.count() == 1
     watchtower.get_by_role("button", name="Vérifier").click()
     watchtower.get_by_text("adresse et jeton présents", exact=False).wait_for()
+    ha = zone.get_by_role("listitem").filter(has_text="Wake-on-LAN")
+    ha.get_by_role("button", name="Vérifier").click()
+    ha.get_by_text("Le webhook n'est pas appelé ici", exact=False).wait_for()
     assert not _deborde(page)
     if os.environ.get("CAPTURES"):
         page.screenshot(path=f"{os.environ['CAPTURES']}/anneau-connexion-{page.ecran}.png", full_page=True)
@@ -835,3 +855,74 @@ def test_019_applis_a_mettre_a_jour_dans_a_faire(page):
     assert not _deborde(page)
     if os.environ.get("CAPTURES"):
         page.screenshot(path=f"{os.environ['CAPTURES']}/anneau-majs-{page.ecran}.png", full_page=True)
+
+
+# ---------------------------------------------------------------- 0.19 : réglages unifiés, réveil du PC
+
+def test_0191_accueil_des_reglages_et_barre_des_themes(page):
+    """L'accueil montre les cinq thèmes (état, chiffre, pastille avec un texte) ; chaque thème a le fil, la barre des
+    thèmes (le thème ouvert marqué) et « Revenir à l'anneau » ; les anciennes adresses mènent au bon thème."""
+    base = page.url.split("#")[0]
+    page.goto(base + "#/reglages")
+    themes = page.get_by_label("Thèmes des réglages")
+    assert themes.get_by_role("link").count() == 5
+    noms = [l.locator(".nom").inner_text() for l in themes.get_by_role("link").all()]
+    assert noms == ["Services", "Stack et variables", "Sauvegardes", "Connexions", "Maison"]
+    connexions = themes.get_by_role("link", name=re.compile("^Connexions"))
+    connexions.filter(has_text="reliées").wait_for()
+    assert not _deborde(page)
+    if os.environ.get("CAPTURES"):
+        page.screenshot(path=f"{os.environ['CAPTURES']}/anneau-reglages-{page.ecran}.png", full_page=True)
+    for ancienne, titre, fin in (("#/variables", "Stack et variables", "#/reglages/stack"), ("#/carte", "Maison", "#/reglages/maison"),
+                                 ("#/reglages/inconnu", "Réglages", "#/reglages")):
+        page.goto(base + ancienne)
+        page.get_by_role("heading", level=1, name=titre, exact=True).wait_for()
+        assert page.url.endswith(fin), page.url
+    page.goto(base + "#/reglages/connexions")
+    barre = page.get_by_role("navigation", name="Thèmes")
+    assert barre.get_by_role("link", name="Connexions", exact=True).get_attribute("aria-current") == "page"
+    assert barre.get_by_role("link", name="Services", exact=True).get_attribute("aria-current") is None
+    barre.get_by_role("link", name="Tous les réglages").click()
+    page.get_by_label("Thèmes des réglages").wait_for()
+    page.get_by_role("link", name="Revenir à l'anneau").click()
+    page.locator("svg.anneau").wait_for()
+
+
+def test_0192_lien_a_traiter_vers_la_section_des_exports(page):
+    """« À traiter » › export des variables : arrive sur Réglages › Stack et variables, section des exports."""
+    page.goto(page.url.split("#")[0] + "#/reglages/stack/exports")
+    page.get_by_role("heading", level=1, name="Stack et variables").wait_for()
+    section = page.get_by_role("region", name="Exports chiffrés")
+    section.wait_for()
+    page.wait_for_function("document.activeElement && document.activeElement.id === 'section-exports'")
+    page.goto(page.url.split("#")[0] + "#/")
+    page.locator("svg.anneau").wait_for()
+
+
+def test_0193_reveiller_le_pc_de_calcul(page, monde):
+    """La fiche de l'Ordinateur de calcul (éteint) propose « Réveiller » ; Numérisation, qui en a besoin, aussi.
+    Confirmation dans une fenêtre, puis suivi jusqu'à « Réveillé » (faux Home Assistant : le PC répond 1 s après)."""
+    (monde[1] / "morts.txt").write_text("s=calcul\n")
+    time.sleep(1.2)
+    ouvrir_service(page, "Photos", "Numérisation")
+    besoin = page.get_by_role("region", name="Réveil de Ordinateur de calcul")
+    besoin.wait_for()
+    assert "Numérisation a besoin de Ordinateur de calcul" in besoin.inner_text()
+    if page.ecran == "iphone":                                   # sur iPhone, on réveille depuis l'appli qui en a besoin
+        zone = besoin
+    else:
+        ouvrir_service(page, "Machines", "Ordinateur de calcul")
+        zone = page.get_by_role("region", name="Réveil de Ordinateur de calcul")
+    zone.get_by_role("button", name="Réveiller Ordinateur de calcul").click()
+    fenetre = page.get_by_role("dialog", name="Réveiller Ordinateur de calcul ?")
+    fenetre.get_by_role("button", name="Annuler").click()       # annuler ne lance rien
+    assert fenetre.count() == 0
+    zone.get_by_role("button", name="Réveiller Ordinateur de calcul").click()
+    page.get_by_role("dialog").get_by_role("button", name="Réveiller", exact=True).click()
+    if page.ecran == "pc":
+        zone.get_by_text("Réveillé : il répond.").wait_for(timeout=15000)
+    else:
+        besoin.wait_for(state="detached", timeout=15000)          # le PC répond : plus rien à proposer dans l'appli
+    assert not _deborde(page)
+    (monde[1] / "morts.txt").write_text("s=calcul\n")
+    page.get_by_role("button", name="Revenir à l'anneau").click()

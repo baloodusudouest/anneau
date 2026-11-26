@@ -11,6 +11,8 @@ from app import main, maison, sauvegardes, services
 from app.config import Config, charger
 from app.veille import Veille
 
+HTTPS = {"X-Forwarded-Proto": "https"}   # 0.19 : écrire un secret exige https (relais Tailscale Serve)
+
 MDP = "mot-de-passe-de-test"
 JETON = "jeton-commun-essai"
 CLE_AGE = "age1" + "q" * 58
@@ -151,17 +153,17 @@ def test_cle_publique(client):
     assert client.get("/api/cle-publique").status_code == 401
     connecter(client)
     assert client.get("/api/cle-publique").json() == {"cle_publique": ""}
-    assert client.put("/api/cle-publique", json={"cle_publique": CLE_AGE}).json() == {"cle_publique": CLE_AGE}
+    assert client.put("/api/cle-publique", json={"cle_publique": CLE_AGE}, headers=HTTPS).json() == {"cle_publique": CLE_AGE}
     assert client.get("/api/cle-publique").json() == {"cle_publique": CLE_AGE}
-    r = client.put("/api/cle-publique", json={"cle_publique": "AGE-SECRET-KEY-1" + "Q" * 58})
+    r = client.put("/api/cle-publique", json={"cle_publique": "AGE-SECRET-KEY-1" + "Q" * 58}, headers=HTTPS)
     assert r.status_code == 400 and "clé privée" in r.json()["detail"]
-    assert client.put("/api/cle-publique", json={"cle_publique": "age1court"}).status_code == 400
+    assert client.put("/api/cle-publique", json={"cle_publique": "age1court"}, headers=HTTPS).status_code == 400
     assert client.get("/api/cle-publique").json() == {"cle_publique": CLE_AGE}
 
 
 def test_sa_propre_sauvegarde_sans_la_cle(client, env):
     connecter(client)
-    client.put("/api/cle-publique", json={"cle_publique": CLE_AGE})
+    client.put("/api/cle-publique", json={"cle_publique": CLE_AGE}, headers=HTTPS)
     env.setenv("MAISON_JETON", JETON)
     r = client.get("/externe/sauvegarde", headers={"Authorization": f"Bearer {JETON}"}).json()
     assert r["contrat"] == 1 and r["appli"] == "anneau" and r["reglages"] == {"heure_sauvegarde": "03:30", "coffre_obsidian": "Maison"}
@@ -381,10 +383,10 @@ def test_variables_chiffrees(client, tmp_path):
     connecter(client)
     for refuse in ("MAISON_PASSWORD=en-clair\n", "", "x" + ARMURE, ARMURE.replace("-----END AGE ENCRYPTED FILE-----", ""),
                    "-----BEGIN AGE ENCRYPTED FILE-----\n" + "A" * (1024 * 1024) + "\n-----END AGE ENCRYPTED FILE-----\n"):
-        r = client.post("/api/variables-chiffrees", content=refuse.encode(), headers={"Content-Type": "text/plain"})
+        r = client.post("/api/variables-chiffrees", content=refuse.encode(), headers={"Content-Type": "text/plain", **HTTPS})
         assert r.status_code in (400, 413), refuse[:40]
     assert not (tmp_path / "sauvegardes" / "variables").exists() or not list((tmp_path / "sauvegardes" / "variables").iterdir())
-    r = client.post("/api/variables-chiffrees", content=ARMURE.encode(), headers={"Content-Type": "text/plain"})
+    r = client.post("/api/variables-chiffrees", content=ARMURE.encode(), headers={"Content-Type": "text/plain", **HTTPS})
     assert r.status_code == 200, r.text
     nom = r.json()["nom"]
     assert sauvegardes.RE_EXPORT.match(nom)
@@ -417,13 +419,13 @@ def test_m5_accord_explicite_des_qu_une_tuile_porte_true(tmp_path):
 def test_m7_remplacer_la_cle_exige_la_cle_actuelle(client):
     autre = "age1" + "p" * 58
     connecter(client)
-    assert client.put("/api/cle-publique", json={"cle_publique": CLE_AGE}).status_code == 200
-    assert client.put("/api/cle-publique", json={"cle_publique": CLE_AGE}).status_code == 200   # même clé : rien ne change
-    assert client.put("/api/cle-publique", json={"cle_publique": autre}).status_code == 409
-    assert client.put("/api/cle-publique", json={"cle_publique": ""}).status_code == 409
-    assert client.put("/api/cle-publique", json={"cle_publique": autre, "actuelle": "age1faux"}).status_code == 409
+    assert client.put("/api/cle-publique", json={"cle_publique": CLE_AGE}, headers=HTTPS).status_code == 200
+    assert client.put("/api/cle-publique", json={"cle_publique": CLE_AGE}, headers=HTTPS).status_code == 200   # même clé : rien ne change
+    assert client.put("/api/cle-publique", json={"cle_publique": autre}, headers=HTTPS).status_code == 409
+    assert client.put("/api/cle-publique", json={"cle_publique": ""}, headers=HTTPS).status_code == 409
+    assert client.put("/api/cle-publique", json={"cle_publique": autre, "actuelle": "age1faux"}, headers=HTTPS).status_code == 409
     assert client.get("/api/cle-publique").json() == {"cle_publique": CLE_AGE}
-    r = client.put("/api/cle-publique", json={"cle_publique": autre, "actuelle": CLE_AGE})
+    r = client.put("/api/cle-publique", json={"cle_publique": autre, "actuelle": CLE_AGE}, headers=HTTPS)
     assert r.status_code == 200 and r.json() == {"cle_publique": autre}
 
 

@@ -1,4 +1,7 @@
 <script>
+  // 0.19 — Réglages › Sauvegardes : la collecte de nuit (heure, « Sauvegarder maintenant », dernière collecte), la liste
+  // des sauvegardes avec ce qui a changé (ancienne page Sauvegardes, 0.10), et « Restaurer les réglages » de l'Anneau
+  // lui-même (0.8). Les exports chiffrés des variables sont dans Réglages › Stack et variables, nulle part ailleurs.
   // 0.10 : les sauvegardes des réglages, en un seul endroit (avant : liste dans Réglages et vue dans Atlas).
   // Chaque sauvegarde se déplie : par appli, version et réglages, ce qui a changé depuis la précédente, applis ratées.
   // Lecture seule ; pour remettre un réglage, c'est « Restaurer » dans l'appli (ou dans Réglages pour l'Anneau).
@@ -18,11 +21,55 @@
 
   async function lire() {
     message = ''
-    try { fichiers = (await api.get('/api/sauvegardes')).fichiers || [] }
+    try { sv = await api.get('/api/sauvegardes'); heure = sv.heure; fichiers = sv.fichiers || [] }
     catch (x) { if (x.statut === 401) ondeconnecte?.(); else message = x.message }
-    if (!fichiers.length && !message) message = 'Aucune sauvegarde pour l\'instant : la première se fait à l\'heure de la collecte, ou par « Sauvegarder maintenant » dans Réglages.'
+    if (!fichiers.length && !message) message = 'Aucune sauvegarde pour l\'instant : la première se fait à l\'heure de la collecte, ou par « Sauvegarder maintenant ».'
   }
-  onMount(lire)
+
+  // ---------------------------------------------------------------- la collecte (0.8)
+  let sv = $state(null)
+  let heure = $state('03:30')
+  let msgSv = $state('')
+  let attenteSv = $state(false)
+  async function changerHeure() {
+    attenteSv = true; msgSv = ''
+    try { heure = (await api.put('/api/reglages', { reglages: { heure_sauvegarde: heure } })).reglages.heure_sauvegarde; msgSv = `Collecte chaque jour à ${heure}.` } catch (x) { msgSv = x.message }
+    attenteSv = false
+  }
+  async function sauvegarder() {
+    attenteSv = true; msgSv = ''
+    try {
+      const d = (await api.post('/api/sauvegardes')).derniere
+      await lire()
+      await lireDates()
+      const n = Object.keys(d.ratees).length
+      msgSv = d.erreur ? `Fichier non écrit : ${d.erreur}` : `Sauvegarde faite : ${d.applis.length} appli(s) lue(s)` + (n ? `, ${n} ratée(s).` : '.')
+    } catch (x) { msgSv = x.message }
+    attenteSv = false
+  }
+
+  // ---------------------------------------------------------------- restaurer les réglages de l'Anneau (0.8)
+  let dates = $state([])
+  let choix = $state('')
+  let diff = $state(null)
+  let msgRest = $state('')
+  async function lireDates() {
+    msgRest = ''; diff = null
+    try { dates = (await api.get('/api/restaurer')).dates; choix = dates[0] || '' } catch (x) { dates = []; msgRest = x.message }
+  }
+  async function voir() {
+    msgRest = ''
+    try { diff = await api.get('/api/restaurer?le=' + encodeURIComponent(choix)) } catch (x) { msgRest = x.message }
+  }
+  async function restaurer() {
+    try {
+      const r = await api.post('/api/restaurer', { le: choix })
+      heure = r.reglages.heure_sauvegarde; diff = null
+      msgRest = r.restaures.length ? `Réglages du ${choix} restaurés.` : 'Rien à changer.'
+    } catch (x) { msgRest = x.message }
+  }
+  const quand = (iso) => iso ? new Date(iso).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : ''
+  onMount(() => { lire(); lireDates() })
 
   // la précédente d'une sauvegarde : celle qui la suit dans la liste (plus ancienne)
   const precedenteDe = (id) => { const i = fichiers.findIndex((f) => f.date === id); return i >= 0 && i + 1 < fichiers.length ? fichiers[i + 1].date : '' }
@@ -52,16 +99,43 @@
   }
 </script>
 
-<main class="mx-auto max-w-3xl px-[max(1rem,env(safe-area-inset-left))] pt-[calc(1.25rem+env(safe-area-inset-top))] pb-[calc(2rem+env(safe-area-inset-bottom))] md:px-8 md:pt-8">
-  <header class="mb-5 flex flex-wrap items-end justify-between gap-3">
-    <div><p class="etiquette">L'Anneau</p><h1 class="titre">Sauvegardes</h1></div>
-    <nav class="flex flex-wrap gap-x-4 gap-y-1 text-sm" aria-label="Pages">
-      <a class="underline underline-offset-4" href="#/reglages">Réglages</a>
-      <a class="underline underline-offset-4" href="#/variables">Variables</a>
-      <a class="underline underline-offset-4" href="#/">Revenir à l'anneau</a>
-    </nav>
-  </header>
-  <p class="text-sm text-muted-foreground">Les réglages que chaque appli maison rend à l'Anneau, une sauvegarde par jour (et une par « Sauvegarder maintenant »). Déplie une sauvegarde pour voir ce qui a changé depuis la précédente. Pour remettre un réglage : « Restaurer » dans l'appli elle-même.</p>
+<section class="rounded-2xl border bg-card p-5" aria-label="Sauvegarde" id="section-collecte" tabindex="-1">
+  <h2 class="text-lg font-semibold">Collecte de nuit</h2>
+  <p class="mt-1 text-sm text-muted-foreground">Chaque jour, l'Anneau demande leurs réglages aux applis maison du fichier des services et les range dans son dossier (emporté par Hyper Backup). Jamais de secret : une réponse qui en porte un est refusée.</p>
+  <div class="mt-3 flex flex-wrap items-end gap-3">
+    <label class="grid gap-1 text-sm" for="heure-sauvegarde">Heure de la collecte
+      <input id="heure-sauvegarde" type="time" step="60" bind:value={heure} class="h-11 rounded-xl border bg-background px-3 text-base" />
+    </label>
+    <Button variant="outline" onclick={changerHeure} disabled={attenteSv}>Enregistrer l'heure</Button>
+    <Button onclick={sauvegarder} disabled={attenteSv}>{attenteSv ? 'Collecte…' : 'Sauvegarder maintenant'}</Button>
+  </div>
+  {#if msgSv}<p class="mt-3 text-sm" role="status" id="message-sauvegarde">{msgSv}</p>{/if}
+  {#if sv}
+    <div class="mt-4" aria-label="Dernière collecte" role="group">
+      <h3 class="text-sm font-semibold">Dernière collecte</h3>
+      {#if !sv.derniere}<p class="mt-1 text-sm text-muted-foreground">Aucune pour l'instant.</p>
+      {:else}
+        <p class="mt-1 text-sm">{quand(sv.derniere.le)} ({sv.derniere.automatique ? 'automatique' : 'à la demande'}) : {sv.derniere.applis.length} appli(s) lue(s){sv.derniere.applis.length ? ' : ' + sv.derniere.applis.join(', ') : ''}.</p>
+        {#if sv.derniere.erreur}<p class="mt-1 text-sm text-destructive" role="alert">Fichier non écrit : {sv.derniere.erreur}</p>{/if}
+        {#if Object.keys(sv.derniere.eteintes || {}).length}
+          <ul class="mt-1 list-disc pl-5 text-sm text-muted-foreground" aria-label="Applis éteintes">
+            {#each Object.entries(sv.derniere.eteintes) as [n, raison]}<li class="break-words">{n} : {raison}</li>{/each}
+          </ul>
+        {/if}
+        {#if Object.keys(sv.derniere.ratees).length}
+          <ul class="mt-1 list-disc pl-5 text-sm" aria-label="Applis non lues">
+            {#each Object.entries(sv.derniere.ratees) as [n, raison]}<li class="break-words"><span class="text-[var(--app)]">{n}</span> : {raison}</li>{/each}
+          </ul>
+        {/if}
+      {/if}
+    </div>
+  {/if}
+</section>
+
+<section class="mt-3 rounded-2xl border bg-card p-5" aria-label="Sauvegardes gardées" id="section-liste" tabindex="-1">
+  <h2 class="text-lg font-semibold">Sauvegardes gardées{fichiers.length ? ` (${fichiers.length})` : ''}</h2>
+
+  <p class="mt-1 text-sm text-muted-foreground">Les réglages que chaque appli maison rend à l'Anneau, une sauvegarde par jour (et une par « Sauvegarder maintenant »). Déplie une sauvegarde pour voir ce qui a changé depuis la précédente. Pour remettre un réglage : « Restaurer » dans l'appli elle-même.</p>
 
   {#if message}<p class="mt-3 text-sm" role="status" id="message-sauvegardes">{message}</p>{/if}
 
@@ -132,5 +206,37 @@
       {/each}
     </ul>
   {/if}
-  <div class="mt-5"><Button variant="outline" onclick={lire}>Relire la liste</Button></div>
-</main>
+  <div class="mt-4"><Button variant="outline" onclick={lire}>Relire la liste</Button></div>
+</section>
+
+<section class="mt-3 rounded-2xl border bg-card p-5" aria-label="Restaurer" id="section-restaurer" tabindex="-1">
+  <h2 class="text-lg font-semibold">Restaurer les réglages de l'Anneau</h2>
+  <p class="mt-1 text-sm text-muted-foreground">Les réglages de l'Anneau lui-même (l'heure de la collecte), depuis une sauvegarde. Chaque appli maison a son propre bouton dans ses Réglages.</p>
+  {#if dates.length}
+    <div class="mt-3 flex flex-wrap items-end gap-3">
+      <label class="grid gap-1 text-sm" for="date-restaurer">Sauvegarde du
+        <select id="date-restaurer" bind:value={choix} class="h-11 rounded-xl border bg-background px-3 text-base">
+          {#each dates as d}<option value={d}>{d}</option>{/each}
+        </select>
+      </label>
+      <Button variant="outline" onclick={voir}>Voir les différences</Button>
+    </div>
+    {#if diff}
+      {#if diff.differences.length}
+        <ul class="mt-3 divide-y text-sm" aria-label="Différences">
+          {#each diff.differences as d}<li class="flex flex-wrap justify-between gap-x-4 py-1.5"><code>{d.cle}</code><span>{d.actuel} → {d.sauve}</span></li>{/each}
+        </ul>
+        <Button class="mt-3" onclick={restaurer}>Restaurer</Button>
+      {:else}
+        <p class="mt-3 text-sm">Aucune différence avec les réglages actuels.</p>
+      {/if}
+    {/if}
+  {:else}
+    <Button class="mt-3" variant="outline" onclick={lireDates}>Chercher les sauvegardes</Button>
+  {/if}
+  {#if msgRest}<p class="mt-3 text-sm" role="status" id="message-restaurer">{msgRest}</p>{/if}
+</section>
+
+<style>
+  section:focus { outline: none; }
+</style>
