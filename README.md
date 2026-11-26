@@ -44,6 +44,8 @@ Un seul écran Réglages (la roue, en haut à droite de l'anneau). L'accueil mon
 | Connexions | `#/reglages/connexions` | fiches Portainer, Watchtower, GitHub, Home Assistant ; ce que Home Assistant envoie |
 | Maison | `#/reglages/maison` | carte de la maison (pleine largeur), disques, dernières pannes closes ; raccourci « Maison » à côté de la roue |
 
+**Stack et variables (0.20)** : le homelab s'importe en fichier ou se colle (bloc Markdown retiré, même vérification) ; sous les valeurs ouvertes (export chiffré ouvert ou export de Portainer collé), « Variables à coller dans Portainer » puis « Homelab avec ses valeurs » (règles de Docker Compose, commentaires intacts, masqué jusqu'à « Afficher », jamais envoyé au serveur).
+
 Dans un thème : le fil, la barre des cinq thèmes (le thème ouvert souligné) et « Revenir à l'anneau ». Une section se vise par un troisième morceau (`#/reglages/stack/exports`, utilisé par la tuile « À traiter »). Les anciennes adresses mènent au bon thème : `#/variables` → Stack et variables, `#/sauvegardes` → Sauvegardes (liste), `#/carte` → Maison.
 
 **Secrets en https, vérifié par le serveur** : `PUT /api/cle-publique` et `POST /api/variables-chiffrees` répondent 403 quand la page n'est pas sûre. Sûre = servie en https, `X-Forwarded-Proto: https` (Tailscale Serve), en-tête `Origin` en `https://` (envoyé par le navigateur à chaque écriture), ou ouverte sur la machine même (`localhost`, `127.0.0.1`, `[::1]`, comme pour le navigateur). Lire et télécharger un export chiffré restent permis en http. `GET /api/https` dit ce que voit le serveur (`https`, `par`, `garde`, `relais`, `lecture_seule`), affiché en haut de Stack et variables. `ANNEAU_GARDE_HTTPS=non` coupe la garde.

@@ -1,5 +1,14 @@
 # Journal des versions
 
+## 0.20.0 — 26 novembre 2026 (coller le homelab, variables à coller, homelab avec ses valeurs)
+
+Demande de Julien du 26/11/2026 : coller le homelab, avec en dessous les variables à coller, puis le homelab où les variables sont remplacées par leurs valeurs. Cadrage par questions à choix, dossier court (`docs/ajout-0.20.0.md`), sans Conseil (choix de Julien).
+
+- **Coller le homelab** (Réglages › Stack et variables › Fichiers de la stack) : zone « Ou coller le homelab » et « Enregistrer le homelab ». Le texte remplace `homelab.yml` comme un import (même route `POST /api/stack`, mêmes refus : valeur en clair, aucun service). Les lignes de bloc Markdown (```` ```yaml ````, ```` ``` ````) copiées avec la note du coffre sont retirées dans la page avant l'envoi.
+- **Variables à coller dans Portainer** : le texte `NOM=valeur` est toujours affiché dès que des valeurs sont ouvertes (avant : derrière « Voir le texte »), avec « Copier les variables » et « Télécharger homelab.env ».
+- **Homelab avec ses valeurs** : `resoudre` (`lib/environnement.js`), règles de Docker Compose (`${VAR}`, `${VAR:-défaut}`, `${VAR-défaut}`, `$$` laissé) ; une variable sans valeur reste `${VAR}` et est listée « non remplie » ; **les commentaires ne sont jamais touchés**. Bloc replié, valeurs masquées jusqu'à « Afficher », « Copier le homelab », « Télécharger » (`homelab-avec-valeurs.yml`) ; dans la page seulement, jamais envoyé au serveur ; effacé par « Oublier les valeurs ». Aucune route nouvelle.
+- Tests : 209 du serveur (dont 3 nouveaux avec Node : `tests/test_environnement_js.py`) et 57 d'écran (dont 2 nouveaux : `test_0194`, PC et iPhone). Jamais essayé sur la vraie installation (collage d'un long homelab depuis SilverBullet sur iPhone).
+
 ## 0.19.0 — 26 novembre 2026 (réglages unifiés, écarts de l'audit, réveil du PC)
 
 Demande de Julien du 26/11/2026 : « il faudrait unifier les réglages ». Cadrage par questions à choix, dossier et conseil (`docs/ajout-0.19.0.md`, `docs/conseil-0.19.0.md`). Une seule version (choix de Julien), codée en trois étapes testées une à une.

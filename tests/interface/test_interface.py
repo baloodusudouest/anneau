@@ -426,8 +426,7 @@ def test_11_page_variables(page, monde, tmp_path):
     page.get_by_role("button", name="Afficher la valeur de MAISON_PASSWORD").click()
     assert "secret-de-test-123456" in page.get_by_label("Liste des variables").inner_text()
     assert "obsidian://open?vault=Maison" in page.get_by_role("link", name="Note dans Obsidian").first.get_attribute("href")
-    groupe.get_by_role("button", name="Voir le texte").click()
-    texte = page.get_by_label("Texte à recoller dans Portainer").input_value()
+    texte = page.get_by_label("Texte à recoller dans Portainer").input_value()           # 0.20 : toujours affiché
     assert texte == "TZ=Europe/Paris\nMAISON_PASSWORD=secret-de-test-123456\n"           # ANCIENNE omise, VEILLE_HEURE facultative absente
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     # rien n'est gardé par le navigateur, et « Oublier » efface tout
@@ -926,3 +925,42 @@ def test_0193_reveiller_le_pc_de_calcul(page, monde):
     assert not _deborde(page)
     (monde[1] / "morts.txt").write_text("s=calcul\n")
     page.get_by_role("button", name="Revenir à l'anneau").click()
+
+
+def test_0194_coller_le_homelab_et_le_homelab_avec_ses_valeurs(page):
+    """0.20 : coller le homelab (bloc Markdown retiré ; valeur en clair refusée), les variables à coller, puis le homelab
+    avec ses valeurs : replié, masqué, commentaires intacts, défauts appliqués, rien envoyé au serveur ; « Oublier » efface."""
+    page.goto(page.url.split("#")[0] + "#/reglages/stack")
+    page.get_by_role("heading", level=1, name="Stack et variables").wait_for()
+    zone = page.get_by_label("Ou coller le homelab")
+    zone.fill(STACK.replace("${MAISON_PASSWORD}", "motdepasse-en-clair"))
+    page.get_by_role("button", name="Enregistrer le homelab").click()
+    page.locator("#message-variables", has_text="valeur écrite en clair").wait_for()
+    pile = "# commentaire : ${MAISON_PASSWORD}\n" + STACK
+    zone.fill("```yaml\n" + pile + "```\n")
+    page.get_by_role("button", name="Enregistrer le homelab").click()
+    page.locator("#message-variables", has_text="homelab.yml enregistré : 1 service(s), 3 variable(s)").wait_for()
+    assert zone.input_value() == ""
+    envois = []
+    page.on("request", lambda r: envois.append(r.post_data or "") if r.method in ("POST", "PUT") else None)
+    page.get_by_label("Export de Portainer à chiffrer").fill("TZ=Europe/Paris\nMAISON_PASSWORD=secret-colle-987654\n")
+    page.get_by_role("button", name="Comparer avec la stack sans ranger").click()
+    variables = page.get_by_role("group", name="Variables à coller dans Portainer")
+    assert "MAISON_PASSWORD=secret-colle-987654" in variables.get_by_label("Texte à recoller dans Portainer").input_value()
+    bloc = page.get_by_role("group", name="Homelab avec ses valeurs")
+    assert "secret-colle" not in bloc.inner_text()                                     # replié
+    bloc.get_by_role("button", name="Déplier").click()
+    assert "secret-colle" not in bloc.inner_text() and "Valeurs masquées" in bloc.inner_text()
+    bloc.get_by_role("button", name="Afficher").click()
+    texte = bloc.get_by_label("Homelab avec ses valeurs").input_value()
+    assert "- MAISON_PASSWORD=secret-colle-987654" in texte and "- TZ=Europe/Paris" in texte
+    assert "- VEILLE=03:00" in texte                                                   # défaut appliqué
+    assert "# commentaire : ${MAISON_PASSWORD}" in texte                               # commentaire intact
+    assert not any("secret-colle" in e for e in envois)                                # rien envoyé au serveur
+    assert not _deborde(page)
+    if os.environ.get("CAPTURES"):
+        page.screenshot(path=f"{os.environ['CAPTURES']}/anneau-homelab-valeurs-{page.ecran}.png", full_page=True)
+    page.get_by_role("group", name="Valeurs ouvertes").get_by_role("button", name="Oublier les valeurs").click()
+    assert "secret-colle" not in page.content()
+    page.get_by_role("link", name="Revenir à l'anneau").click()
+    page.locator("svg.anneau").wait_for()

@@ -14,7 +14,7 @@
   import { api } from '$lib/api.js'
   import { duree } from '$lib/temps.js'
   import { chiffrer, dechiffrer, genererPaire, publiqueDe, clePriveeValide, sur, empreinte } from '$lib/chiffre.js'
-  import { comprendre, sensible, pourPortainer, lienNote } from '$lib/environnement.js'
+  import { comprendre, sensible, pourPortainer, lienNote, resoudre, sansBlocMarkdown } from '$lib/environnement.js'
   import { Button } from '$lib/components/ui/button/index.js'
 
   let { ondeconnecte } = $props()
@@ -27,13 +27,36 @@
   let pile = $state({ present: false, variables: [], services: [], coffre: 'Maison', adresse_https: '' })
   let coffre = $state('Maison')
   let champStack = $state(null)
-  async function lireStack() { try { pile = await api.get('/api/stack'); coffre = pile.coffre } catch (x) { echec(x) } }
+  async function lireStack() { try { pile = await api.get('/api/stack'); coffre = pile.coffre; await lireTexteStack() } catch (x) { echec(x) } }
+  // 0.20 : le texte du homelab (sans aucune valeur : seulement des références), pour le homelab avec ses valeurs
+  let texteStack = $state('')
+  async function lireTexteStack() {
+    if (!pile.present) { texteStack = ''; return }
+    try {
+      const r = await fetch('/api/stack/fichier', { credentials: 'same-origin' })
+      if (r.status === 401) { ondeconnecte?.(); return }
+      texteStack = r.ok ? await r.text() : ''
+    } catch { texteStack = '' }
+  }
+  // 0.20 : coller le homelab (par exemple copié depuis la note du coffre) : il remplace homelab.yml, vérifié par le serveur
+  let colleStack = $state('')
+  let envoiStack = $state(false)
+  async function enregistrerStack() {
+    const texte = sansBlocMarkdown(colleStack)
+    if (!texte.trim()) { dire('Rien à enregistrer : colle d\'abord le homelab.'); return }
+    envoiStack = true
+    try {
+      pile = await api.post('/api/stack', { texte }); await lireTexteStack(); colleStack = ''
+      dire(`homelab.yml enregistré : ${pile.services.length} service(s), ${pile.variables.length} variable(s).`)
+    } catch (x) { echec(x) }
+    envoiStack = false
+  }
   async function importerStack(ev) {
     const f = ev.target.files?.[0]
     ev.target.value = ''
     if (!f) return
     if (f.size > 512 * 1024) { dire('Ce fichier est trop gros pour être homelab.yml.'); return }
-    try { pile = await api.post('/api/stack', { texte: await f.text() }); dire(`homelab.yml importé : ${pile.services.length} service(s), ${pile.variables.length} variable(s).`) }
+    try { pile = await api.post('/api/stack', { texte: await f.text() }); await lireTexteStack(); dire(`homelab.yml importé : ${pile.services.length} service(s), ${pile.variables.length} variable(s).`) }
     catch (x) { echec(x) }
   }
   async function changerCoffre() {
@@ -115,12 +138,13 @@
     } catch (x) { dire(x.message || String(x)) }
     privee = ''
   }
-  function oublier() { ouvertes = null; visibles = {}; privee = ''; colle = ''; voirTexte = false; dire('Valeurs oubliées : la page ne garde plus rien.') }
+  function oublier() { ouvertes = null; visibles = {}; privee = ''; colle = ''; voirResolu = false; resoluDeplie = false; dire('Valeurs oubliées : la page ne garde plus rien.') }
 
   // ---------------------------------------------------------------- la liste des variables
   let depliee = $state(false)
   let cherche = $state('')
-  let voirTexte = $state(false)
+  let resoluDeplie = $state(false)    // 0.20 : bloc « homelab avec ses valeurs » replié
+  let voirResolu = $state(false)      // 0.20 : valeurs masquées tant que « Afficher » n'est pas touché
   const plat = (t) => (t || '').toLowerCase().normalize('NFD').replace(/\p{Mn}/gu, '')
   const montree = $derived(depliee || !!cherche.trim())
   const liste = $derived(pile.variables.filter((v) => !cherche.trim() || plat(v.nom + ' ' + v.services.join(' ')).includes(plat(cherche.trim()))))
@@ -130,12 +154,15 @@
   const manquantes = $derived(valeurs ? pile.variables.filter((v) => v.defaut === null && !(a(v.nom) && valeurs[v.nom] !== '')) : [])
   const inconnues = $derived(valeurs && pile.present ? Object.keys(valeurs).filter((n) => !connues.has(n)).sort() : [])
   const portainer = $derived(valeurs ? pourPortainer(valeurs, pile.present ? pile.variables : null) : { texte: '', n: 0, vides: 0 })
-  function telechargerEnv() {
-    const url = URL.createObjectURL(new Blob([portainer.texte], { type: 'text/plain;charset=utf-8' }))
-    const l = Object.assign(document.createElement('a'), { href: url, download: 'homelab.env' })
+  function telecharger(texte, nom) {
+    const url = URL.createObjectURL(new Blob([texte], { type: 'text/plain;charset=utf-8' }))
+    const l = Object.assign(document.createElement('a'), { href: url, download: nom })
     document.body.appendChild(l); l.click(); l.remove()
     setTimeout(() => URL.revokeObjectURL(url), 2000)
   }
+  const telechargerEnv = () => telecharger(portainer.texte, 'homelab.env')
+  // 0.20 : le homelab, chaque ${VAR} remplacé par sa valeur (règles de Docker Compose, commentaires intacts), dans la page seulement
+  const resolu = $derived(valeurs && texteStack ? resoudre(texteStack, valeurs) : null)
 
   // 0.19 : ce que voit le serveur (https, par quel signal, garde coupée ou non)
   let vu = $state(null)
@@ -177,11 +204,19 @@
       {#if pile.present}<code>homelab.yml</code> importé il y a {duree(pile.le)} : {pile.services.length} service(s), {pile.variables.length} variable(s).
       {:else}<code>homelab.yml</code> n'est pas encore importé : sans lui, la liste des variables attendues est vide.{/if}
     </p>
-    <p class="mt-1 text-sm text-muted-foreground">Le coffre fait foi : exporte le bloc YAML de la note <em>homelab.yml</em> en fichier (sans les ```), puis importe-le ici. Il ne doit contenir que des références <code>${'{'}…{'}'}</code> : une valeur en clair fait tout refuser.</p>
+    <p class="mt-1 text-sm text-muted-foreground">Le coffre fait foi : copie le bloc YAML de la note <em>homelab yml</em> et colle-le ci-dessous (les lignes ``` sont retirées toutes seules), ou importe-le en fichier. Il ne doit contenir que des références <code>${'{'}…{'}'}</code> : une valeur en clair fait tout refuser.</p>
     <input bind:this={champStack} class="sr-only" type="file" accept=".yml,.yaml,text/yaml,text/plain" aria-label="Choisir homelab.yml" onchange={importerStack} />
     <div class="mt-3 flex flex-wrap items-center gap-3">
       <Button onclick={() => champStack?.click()}>Importer homelab.yml</Button>
       {#if pile.present}<a class="inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="/api/stack/fichier" download="homelab.yml">Télécharger homelab.yml</a>{/if}
+    </div>
+    <!-- 0.20 : coller le homelab ; il remplace homelab.yml, vérifié par le serveur comme un fichier importé -->
+    <label class="mt-4 grid gap-1 text-sm" for="coller-homelab">Ou coller le homelab
+      <textarea id="coller-homelab" bind:value={colleStack} rows="6" spellcheck="false" autocomplete="off" placeholder="services:&#10;  …" class="w-full min-w-0 rounded-xl border bg-background p-3 font-mono text-sm"></textarea>
+    </label>
+    <div class="mt-2 flex flex-wrap gap-3">
+      <Button onclick={enregistrerStack} disabled={envoiStack || !colleStack.trim()}>{envoiStack ? 'Vérification…' : 'Enregistrer le homelab'}</Button>
+      {#if colleStack}<Button variant="outline" onclick={() => (colleStack = '')} disabled={envoiStack}>Effacer</Button>{/if}
     </div>
   </section>
 
@@ -270,16 +305,50 @@
         {#if manquantes.length}<p class="break-words text-[var(--app)]">À remplir : {manquantes.map((v) => v.nom).join(', ')}</p>{/if}
         {#if inconnues.length}<p class="break-words text-muted-foreground">Que la stack n'utilise plus (laissées de côté dans la copie) : {inconnues.join(', ')}</p>{/if}
         <div class="flex flex-wrap gap-3">
-          <Button onclick={() => copier(portainer.texte, 'Texte pour Portainer')}>Copier toutes les variables (avec valeurs)</Button>
-          <Button variant="outline" onclick={telechargerEnv}>Télécharger homelab.env</Button>
-          <Button variant="outline" aria-expanded={voirTexte} onclick={() => (voirTexte = !voirTexte)}>{voirTexte ? 'Masquer le texte' : 'Voir le texte'}</Button>
           <Button variant="outline" onclick={oublier}>Oublier les valeurs</Button>
         </div>
-        <p class="text-muted-foreground">{portainer.n} ligne(s) pour Portainer › <em>Advanced mode</em> (tout remplacer). Les facultatives absentes ne sont pas écrites : leur défaut est gardé.</p>
-        {#if voirTexte}
-          <p class="text-[var(--app)]">Attention : mots de passe et jetons en clair dans cette zone.</p>
-          <label class="sr-only" for="texte-recoller">Texte à recoller dans Portainer</label>
-          <textarea id="texte-recoller" readonly rows="8" spellcheck="false" value={portainer.texte} onfocus={(ev) => ev.currentTarget.select()} class="w-full min-w-0 rounded-xl border bg-background p-3 font-mono text-sm"></textarea>
+      </div>
+
+      <!-- 0.20 : les variables à coller dans Portainer -->
+      <div class="mt-3 grid gap-2 rounded-xl border p-3 text-sm" role="group" aria-label="Variables à coller dans Portainer">
+        <h3 class="font-semibold">Variables à coller dans Portainer</h3>
+        <p class="text-muted-foreground">{portainer.n} ligne(s) pour Portainer › Stacks › homelab › <em>Environment variables</em> › <em>Advanced mode</em> (tout remplacer). Les facultatives absentes ne sont pas écrites : leur défaut est gardé.</p>
+        <p class="text-[var(--app)]">Mots de passe et jetons en clair dans cette zone.</p>
+        <label class="sr-only" for="texte-recoller">Texte à recoller dans Portainer</label>
+        <textarea id="texte-recoller" readonly rows="8" spellcheck="false" value={portainer.texte} onfocus={(ev) => ev.currentTarget.select()} class="w-full min-w-0 rounded-xl border bg-background p-3 font-mono text-sm"></textarea>
+        <div class="flex flex-wrap gap-3">
+          <Button onclick={() => copier(portainer.texte, 'Texte pour Portainer')}>Copier les variables</Button>
+          <Button variant="outline" onclick={telechargerEnv}>Télécharger homelab.env</Button>
+        </div>
+      </div>
+
+      <!-- 0.20 : le homelab avec ses valeurs (replié, masqué, jamais envoyé au serveur) -->
+      <div class="mt-3 grid gap-2 rounded-xl border p-3 text-sm" role="group" aria-label="Homelab avec ses valeurs">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h3 class="font-semibold">Homelab avec ses valeurs</h3>
+          <Button variant="outline" aria-expanded={resoluDeplie} aria-controls="bloc-resolu" onclick={() => { resoluDeplie = !resoluDeplie; if (!resoluDeplie) voirResolu = false }}>{resoluDeplie ? 'Replier' : 'Déplier'}</Button>
+        </div>
+        {#if resoluDeplie}
+          <div id="bloc-resolu" class="grid gap-2">
+            {#if !pile.present || !texteStack}
+              <p class="text-muted-foreground">Enregistre d'abord le homelab plus haut (importer ou coller).</p>
+            {:else if resolu}
+              <p>{resolu.remplacees.length} variable(s) remplacée(s) par leur valeur ; les valeurs par défaut (<code>${'{'}VAR:-…{'}'}</code>) sont appliquées ; les commentaires ne sont pas touchés. Rien n'est envoyé à l'Anneau.</p>
+              {#if resolu.manquantes.length}<p class="break-words text-[var(--app)]" id="non-remplies">Non remplies (laissées en <code>${'{'}…{'}'}</code>) : {resolu.manquantes.join(', ')}</p>{/if}
+              <div class="flex flex-wrap gap-3">
+                <Button variant="outline" aria-pressed={voirResolu} onclick={() => (voirResolu = !voirResolu)}>{voirResolu ? 'Masquer' : 'Afficher'}</Button>
+                <Button onclick={() => copier(resolu.texte, 'Homelab avec ses valeurs')}>Copier le homelab</Button>
+                <Button variant="outline" onclick={() => telecharger(resolu.texte, 'homelab-avec-valeurs.yml')}>Télécharger</Button>
+              </div>
+              {#if voirResolu}
+                <p class="text-[var(--app)]">Mots de passe et jetons en clair dans cette zone.</p>
+                <label class="sr-only" for="texte-resolu">Homelab avec ses valeurs</label>
+                <textarea id="texte-resolu" readonly rows="14" spellcheck="false" value={resolu.texte} onfocus={(ev) => ev.currentTarget.select()} class="w-full min-w-0 rounded-xl border bg-background p-3 font-mono text-xs"></textarea>
+              {:else}
+                <p class="text-muted-foreground">Valeurs masquées : « Afficher » pour les voir, ou copie directement.</p>
+              {/if}
+            {/if}
+          </div>
         {/if}
       </div>
     {/if}

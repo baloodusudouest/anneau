@@ -45,3 +45,55 @@ export function pourPortainer(valeurs, variables) {
 // Le lien qui ouvre la note d'une variable dans Obsidian.
 export const lienNote = (coffre, nom) =>
   `obsidian://open?vault=${encodeURIComponent(coffre || 'Maison')}&file=${encodeURIComponent(`3 Infrastructure et stack/Stack/Variables/Variable — ${nom}`)}`
+
+// 0.20 : retire les lignes de bloc Markdown (```yaml, ```) d'un homelab collé depuis la note du coffre
+// (le serveur refuse le balisage Markdown). Rien d'autre n'est touché.
+export function sansBlocMarkdown(texte) {
+  return String(texte || '').split(/\r?\n/).filter((l) => !/^\s*```[\w-]*\s*$/.test(l)).join('\n')
+}
+
+// 0.20 : le homelab avec ses valeurs. Mêmes règles que Docker Compose, dans la page seulement :
+//   ${VAR}          → valeur ; absente → laissée telle quelle (« non remplie »)
+//   ${VAR:-défaut}  → valeur si présente et non vide, sinon le défaut
+//   ${VAR-défaut}   → valeur si présente (même vide), sinon le défaut
+//   $$              → laissé tel quel (échappement de Compose)
+// Les commentaires ne sont jamais touchés (ligne qui commence par #, ou partie après « # » hors guillemets,
+// précédée d'un espace) : aucun secret n'est recopié dans un commentaire.
+// Rend { texte, remplacees: [noms], manquantes: [noms] } (noms uniques, dans l'ordre d'apparition).
+const REF = /\$\$|\$\{([A-Za-z_][A-Za-z0-9_]*)(?:(:?-)([^}]*))?\}/g
+
+function coupeCommentaire(ligne) {
+  if (/^\s*#/.test(ligne)) return [ligne.indexOf("#"), ligne.length]
+  let simple = false, double = false
+  for (let i = 0; i < ligne.length; i++) {
+    const c = ligne[i]
+    if (c === "'" && !double) simple = !simple
+    else if (c === '"' && !simple) double = !double
+    else if (c === '#' && !simple && !double && (i === 0 || /\s/.test(ligne[i - 1]))) return [i, ligne.length]
+  }
+  return [ligne.length, ligne.length]
+}
+
+export function resoudre(texte, valeurs) {
+  const a = (n) => valeurs && Object.prototype.hasOwnProperty.call(valeurs, n)
+  const remplacees = new Set(), manquantes = new Set()
+  const lignes = String(texte || '').split('\n').map((ligne) => {
+    const [fin] = coupeCommentaire(ligne)
+    const code = ligne.slice(0, fin).replace(REF, (tout, nom, sorte, defaut) => {
+      if (!nom) return tout                                   // $$
+      if (sorte === ':-') {
+        if (a(nom) && valeurs[nom] !== '') { remplacees.add(nom); return valeurs[nom] }
+        return defaut
+      }
+      if (sorte === '-') {
+        if (a(nom)) { remplacees.add(nom); return valeurs[nom] }
+        return defaut
+      }
+      if (a(nom)) { remplacees.add(nom); return valeurs[nom] }
+      manquantes.add(nom)
+      return tout
+    })
+    return code + ligne.slice(fin)
+  })
+  return { texte: lignes.join('\n'), remplacees: [...remplacees], manquantes: [...manquantes] }
+}
