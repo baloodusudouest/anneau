@@ -55,6 +55,7 @@ Dans un thème : le fil, la barre des cinq thèmes (le thème ouvert souligné) 
 - Suivi par la sonde habituelle de la tuile (ronde pressée à 5 s) : « Réveillé : il répond. », ou au-delà de 3 min « Pas réveillé : vérifie le Wake-on-LAN… ». Après un réveil raté, un nouvel ordre attend 1 min.
 - Réglages › Connexions › Home Assistant › « Vérifier » : `GET {ANNEAU_HA_URL}/api/` (401 attendu = Home Assistant répond). **N'appelle jamais le webhook.**
 - Chaque ordre (refusé, lancé, fini, perdu) va au journal des écritures (`quoi: reveil`).
+- Côté Home Assistant : paquet `ha/packages/systeme/reveil_pc.yaml` (intégration `wake_on_lan`, webhook `local_only`, secrets `pc_calcul_mac` et `reveil_pc_webhook`), à recopier dans `/config/packages/systeme/`. Prérequis : Wake-on-LAN dans le BIOS et la carte réseau du PC, démarrage rapide de Windows désactivé ; essayer d'abord à la main (`wake_on_lan.send_magic_packet`).
 
 ## Sauvegarde des réglages (0.8)
 

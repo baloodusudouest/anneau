@@ -1,0 +1,85 @@
+# ============================================================
+# PACKAGE RÉVEIL DU PC — /config/packages/systeme/reveil_pc.yaml
+# ------------------------------------------------------------
+# v1.0 — 26/11/2026 — création (L'Anneau 0.19.0).
+#
+# BUT
+#   L'Anneau (conteneur « anneau » du NAS) a un bouton « Réveiller » sur
+#   la tuile « Pc de calcul » et dans la fiche de Millésime. L'Anneau ne
+#   détient AUCUN jeton de Home Assistant : il appelle seulement ce
+#   webhook (POST, sans corps). Home Assistant envoie alors le paquet
+#   Wake-on-LAN (« paquet magique ») au PC de calcul.
+#
+# FONCTIONNEMENT
+#   1. L'Anneau : POST http://<HA>:8123/api/webhook/<reveil_pc_webhook>
+#      (ANNEAU_HA_URL + ANNEAU_HA_WEBHOOK_REVEIL dans la stack ; la même
+#      valeur que le secret reveil_pc_webhook ci-dessous).
+#   2. Home Assistant envoie le paquet magique à l'adresse MAC du PC
+#      (secret pc_calcul_mac), en diffusion sur le réseau de la maison.
+#   3. L'Anneau suit lui-même le réveil (sonde de la tuile, 3 min).
+#   4. Si le paquet Millésime est installé (sensor.millesime_pc) et que le
+#      PC ne répond toujours pas 4 min après, une notification le dit.
+#
+# SÉCURITÉ
+#   - local_only : seul le réseau local (le NAS) peut appeler le webhook ;
+#     n'importe quel appareil de la maison qui connaîtrait l'identifiant
+#     pourrait allumer le PC : risque accepté (au pire, un PC s'allume).
+#   - L'identifiant du webhook est un secret : long et tiré au hasard, rangé
+#     dans Enpass, jamais écrit dans une note.
+#   - mode single : deux appels rapprochés ne font qu'un réveil.
+#
+# PRÉREQUIS (gestes de Julien, jamais faits avant le 26/11/2026)
+#   - BIOS du PC : Wake-on-LAN (« Power On By PCI-E / LAN ») activé.
+#   - Windows : Gestionnaire de périphériques › carte réseau › Gestion de
+#     l'alimentation : « Autoriser ce périphérique à sortir l'ordinateur du
+#     mode veille » + « N'autoriser qu'un paquet magique » ; Options
+#     d'alimentation : décocher « Activer le démarrage rapide ».
+#   - Intégration « Wake on LAN » : la ligne « wake_on_lan: » ci-dessous
+#     suffit (pas d'ajout par l'interface).
+#
+# SECRETS (secrets.yaml)
+#   pc_calcul_mac: "AA:BB:CC:DD:EE:FF"        # adresse MAC de la carte réseau filaire du PC
+#   reveil_pc_webhook: "<long, aléatoire>"     # = ANNEAU_HA_WEBHOOK_REVEIL dans Portainer
+#
+# ESSAI À LA MAIN (avant tout usage depuis l'Anneau)
+#   PC éteint (arrêt complet) › Outils de développement › Actions ›
+#   wake_on_lan.send_magic_packet, mac = l'adresse MAC du PC,
+#   broadcast_address = 192.168.1.255 › le PC doit démarrer.
+# ============================================================
+
+wake_on_lan:
+
+automation:
+  - id: reveil_pc_par_l_anneau
+    alias: "💻 Réveil du PC de calcul (demandé par l'Anneau)"
+    description: "Webhook appelé par l'Anneau (bouton « Réveiller ») : envoie le paquet Wake-on-LAN au PC de calcul."
+    mode: single
+    max_exceeded: silent
+    triggers:
+      - trigger: webhook
+        webhook_id: !secret reveil_pc_webhook
+        allowed_methods:
+          - POST
+        local_only: true
+    actions:
+      - action: wake_on_lan.send_magic_packet
+        data:
+          mac: !secret pc_calcul_mac
+          broadcast_address: 192.168.1.255
+          broadcast_port: 9
+      - delay: "00:04:00"
+      - if:
+          - condition: template
+            value_template: >
+              {{ has_value('sensor.millesime_pc')
+                 and states('sensor.millesime_pc') in ['indisponible', 'jamais_vu'] }}
+        then:
+          - action: notify.mobile_app_iphone_jbe
+            data:
+              title: "💻 PC de calcul"
+              message: >
+                Réveil demandé par l'Anneau il y a 4 min, mais le PC ne répond
+                toujours pas : vérifier le Wake-on-LAN (BIOS, carte réseau,
+                démarrage rapide de Windows).
+              data:
+                tag: reveil_pc
