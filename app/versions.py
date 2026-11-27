@@ -197,7 +197,7 @@ class EnService:
         self.versions = {k: v for k, v in brut.items() if isinstance(v, dict) and isinstance(v.get("version"), str)}
         self.journal = [j for j in _lire(data / FICHIER_JOURNAL, []) if isinstance(j, dict) and instant(j.get("le"))]
 
-    def noter(self, cle: str, nom: str, version: str | None, le: str | None = None) -> dict | None:
+    def noter(self, cle: str, nom: str, version: str | None, le: str | None = None, machine: str | None = None) -> dict | None:
         """La veille a lu `version` pour la tuile. Rend l'entrée du journal si la version a changé.
         None (rien de lisible ce tour-ci) ne change rien : la dernière connue reste."""
         if not version:
@@ -211,6 +211,8 @@ class EnService:
         if avant is None:                  # première lecture : rien à dire
             return None
         entree = {"tuile": nom, "cle": cle, "de": avant, "vers": version, "le": le}
+        if machine:                        # 0.21 : la machine de la tuile (QNAP), montrée dans « Mis à jour depuis… »
+            entree["machine"] = machine
         self.journal.append(entree)
         del self.journal[:-MAX_JOURNAL]
         _ecrire(self.data / FICHIER_JOURNAL, self.journal)
@@ -241,7 +243,7 @@ class EnService:
                 continue
             k = j.get("cle") or j.get("tuile")
             if k in par_tuile:
-                par_tuile[k].update(vers=j["vers"], le=j["le"], tuile=j["tuile"])
+                par_tuile[k].update(vers=j["vers"], le=j["le"], tuile=j["tuile"], **({"machine": j["machine"]} if j.get("machine") else {}))
             else:
                 par_tuile[k] = dict(j)
         sortie = [j for j in par_tuile.values() if j["de"] != j["vers"]]

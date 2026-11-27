@@ -56,7 +56,7 @@
   const familles = $derived(e?.familles || [])
   const pannes = $derived(e?.pannes || [])
   const aFaire = $derived(e?.a_faire || [])
-  const majs = $derived(e?.majs?.actif && (e.majs.nombre || e.majs.lignes.some((x) => x.ordre)) ? e.majs : null)   // 0.18
+  const majs = $derived(e?.majs?.actif && (e.majs.nombre || e.majs.lignes.some((x) => x.ordre) || e.majs.injoignables?.length) ? e.majs : null)   // 0.18 ; 0.21 : QNAP injoignable
   const nbFaire = $derived(aFaire.length + (majs ? 1 : 0))
   const aTraiter = $derived(e?.a_traiter || [])   // 0.8 : « Sauvegarde ratée » (rien vers Home Assistant)
   const surveiller = $derived(e?.surveiller || [])  // 0.12 : tuiles orange (jamais comptées en panne)

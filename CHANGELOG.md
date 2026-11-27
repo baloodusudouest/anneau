@@ -1,5 +1,17 @@
 # Journal des versions
 
+## 0.21.0 — 27 novembre 2026 (le QNAP comme le Synology)
+
+Demande de Julien du 27/11/2026 : suivre les versions et mettre à jour la stack « media » du QNAP, comme la stack homelab. Cadrage par questions à choix, dossier et Conseil (`docs/ajout-0.21.0.md`) ; arbitrages de Julien après le Conseil : trois boutons gardés sur les fiches du QNAP, risque de l'accès de l'équipe « anneau » à la stack media accepté, mise à jour en paire gluetun/qBittorrent coupée (test de `depends-on` à la main d'abord), version codée en parallèle des essais de la 0.18.
+
+- **Deux machines** (`conteneurs.Machine`) : le Synology comme avant, et le QNAP par le même Portainer et la même clé, sur l'environnement écrit dans `ANNEAU_QNAP_PORTAINER_ENV` (jamais deviné), projet Compose `media`, avec son propre Watchtower (`ANNEAU_QNAP_WATCHTOWER_URL`, `ANNEAU_QNAP_WATCHTOWER_JETON`, jeton propre au QNAP). Sans ces variables, rien ne change.
+- **« À faire quand tu veux »** : une seule liste ; avec deux machines, chaque ligne porte une pastille Synology ou QNAP. Les lignes du QNAP ont l'identifiant `qnap:<conteneur>` (celles du Synology gardent le nom seul : `majs.json` d'avant reste lisible). QNAP injoignable : une ligne « QNAP injoignable : … », ses anciennes lignes restent, le Synology n'est pas bloqué.
+- **Fiches des tuiles du QNAP** (`machine: Qnap`, réglable par `ANNEAU_QNAP_MACHINE`) marquées `conteneur:` : Allumer, Éteindre par l'environnement du QNAP, Mettre à jour par le Watchtower du QNAP ; étiquette `com.docker.compose.project=media` exigée. QNAP pas réglé : la fiche dit pourquoi, pas de bouton.
+- **Nouveautés de la nuit** : la version d'une appli tierce sans `/health` est lue dans l'étiquette `org.opencontainers.image.version` de son image (Portainer) ; un changement entre au journal des versions avec sa machine (« · Qnap » dans « Mis à jour depuis votre dernière visite »).
+- **Connexions** : fiches « Portainer (QNAP) » (Vérifier : liste des conteneurs de la stack media) et « Watchtower (QNAP) » (Vérifier : sans effet).
+- `portainer_agent` rejoint la liste des conteneurs que l'Anneau ne touche jamais.
+- Tests : 223 du serveur (dont 14 nouveaux : `tests/test_021.py`, deux faux Portainer et deux faux Watchtower). **Jamais essayé sur la vraie installation** : l'environnement de l'agent du QNAP relayé par Portainer pour l'utilisateur standard « anneau » (droits, réglages de sécurité à refaire pour cet environnement), l'API du Watchtower du QNAP depuis le conteneur de l'Anneau (port 8099 du réseau local), l'étiquette de version des images linuxserver/hotio.
+
 ## 0.20.0 — 26 novembre 2026 (coller le homelab, variables à coller, homelab avec ses valeurs)
 
 Demande de Julien du 26/11/2026 : coller le homelab, avec en dessous les variables à coller, puis le homelab où les variables sont remplacées par leurs valeurs. Cadrage par questions à choix, dossier court (`docs/ajout-0.20.0.md`), sans Conseil (choix de Julien).

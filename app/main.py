@@ -125,6 +125,7 @@ async def un_tour(veille: Veille) -> None:
         except Exception:                          # noqa: BLE001 — Portainer en panne n'arrête pas la veille
             log.exception("Lecture des conteneurs interrompue")
         veille.eteints = c.eteints()
+        veille.versions_conteneurs = c.versions()   # 0.21 : version des applis tierces (étiquette de leur image)
     await veille.tour()
     if c is not None and c.actif:
         await c.suivre(veille.fichier, veille.repond)
@@ -243,10 +244,21 @@ async def cycle(app: FastAPI):
                                      transport=ETAT.get("transport_portainer")) if cfg.portainer else None
     watchtower = conteneurs.Watchtower(cfg.watchtower_url, cfg.watchtower_jeton,
                                        transport=ETAT.get("transport_watchtower")) if cfg.watchtower else None
+    qnap = None                                      # 0.21 : le QNAP, par le même Portainer (environnement écrit)
+    if cfg.qnap:
+        qnap = conteneurs.Machine(
+            "qnap", "QNAP",
+            conteneurs.Portainer(cfg.portainer_url, cfg.portainer_cle, cfg.qnap_portainer_env,
+                                 transport=ETAT.get("transport_portainer_qnap") or ETAT.get("transport_portainer")),
+            conteneurs.PROJET_QNAP,
+            conteneurs.Watchtower(cfg.qnap_watchtower_url, cfg.qnap_watchtower_jeton,
+                                  transport=ETAT.get("transport_watchtower_qnap")) if cfg.qnap_watchtower else None,
+            cfg.qnap_watchtower_manque(), cfg.qnap_machine)
     gestion = ETAT.get("conteneurs") or conteneurs.Conteneurs(cfg.data, portainer, watchtower=watchtower,
-                                                              watchtower_manque=cfg.watchtower_manque())
+                                                              watchtower_manque=cfg.watchtower_manque(), qnap=qnap,
+                                                              qnap_tuiles=cfg.qnap_machine, qnap_manque=cfg.qnap_manque())
     mises = ETAT.get("majs") or majs.MisesAJour(cfg.data, portainer, watchtower=watchtower,
-                                                watchtower_manque=cfg.watchtower_manque(),
+                                                watchtower_manque=cfg.watchtower_manque(), qnap=qnap,
                                                 registres=registres.Registres(ETAT.get("transport_registres"),
                                                                               identifiants={"ghcr.io": (cfg.ghcr_utilisateur, cfg.ghcr_jeton)}),
                                                 noter=gestion.noter)
@@ -342,6 +354,45 @@ CONNEXIONS.ajouter(
     regle=lambda: bool(_cfg_ou_vide() and _cfg_ou_vide().watchtower), reglage="ANNEAU_WATCHTOWER_URL",
     essai=_essai_watchtower,
     derniere_ecriture=lambda: ETAT["conteneurs"].derniere_ecriture(conteneurs.MAJ) if ETAT.get("conteneurs") else None)
+async def _essai_portainer_qnap():
+    c = ETAT.get("conteneurs")
+    if c is None or c.qnap is None:
+        return False, "Pas réglé."
+    try:
+        return await c.essai_qnap()
+    except conteneurs.ErreurPortainer as exc:
+        return False, exc.phrase
+
+
+CONNEXIONS.ajouter(
+    "portainer-qnap", "Portainer (QNAP)",
+    lit="La stack media du QNAP (environnement ANNEAU_QNAP_PORTAINER_ENV, par le même Portainer) : état et image des "
+        "conteneurs marqués, et liste des applis à mettre à jour.",
+    ecrit="Sur ordre depuis la fiche d'une tuile du QNAP marquée : arrêter ou démarrer ce seul conteneur. Chaque ordre est "
+          "noté au journal des écritures.",
+    regle=lambda: bool(_cfg_ou_vide() and _cfg_ou_vide().qnap), reglage="ANNEAU_QNAP_PORTAINER_ENV",
+    essai=_essai_portainer_qnap)
+
+
+async def _essai_watchtower_qnap():
+    c = ETAT.get("conteneurs")
+    if c is None or c.qnap is None or c.qnap.watchtower is None:
+        return False, "Pas réglé."
+    try:
+        return await c.qnap.watchtower.essai()
+    except conteneurs.ErreurWatchtower as exc:
+        return False, exc.phrase + "."
+
+
+CONNEXIONS.ajouter(
+    "watchtower-qnap", "Watchtower (QNAP)",
+    lit="Rien ; « Vérifier » regarde seulement s'il répond (sans rien mettre à jour).",
+    ecrit="Sur ordre « Mettre à jour » d'un conteneur du QNAP (fiche ou « À faire quand tu veux ») : POST /v1/update?image=… "
+          "au Watchtower du QNAP. Chaque ordre est noté au journal des écritures.",
+    regle=lambda: bool(_cfg_ou_vide() and _cfg_ou_vide().qnap_watchtower), reglage="ANNEAU_QNAP_WATCHTOWER_URL",
+    essai=_essai_watchtower_qnap)
+
+
 async def _essai_ha():
     """0.19 : Home Assistant répond-il ? JAMAIS le webhook depuis « Vérifier »."""
     r = ETAT.get("reveil_pc")

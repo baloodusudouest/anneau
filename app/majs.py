@@ -15,6 +15,11 @@ Décisions de Julien du 22/11/2026 (docs/ajout-0.18.0.md) :
   jamais un nom libre ; le conteneur est relu chez Portainer (étiquette de la stack, en marche) avant l'ordre ;
 - on ne se fie pas à la réponse de Watchtower : l'état réel est relu (nouvelle image, conteneur en marche) ;
   l'ordre est gardé sur le disque (majs.json) : il survit à un redémarrage, y compris celui de l'Anneau lui-même.
+
+0.21 (27/11/2026, docs/ajout-0.21.0.md) : le QNAP (stack « media ») dans la même liste. Chaque ligne dit sa machine
+(Synology ou QNAP) ; l'identifiant d'une ligne du QNAP est « qnap:<conteneur> » (celles du Synology gardent le nom seul :
+un majs.json d'avant reste lisible). Une machine injoignable n'efface pas ses anciennes lignes et ne bloque pas
+l'autre : elle est dite à part (« QNAP injoignable »). Le QNAP a son propre Watchtower.
 """
 from __future__ import annotations
 
@@ -29,7 +34,8 @@ from pathlib import Path
 from typing import Callable
 
 from .conteneurs import (DELAI_MAJ, ETIQUETTE_PROJET, ETIQUETTE_WATCHTOWER, NOM_VALIDE, PROJET, ErreurPortainer,
-                         ErreurWatchtower, Portainer, Refus, Watchtower, image_pour_watchtower, interdit, maintenant)
+                         ErreurWatchtower, Machine, Portainer, Refus, Watchtower, image_pour_watchtower, interdit,
+                         maintenant)
 from .registres import ErreurRegistre, Registres, cle_version, est_figee, etiquette
 
 log = logging.getLogger("anneau.majs")
@@ -59,9 +65,12 @@ def protection(nom: str, ref: str) -> str:
 class MisesAJour:
     def __init__(self, data: Path, portainer: Portainer | None, watchtower: Watchtower | None = None,
                  watchtower_manque: str = "", registres: Registres | None = None,
-                 horloge: Callable[[], float] = time.time, noter: Callable[..., None] | None = None):
+                 horloge: Callable[[], float] = time.time, noter: Callable[..., None] | None = None,
+                 qnap: Machine | None = None):
         self.data, self.portainer, self.watchtower = data, portainer, watchtower
         self.watchtower_manque = watchtower_manque or "Watchtower n'est pas relié"
+        self.synology = Machine("synology", "Synology", portainer, PROJET, watchtower, self.watchtower_manque)
+        self.qnap = qnap if qnap is not None and qnap.portainer is not None else None
         self.registres = registres or Registres()
         self._horloge = horloge
         self._noter = noter
@@ -75,11 +84,26 @@ class MisesAJour:
         self.lu_le: str = m.get("lu_le", "")
         self.lu_t: float = float(m.get("lu_t") or 0)
         self.erreur: str = m.get("erreur", "")
+        self.injoignables: dict[str, str] = m.get("injoignables", {}) if isinstance(m.get("injoignables", {}), dict) else {}
         self.en_verification = False
 
     @property
     def actif(self) -> bool:
         return self.portainer is not None
+
+    @property
+    def machines(self) -> list[Machine]:
+        return [self.synology] + ([self.qnap] if self.qnap else [])
+
+    def _machine(self, ligne_ou_ordre: dict) -> Machine | None:
+        """La machine d'une ligne ou d'un ordre ; une ligne d'avant la 0.21 (sans machine) est au Synology."""
+        if (ligne_ou_ordre or {}).get("machine", "synology") == "qnap":
+            return self.qnap
+        return self.synology
+
+    @staticmethod
+    def _ident(m: Machine, nom: str) -> str:
+        return nom if m.cle == "synology" else f"{m.cle}:{nom}"
 
     # ------------------------------------------------------------ disque
     def _lire(self) -> dict:
@@ -99,7 +123,8 @@ class MisesAJour:
             self.data.mkdir(parents=True, exist_ok=True)
             neuf = self.data / (FICHIER + ".nouveau")
             neuf.write_text(json.dumps({"lignes": self.lignes, "ordres": self.ordres, "non_verifiees": self.non_verifiees,
-                                        "lu_le": self.lu_le, "lu_t": self.lu_t, "erreur": self.erreur},
+                                        "lu_le": self.lu_le, "lu_t": self.lu_t, "erreur": self.erreur,
+                                        "injoignables": self.injoignables},
                                        ensure_ascii=False, indent=1), encoding="utf-8")
             os.replace(neuf, self.data / FICHIER)
         except OSError as exc:
@@ -127,63 +152,82 @@ class MisesAJour:
                 self.registres.oublier()
 
     async def _verifier(self, fichier, tuiles_versions: list[dict]) -> None:
-        try:
-            liste = await self.portainer.lister(PROJET)
-        except ErreurPortainer as exc:
-            self.erreur = exc.phrase
-            self.lu_t, self.lu_le = self._horloge(), maintenant()
-            self._garder()
-            return
         par_cle = {t["cle"]: t for t in tuiles_versions}
         sem = asyncio.Semaphore(EN_PARALLELE)
-
-        async def un(c: dict) -> tuple[dict | None, dict | None]:
-            async with sem:
-                return await self._examiner(c, fichier, par_cle)
-
-        resultats = await asyncio.gather(*(un(c) for c in liste))
         lignes, non = {}, []
-        for ligne, rate in resultats:
-            if ligne:
-                lignes[ligne["id"]] = ligne
-            if rate:
-                non.append(rate)
+        lues: set[str] = set()                             # machines relues ce tour-ci
+        for m in self.machines:
+            try:
+                liste = await m.portainer.lister(m.projet)
+            except ErreurPortainer as exc:
+                if m is self.synology:
+                    self.erreur = exc.phrase
+                else:
+                    self.injoignables[m.cle] = f"{m.nom} injoignable : {exc.phrase}"
+                continue
+            lues.add(m.cle)
+            if m is self.synology:
+                self.erreur = ""
+            else:
+                self.injoignables.pop(m.cle, None)
+
+            async def un(c: dict, m: Machine = m) -> tuple[dict | None, dict | None]:
+                async with sem:
+                    return await self._examiner(c, fichier, par_cle, m)
+
+            for ligne, rate in await asyncio.gather(*(un(c) for c in liste)):
+                if ligne:
+                    lignes[ligne["id"]] = ligne
+                if rate:
+                    non.append(rate)
+        for ident, ligne in self.lignes.items():           # machine injoignable : ses anciennes lignes restent
+            if (ligne.get("machine") or "synology") not in lues and ident not in lignes:
+                lignes[ident] = ligne
         for ident, o in self.ordres.items():             # une ligne dont la mise à jour tourne reste affichée
             if o.get("etat") == "en_cours" and ident in self.lignes and ident not in lignes:
                 lignes[ident] = self.lignes[ident]
+        if self.qnap is None:
+            self.injoignables.pop("qnap", None)
+            lignes = {k: v for k, v in lignes.items() if (v.get("machine") or "synology") != "qnap"}
         self.lignes, self.non_verifiees = lignes, sorted(non, key=lambda x: x["nom"])
-        self.erreur = ""
         self.lu_t, self.lu_le = self._horloge(), maintenant()
         self._garder()
 
-    def _tuile(self, nom: str, fichier) -> object | None:
+    def _tuile(self, nom: str, fichier, m: Machine | None = None) -> object | None:
+        m = m or self.synology
+        qnap_tuiles = self.qnap.tuiles if self.qnap else ""
         for s in fichier.services:
+            du_qnap = bool(qnap_tuiles) and (s.machine or "").strip().lower() == qnap_tuiles.strip().lower()
+            if (m.cle == "qnap") != du_qnap:
+                continue                                   # 0.21 : une tuile n'est cherchée que sur sa machine
             if nom in {s.conteneur, s.depot, s.cle}:
                 return s
         return None
 
-    async def _examiner(self, c: dict, fichier, par_cle: dict) -> tuple[dict | None, dict | None]:
+    async def _examiner(self, c: dict, fichier, par_cle: dict, m: Machine | None = None) -> tuple[dict | None, dict | None]:
+        m = m or self.synology
         noms = [str(n).lstrip("/") for n in (c.get("Names") or []) if str(n).strip()]
         nom = noms[0] if noms else ""
         if not NOM_VALIDE.match(nom):
             return None, None
         labels = c.get("Labels") or {}
-        if labels.get(ETIQUETTE_PROJET) != PROJET:
+        if labels.get(ETIQUETTE_PROJET) != m.projet:
             return None, None
         ref = str(c.get("Image") or "")
         if not ref or ref.startswith("sha256:"):             # étiquette déplacée : le nom vient de l'inspection
             try:
-                d = await self.portainer.inspecter(nom)
+                d = await m.portainer.inspecter(nom)
             except ErreurPortainer:
                 d = None
             ref = str(((d or {}).get("Config") or {}).get("Image") or "")
         if not ref or "@" in ref:
             return None, None                                  # épinglée par empreinte : rien à comparer
-        img = await self.portainer.image(str(c.get("ImageID") or "")) or {}
+        img = await m.portainer.image(str(c.get("ImageID") or "")) or {}
         version_locale = str(((img.get("Config") or {}).get("Labels") or {}).get(ETIQUETTE_VERSION) or "")
-        tuile = self._tuile(nom, fichier)
+        tuile = self._tuile(nom, fichier, m)
         tv = par_cle.get(getattr(tuile, "cle", ""), {}) if tuile else {}
-        base = {"id": nom, "conteneur": nom, "nom": getattr(tuile, "nom", "") or nom, "image": ref,
+        base = {"id": self._ident(m, nom), "conteneur": nom, "machine": m.cle, "machine_nom": m.nom,
+                "nom": getattr(tuile, "nom", "") or nom, "image": ref,
                 "running": str(c.get("State") or "") == "running",
                 "watchtower_non": str(labels.get(ETIQUETTE_WATCHTOWER) or "").strip().lower() == "false",
                 "protege": protection(nom, ref)}
@@ -194,7 +238,7 @@ class MisesAJour:
             try:
                 publiee = await self.registres.derniere_version(regle["depot"])
             except ErreurRegistre as exc:
-                return None, {"nom": base["nom"], "raison": str(exc)}
+                return None, {"nom": base["nom"], "machine": m.nom, "raison": str(exc)}
             locale = etiquette(ref)
             a, b = cle_version(locale), cle_version(publiee)
             if not a or not b or b <= a:
@@ -206,10 +250,11 @@ class MisesAJour:
         try:
             distante = await self.registres.empreinte(ref)
         except ErreurRegistre as exc:
-            return None, {"nom": base["nom"], "raison": str(exc)}
+            return None, {"nom": base["nom"], "machine": m.nom, "raison": str(exc)}
         locales = {str(x).split("@")[-1] for x in (img.get("RepoDigests") or []) if "@" in str(x)}
         if not locales:
-            return None, {"nom": base["nom"], "raison": "empreinte de l'image locale inconnue (image construite sur place ?)"}
+            return None, {"nom": base["nom"], "machine": m.nom,
+                          "raison": "empreinte de l'image locale inconnue (image construite sur place ?)"}
         if distante in locales:
             return None, None
         version = tv.get("version") or version_locale
@@ -229,8 +274,11 @@ class MisesAJour:
         """Pourquoi la ligne n'a pas de bouton (vide : il est là)."""
         if ligne.get("sorte") == "figee":
             return ""                                          # la phrase dit quoi faire
-        if self.watchtower is None:
-            return self.watchtower_manque
+        m = self._machine(ligne)
+        if m is None:
+            return "le QNAP n'est plus relié (ANNEAU_QNAP_PORTAINER_ENV vide)"
+        if m.watchtower is None:
+            return m.watchtower_manque
         if lecture_seule:
             return "lecture seule : l'Anneau ne donne aucun ordre"
         if ligne.get("watchtower_non"):
@@ -250,14 +298,17 @@ class MisesAJour:
                 raise Refus(404, "Cette appli n'est pas dans la liste des mises à jour : la relire.")
             if lecture_seule:
                 raise Refus(403, "Lecture seule : l'Anneau ne donne aucun ordre.")
-            if self.watchtower is None:
-                raise Refus(409, f"« Mettre à jour » absent : {self.watchtower_manque}.")
+            m = self._machine(ligne)
+            if m is None:
+                raise Refus(409, "Le QNAP n'est plus relié (ANNEAU_QNAP_PORTAINER_ENV vide).")
+            if m.watchtower is None:
+                raise Refus(409, f"« Mettre à jour » absent : {m.watchtower_manque}.")
             if (self.ordres.get(ident) or {}).get("etat") == "en_cours":
                 raise Refus(409, f"La mise à jour de {nom} est déjà en cours.")
             if ligne.get("protege") and not protege_confirme:
                 raise Refus(409, f"Double confirmation demandée : {ligne['protege']}.")
             try:
-                d = await self.portainer.inspecter(ligne["conteneur"])
+                d = await m.portainer.inspecter(ligne["conteneur"])
             except ErreurPortainer as exc:
                 raise Refus(502, exc.phrase) from exc
             if d is None:
@@ -266,8 +317,8 @@ class MisesAJour:
             labels = config.get("Labels") or {}
             if str(d.get("Name") or "").lstrip("/") != ligne["conteneur"]:
                 raise Refus(403, "Portainer rend un autre conteneur que celui de la liste.")
-            if labels.get(ETIQUETTE_PROJET) != PROJET:
-                raise Refus(403, f"Refusé : le conteneur n'a pas l'étiquette {ETIQUETTE_PROJET}={PROJET}.")
+            if labels.get(ETIQUETTE_PROJET) != m.projet:
+                raise Refus(403, f"Refusé : le conteneur n'a pas l'étiquette {ETIQUETTE_PROJET}={m.projet}.")
             if not (d.get("State") or {}).get("Running"):
                 raise Refus(409, f"{nom} est arrêté : Watchtower ne met à jour que les conteneurs allumés.")
             if str(labels.get(ETIQUETTE_WATCHTOWER) or "").strip().lower() == "false":
@@ -284,10 +335,10 @@ class MisesAJour:
         ordre = {"id": ident, "nom": nom, "conteneur": ligne["conteneur"], "etat": "en_cours", "debut": maintenant(),
                  "debut_t": self._horloge(), "image_avant": str(d.get("Image") or ""), "id_avant": str(d.get("Id") or ""),
                  "image_param": image, "phrase": "mise à jour en cours…", "detail": "", "wt": "attente",
-                 "protege": bool(protege)}
+                 "protege": bool(protege), "machine": m.cle}
         self.ordres[ident] = ordre
         self._garder()
-        self.noter("lancé", nom, conteneur=ligne["conteneur"], protege=bool(protege))
+        self.noter("lancé", nom, conteneur=ligne["conteneur"], protege=bool(protege), machine=m.cle)
         t = asyncio.create_task(self._par_watchtower(ident, image))
         self._taches.add(t)
         t.add_done_callback(self._taches.discard)
@@ -297,7 +348,10 @@ class MisesAJour:
 
     async def _par_watchtower(self, ident: str, image: str) -> None:
         try:
-            r = await self.watchtower.mettre_a_jour(image)
+            m = self._machine(self.ordres.get(ident) or {})
+            if m is None or m.watchtower is None:
+                raise ErreurWatchtower("Watchtower de cette machine n'est plus relié")
+            r = await m.watchtower.mettre_a_jour(image)
         except ErreurWatchtower as exc:
             o = self.ordres.get(ident)
             if exc.conclut:
@@ -330,7 +384,7 @@ class MisesAJour:
             self.lignes.pop(ident, None)                       # à jour : la ligne quitte la liste
         self._garder()
         self.noter({"fini": "fini", "echec": "échec", "delai": "délai dépassé"}[etat] + " : " + phrase, o["nom"],
-                   conteneur=o.get("conteneur"))
+                   conteneur=o.get("conteneur"), machine=o.get("machine") or "synology")
 
     async def suivre(self) -> None:
         """Fin d'une mise à jour, jugée à l'état réel chez Portainer : nouvelle image et conteneur en marche."""
@@ -342,8 +396,12 @@ class MisesAJour:
             if self._horloge() - o.get("debut_t", 0) > DELAI_MAJ:
                 self._finir(ident, "delai", "pas de réponse, voir Watchtower et Portainer.")
                 continue
+            m = self._machine(o)
+            if m is None:
+                self._finir(ident, "echec", "le QNAP n'est plus relié : état inconnu, voir Portainer.")
+                continue
             try:
-                d = await self.portainer.inspecter(o["conteneur"])
+                d = await m.portainer.inspecter(o["conteneur"])
             except ErreurPortainer:
                 continue
             if d is None:
@@ -388,7 +446,9 @@ class MisesAJour:
             if o and o.get("etat") != "en_cours" and t - o.get("fin_t", t) > RESULTAT_VISIBLE:
                 ordre = None
             pourquoi = self._bouton(ligne, lecture_seule) if ligne.get("sorte") == "maj" and ident in self.lignes else ""
+            machine = ligne.get("machine") or (o or {}).get("machine") or "synology"
             sortie.append({"id": ident, "nom": ligne.get("nom"), "sorte": ligne.get("sorte"), "phrase": ligne.get("phrase", ""),
+                           "machine": "QNAP" if machine == "qnap" else "Synology",
                            "version": ligne.get("version", ""), "version_neuve": ligne.get("version_neuve", ""),
                            # 0.18.1 : la protection ne se dit que là où il y a un bouton à confirmer
                            "protege": ligne.get("protege", "") if ligne.get("sorte") == "maj" else "", "ordre": ordre,
@@ -398,4 +458,5 @@ class MisesAJour:
         a_faire = [x for x in sortie if x["id"] in self.lignes]
         return {"actif": True, "lignes": sortie, "nombre": len(a_faire), "lu_le": self.lu_le, "erreur": self.erreur,
                 "non_verifiees": self.non_verifiees, "en_verification": self.en_verification,
-                "en_cours": self.en_cours()}
+                "en_cours": self.en_cours(), "deux_machines": self.qnap is not None,
+                "injoignables": [v for k, v in sorted(self.injoignables.items()) if self.qnap is not None]}

@@ -32,6 +32,11 @@ Watchtower (fork nickfedor/watchtower 1.19.0, d'après sa documentation et son c
   serveur coupe une réponse au-delà de 10 min (la mise à jour continue) ;
 - /v1/containers et /v1/metrics (GET, jeton) n'existent que si WATCHTOWER_HTTP_API_CONTAINERS / _METRICS sont actifs ;
   une route absente rend 404 sans regarder le jeton.
+
+0.21 (27/11/2026, docs/ajout-0.21.0.md) : une deuxième machine, le QNAP. Une `Machine` = un environnement Portainer
+(même Portainer, même clé ; environnement écrit, jamais deviné), un projet Compose (`media`) et son propre Watchtower
+(API publiée sur le réseau local, jeton propre au QNAP). Une tuile dont le champ `machine:` est celui du QNAP (« Qnap »
+par défaut, ANNEAU_QNAP_MACHINE) est servie par le QNAP ; toutes les autres par le Synology, comme avant.
 """
 from __future__ import annotations
 
@@ -42,6 +47,7 @@ import logging
 import os
 import re
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Awaitable, Callable
@@ -51,11 +57,13 @@ import httpx
 log = logging.getLogger("anneau.conteneurs")
 
 # Conteneurs qu'on ne touche jamais, même marqués (motifs insensibles à la casse)
-INTERDITS = ("anneau", "immich*", "portainer", "watchtower", "coffre-git", "silverbullet*")
+INTERDITS = ("anneau", "immich*", "portainer", "portainer_agent", "watchtower", "coffre-git", "silverbullet*")
 # Nom de conteneur Docker : lettre ou chiffre, puis lettres, chiffres, « _ », « . », « - » (128 au plus)
 NOM_VALIDE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 ETIQUETTE_PROJET = "com.docker.compose.project"
 PROJET = "homelab"
+PROJET_QNAP = "media"        # 0.21 : la stack du QNAP
+ETIQUETTE_VERSION = "org.opencontainers.image.version"
 
 GESTES = {"allumer": "Allumer", "eteindre": "Éteindre", "mettre-a-jour": "Mettre à jour",
           "allumer-et-mettre-a-jour": "Allumer et mettre à jour"}
@@ -391,6 +399,28 @@ def resume(d: dict) -> dict:
             "redemarrage": str(((d.get("HostConfig") or {}).get("RestartPolicy") or {}).get("Name") or "")}
 
 
+# ================================================================ machines (0.21)
+
+@dataclass
+class Machine:
+    """Une machine gérée : son environnement Portainer, son projet Compose, son Watchtower."""
+    cle: str                                  # « synology » ou « qnap » (préfixe des lignes de « À faire »)
+    nom: str                                  # « Synology », « QNAP » (montré à l'écran)
+    portainer: "Portainer | None"
+    projet: str = PROJET
+    watchtower: "Watchtower | None" = None
+    watchtower_manque: str = ""
+    tuiles: str = ""                          # champ machine: des tuiles servies par cette machine (vide : toutes les autres)
+
+    def __repr__(self) -> str:                # jamais de secret
+        return f"Machine({self.cle!r}, projet={self.projet!r}, portainer={self.portainer!r}, watchtower={self.watchtower!r})"
+
+
+def sert(m: Machine, machine_tuile: str) -> bool:
+    """La tuile (champ machine:) est-elle servie par cette machine ?"""
+    return bool(m.tuiles) and (machine_tuile or "").strip().lower() == m.tuiles.strip().lower()
+
+
 # ================================================================ les conteneurs des tuiles
 
 class Refus(Exception):
@@ -402,15 +432,23 @@ class Refus(Exception):
 class Conteneurs:
     def __init__(self, data: Path, portainer: Portainer | None, horloge: Callable[[], float] = time.time,
                  watchtower: Watchtower | None = None, watchtower_manque: str = "",
-                 delai_demarrage: float = DELAI_DEMARRAGE):
+                 delai_demarrage: float = DELAI_DEMARRAGE, qnap: Machine | None = None,
+                 qnap_tuiles: str = "Qnap", qnap_manque: str = ""):
         self.data, self.portainer, self._horloge = data, portainer, horloge
         self.watchtower = watchtower                 # 0.17.1 : « Mettre à jour » ; None : pas de bouton
         self.watchtower_manque = watchtower_manque or ("Watchtower n'est pas relié (ANNEAU_WATCHTOWER_URL, "
                                                        "ANNEAU_WATCHTOWER_JETON)")
+        # 0.21 : le Synology (comme avant) et, s'il est réglé, le QNAP ; une tuile « machine: Qnap » sans QNAP réglé
+        # n'a pas de bouton (qnap_manque le dit)
+        self.synology = Machine("synology", "Synology", portainer, PROJET, watchtower, self.watchtower_manque)
+        self.qnap = qnap
+        self.qnap_tuiles = (qnap.tuiles if qnap else qnap_tuiles) or "Qnap"
+        self.qnap_manque = qnap_manque or "le QNAP n'est pas relié (ANNEAU_QNAP_PORTAINER_ENV vide)"
         self.delai_demarrage = delai_demarrage
         self._lectures = 0                           # numéro de la relecture : un état lu APRÈS la réponse de Watchtower
         self.etats: dict[str, dict] = {}        # clé de tuile → resume() + image_date + lu_le, ou {"erreur"}
         self._dates: dict[str, str | None] = {}  # identifiant d'image → date de création
+        self._versions_img: dict[str, str] = {}  # 0.21 : identifiant d'image → étiquette org.opencontainers.image.version
         self.erreur = ""                         # dernière erreur de lecture (Portainer injoignable…)
         self.lu_le = ""
         self.version: str | None = None          # version de Portainer (GET /api/status)
@@ -425,6 +463,18 @@ class Conteneurs:
     @property
     def actif(self) -> bool:
         return self.portainer is not None
+
+    def est_qnap(self, s) -> bool:
+        return bool(s) and (getattr(s, "machine", "") or "").strip().lower() == self.qnap_tuiles.strip().lower()
+
+    def machine(self, s) -> Machine | None:
+        """0.21 : la machine qui sert cette tuile ; None : tuile du QNAP alors que le QNAP n'est pas réglé."""
+        if self.est_qnap(s):
+            return self.qnap
+        return self.synology
+
+    def _machine_ordre(self, o: dict) -> Machine | None:
+        return self.qnap if o.get("machine") == "qnap" else self.synology
 
     # ------------------------------------------------------------ mémoire et journal
     def _lire_memoire(self) -> dict:
@@ -484,24 +534,42 @@ class Conteneurs:
             self.version = await self.portainer.statut() or ""
         erreurs = []
         for s in marquees:
+            m = self.machine(s)
+            if m is None:                                  # 0.21 : tuile du QNAP, QNAP pas réglé
+                self.etats.pop(s.cle, None)
+                continue
             try:
-                d = await self.portainer.inspecter(s.conteneur)
+                d = await m.portainer.inspecter(s.conteneur)
             except ErreurPortainer as exc:
-                erreurs.append(exc.phrase)
+                erreurs.append(exc.phrase if m is self.synology else f"{m.nom} : {exc.phrase}")
                 continue
             if d is None:
-                self.etats[s.cle] = {"absent": True, "lu_le": maintenant()}
+                self.etats[s.cle] = {"absent": True, "lu_le": maintenant(), "machine": m.cle}
                 continue
             r = resume(d)
-            if r["image"] and r["image"] not in self._dates:
-                img = await self.portainer.image(r["image"])
-                self._dates[r["image"]] = _date_docker((img or {}).get("Created"))
-            self.etats[s.cle] = {**r, "image_date": self._dates.get(r["image"]), "lu_le": maintenant(),
-                                 "lecture": self._lectures}
+            await self._lire_image(m, r["image"])
+            self.etats[s.cle] = {**r, "image_date": self._dates.get(r["image"]),
+                                 "version_image": self._versions_img.get(r["image"], ""), "machine": m.cle,
+                                 "lu_le": maintenant(), "lecture": self._lectures}
         for k in [k for k in self.etats if k not in {s.cle for s in marquees}]:
             del self.etats[k]
         self.erreur = erreurs[0] if erreurs else ""
         self.lu_le = maintenant()
+
+    async def _lire_image(self, m: Machine, ident: str) -> None:
+        """Date de création et étiquette de version d'une image (lues une fois par image)."""
+        if not ident or ident in self._dates:
+            return
+        img = await m.portainer.image(ident) or {}
+        self._dates[ident] = _date_docker(img.get("Created"))
+        v = str(((img.get("Config") or {}).get("Labels") or {}).get(ETIQUETTE_VERSION) or "").strip()
+        if v:
+            self._versions_img[ident] = v
+
+    def versions(self) -> dict[str, str]:
+        """0.21 : clé de tuile → étiquette de version de l'image en service (pour le journal des versions, quand la
+        tuile n'a ni /health ni version_url : les applis tierces du QNAP)."""
+        return {k: e["version_image"] for k, e in self.etats.items() if e.get("version_image")}
 
     def eteints(self) -> set[str]:
         """Tuiles dont le conteneur est arrêté (exited chez Portainer) : ni « en panne », ni sauvegardées la nuit."""
@@ -514,6 +582,9 @@ class Conteneurs:
             return "pas de conteneur à gérer"
         if interdit(s.conteneur):
             return "l'Anneau ne touche jamais à ce conteneur"
+        m = self.machine(s)
+        if m is None:
+            return self.qnap_manque
         if e is None:
             return "état pas encore lu chez Portainer"
         if e.get("absent"):
@@ -522,14 +593,15 @@ class Conteneurs:
             return "l'Anneau ne touche jamais à ce conteneur"
         if e.get("nom_reel") != s.conteneur:
             return f"Portainer rend un autre conteneur (« {e.get('nom_reel')} ») que celui de la tuile"
-        if e.get("projet") != PROJET:
-            return f"le conteneur n'a pas l'étiquette {ETIQUETTE_PROJET}={PROJET} (il n'est pas de la stack)"
+        if e.get("projet") != m.projet:
+            return f"le conteneur n'a pas l'étiquette {ETIQUETTE_PROJET}={m.projet} (il n'est pas de la stack)"
         return ""
 
-    def raison_maj(self, e: dict | None) -> str:
+    def raison_maj(self, e: dict | None, m: Machine | None = None) -> str:
         """0.17.1 : pourquoi « Mettre à jour » est absent pour ce conteneur (vide : le bouton est là)."""
-        if self.watchtower is None:
-            return f"« Mettre à jour » absent : {self.watchtower_manque}."
+        m = m or self.synology
+        if m.watchtower is None:
+            return f"« Mettre à jour » absent : {m.watchtower_manque}."
         if not e or e.get("absent"):
             return ""
         if str(e.get("watchtower") or "").strip().lower() == "false":
@@ -563,26 +635,28 @@ class Conteneurs:
                 raise Refus(403, "Lecture seule : l'Anneau ne donne aucun ordre à Portainer.")
             if self.en_cours(s.cle):
                 raise Refus(409, f"Un ordre est déjà en cours pour {s.nom}.")
-            if geste in MAJ and self.watchtower is None:
-                raise Refus(409, f"« Mettre à jour » absent : {self.watchtower_manque}.")
+            m = self.machine(s)
+            if m is None:
+                raise Refus(409, f"Refusé : {self.qnap_manque}.")
+            if geste in MAJ and m.watchtower is None:
+                raise Refus(409, f"« Mettre à jour » absent : {m.watchtower_manque}.")
             try:
-                d = await self.portainer.inspecter(s.conteneur)
+                d = await m.portainer.inspecter(s.conteneur)
             except ErreurPortainer as exc:
                 raise Refus(502, exc.phrase) from exc
             if d is None:
                 raise Refus(404, f"Portainer ne connaît pas de conteneur « {s.conteneur} ».")
             e = resume(d)
-            if e["image"] and e["image"] not in self._dates:
-                img = await self.portainer.image(e["image"])
-                self._dates[e["image"]] = _date_docker((img or {}).get("Created"))
+            await self._lire_image(m, e["image"])
             e["image_date"] = self._dates.get(e["image"])
-            self.etats[s.cle] = {**e, "lu_le": maintenant(), "lecture": self._lectures}
+            e["version_image"] = self._versions_img.get(e["image"], "")
+            self.etats[s.cle] = {**e, "machine": m.cle, "lu_le": maintenant(), "lecture": self._lectures}
             raison = self.barriere(s, e)
             if raison:
                 raise Refus(403, f"Refusé : {raison}.")
             image = ""
             if geste in MAJ:
-                raison = self.raison_maj(e)
+                raison = self.raison_maj(e, m)
                 if raison:
                     raise Refus(409, raison)
                 image, _ = image_pour_watchtower(e["image_nom"])
@@ -596,10 +670,10 @@ class Conteneurs:
         t = self._horloge()
         ordre = {"geste": geste, "tuile": s.nom, "conteneur": s.conteneur, "etat": "en_cours", "debut": maintenant(),
                  "debut_t": t, "id_avant": e["id"], "image_avant": e["image"], "date_avant": e.get("image_date"),
-                 "phrase": EN_COURS[geste], "detail": "", "demarre": False, "image_param": image}
+                 "phrase": EN_COURS[geste], "detail": "", "demarre": False, "image_param": image, "machine": m.cle}
         self.ordres[s.cle] = ordre
         self._garder()
-        self.noter(geste, s.nom, "lancé", conteneur=s.conteneur)
+        self.noter(geste, s.nom, "lancé", conteneur=s.conteneur, machine=m.cle)
         tache = asyncio.create_task(self._executer(s.cle, s.nom, s.conteneur, geste, image))
         self._taches.add(tache)
         tache.add_done_callback(self._taches.discard)
@@ -609,14 +683,15 @@ class Conteneurs:
 
     async def _executer(self, cle: str, nom: str, conteneur: str, geste: str, image: str) -> None:
         """L'appel lui-même. Sa réponse ne dit pas le résultat (sauf un refus net) : c'est le suivi qui conclut."""
+        m = self._machine_ordre(self.ordres.get(cle) or {}) or self.synology
         try:
             if geste == "eteindre":
-                statut = await self.portainer.ordre(conteneur, "stop")
+                statut = await m.portainer.ordre(conteneur, "stop")
             elif geste == "allumer":
-                statut = await self.portainer.ordre(conteneur, "start")
+                statut = await m.portainer.ordre(conteneur, "start")
             else:
                 if geste == "allumer-et-mettre-a-jour":
-                    await self.portainer.ordre(conteneur, "start")
+                    await m.portainer.ordre(conteneur, "start")
                     if not await self._attendre_marche(cle, conteneur):
                         self._finir(cle, "echec", "le conteneur n'a pas démarré : pas de mise à jour, voir Portainer.")
                         return
@@ -648,8 +723,9 @@ class Conteneurs:
     async def _attendre_marche(self, cle: str, conteneur: str) -> bool:
         """« Allumer et mettre à jour » : Watchtower ignore un conteneur arrêté, on attend donc qu'il tourne."""
         fin = time.monotonic() + self.delai_demarrage
+        m = self._machine_ordre(self.ordres.get(cle) or {}) or self.synology
         while True:
-            d = await self.portainer.inspecter(conteneur)
+            d = await m.portainer.inspecter(conteneur)
             if d and (d.get("State") or {}).get("Running"):
                 o = self.ordres.get(cle)
                 if o:
@@ -668,8 +744,11 @@ class Conteneurs:
         o["wt"] = "attente"
         self._garder()
         avant = "allumé, mais " if geste == "allumer-et-mettre-a-jour" else ""
+        m = self._machine_ordre(o) or self.synology
         try:
-            r = await self.watchtower.mettre_a_jour(image)
+            if m.watchtower is None:
+                raise ErreurWatchtower(m.watchtower_manque or "Watchtower n'est pas relié")
+            r = await m.watchtower.mettre_a_jour(image)
         except ErreurWatchtower as exc:
             o = self.ordres.get(cle)
             if exc.conclut:
@@ -693,7 +772,7 @@ class Conteneurs:
         o.update(etat=etat, phrase=phrase, fin=maintenant(), fin_t=self._horloge())
         self._garder()
         self.noter(o["geste"], o["tuile"], {"fini": "fini", "echec": "échec", "delai": "délai dépassé"}[etat] + " : " + phrase,
-                   conteneur=o.get("conteneur"))
+                   conteneur=o.get("conteneur"), machine=o.get("machine") or "synology")
 
     async def suivre(self, fichier, repond: Callable[[object], Awaitable[bool]]) -> None:
         """Après la relecture : un ordre en cours est-il fini ? (état réel chez Portainer, /health de la tuile)."""
@@ -776,6 +855,8 @@ class Conteneurs:
             return None
         e = self.etats.get(s.cle)
         raison = self.barriere(s, e)
+        m = self.machine(s)
+        raison_maj = self.raison_maj(e, m) if m else f"« Mettre à jour » absent : {self.qnap_manque}."
         o = self.ordres.get(s.cle)
         t = self._horloge()
         ordre = None
@@ -798,7 +879,8 @@ class Conteneurs:
                 age = None
         return {"gerable": not raison, "pourquoi": raison, "statut": statut, "phrase": phrase, "ordre": ordre,
                 "image_date": date, "image_age": age, "redemarrage": (e or {}).get("redemarrage", ""),
-                "maj": not raison and not self.raison_maj(e), "maj_pourquoi": self.raison_maj(e),
+                "maj": not raison and not raison_maj, "maj_pourquoi": raison_maj,
+                "machine": "QNAP" if self.est_qnap(s) else "Synology",
                 "lecture_seule": lecture_seule, "erreur": self.erreur}
 
     async def stats(self, s) -> dict:
@@ -807,8 +889,9 @@ class Conteneurs:
         raison = self.barriere(s, self.etats.get(s.cle))
         if raison:
             raise Refus(403, f"Refusé : {raison}.")
+        m = self.machine(s) or self.synology
         try:
-            return lire_stats(await self.portainer.stats(s.conteneur)) or {}
+            return lire_stats(await m.portainer.stats(s.conteneur)) or {}
         except ErreurPortainer as exc:
             raise Refus(502, exc.phrase) from exc
 
@@ -820,6 +903,13 @@ class Conteneurs:
         self.version = await self.portainer.statut() or self.version
         v = f"Portainer {self.version}, " if self.version else ""
         return True, f"{v}environnement {env}."
+
+    async def essai_qnap(self) -> tuple[bool, str]:
+        """0.21 : l'environnement du QNAP répond-il (liste des conteneurs de la stack media, rien d'écrit) ?"""
+        if self.qnap is None or self.qnap.portainer is None:
+            return False, "Pas réglé."
+        liste = await self.qnap.portainer.lister(self.qnap.projet)
+        return True, f"environnement {await self.qnap.portainer.environnement()}, {len(liste)} conteneurs dans la stack {self.qnap.projet}."
 
     def derniere_ecriture(self, gestes: tuple[str, ...] | None = None) -> str | None:
         for l in self.journal(200):

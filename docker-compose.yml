@@ -24,6 +24,10 @@ services:
       # 0.17.1 : « Mettre à jour » par l'API HTTP de Watchtower (vide : pas de bouton « Mettre à jour »)
       - ANNEAU_WATCHTOWER_URL=${ANNEAU_WATCHTOWER_URL:-}      # adresse vue depuis la stack (ex. http://watchtower:8080, port non publié)
       - ANNEAU_WATCHTOWER_JETON=${ANNEAU_WATCHTOWER_JETON:-}  # même valeur que WATCHTOWER_HTTP_API_TOKEN de Watchtower
+      # 0.21 : le QNAP (stack media, par le même Portainer ; environnement de l'agent écrit) ; vide : pas de QNAP
+      - ANNEAU_QNAP_PORTAINER_ENV=${ANNEAU_QNAP_PORTAINER_ENV:-}        # numéro de l'environnement du QNAP dans Portainer
+      - ANNEAU_QNAP_WATCHTOWER_URL=${ANNEAU_QNAP_WATCHTOWER_URL:-}      # API du Watchtower du QNAP (ex. http://<QNAP>:8099)
+      - ANNEAU_QNAP_WATCHTOWER_JETON=${ANNEAU_QNAP_WATCHTOWER_JETON:-}  # même valeur que WATCHTOWER_HTTP_API_TOKEN de la stack media
       # 0.18.2 : images privées de ghcr.io (Dîme) : jeton GitHub classic « read:packages » ; vide : elles restent « non vérifiées »
       - ANNEAU_GHCR_JETON=${GHCR_JETON:-}
       - ANNEAU_LECTURE_SEULE=${ANNEAU_LECTURE_SEULE:-}    # « oui » : aucun ordre à Portainer (« non » l'emporte sur MAISON_LECTURE_SEULE)

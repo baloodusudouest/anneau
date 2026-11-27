@@ -40,7 +40,7 @@
       <h2 id="titre-nouveautes" class="plume">Mis à jour depuis votre dernière visite</h2>
       <ul>
         {#each changements as c (c.cle + c.le)}
-          <li><b>{c.tuile}</b> {c.de} → {c.vers} <small>({quand(c.le)})</small></li>
+          <li><b>{c.tuile}</b>{#if c.machine} <small>· {c.machine}</small>{/if} {c.de} → {c.vers} <small>({quand(c.le)})</small></li>
         {/each}
       </ul>
       {#if erreur}<p class="text-sm" role="alert">{erreur}</p>{/if}

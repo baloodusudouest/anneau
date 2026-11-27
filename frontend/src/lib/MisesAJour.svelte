@@ -5,6 +5,8 @@
   // Une version figée dans la stack (Immich…) n'a pas de bouton : la phrase dit quelle variable changer.
   // Le serveur vérifie tout (session, origine, ligne connue, étiquette de la stack, conteneur allumé, lecture seule) :
   // on n'envoie que l'identifiant de la ligne, et « protege: true » après la seconde confirmation.
+  // 0.21 : le QNAP (stack media) dans la même liste ; avec deux machines, chaque ligne dit la sienne, et une machine
+  // injoignable est dite à part sans cacher l'autre.
   import { tick } from 'svelte'
   import { api } from '$lib/api.js'
   import { duree } from '$lib/temps.js'
@@ -53,7 +55,7 @@
         <li>
           <div class="ligne">
             <span>
-              <b>{x.nom}</b>{#if x.phrase} <span class="phrase">{x.phrase}</span>{/if}
+              <b>{x.nom}</b>{#if m.deux_machines && x.machine} <span class="machine">{x.machine}</span>{/if}{#if x.phrase} <span class="phrase">{x.phrase}</span>{/if}
               {#if x.protege}<small class="protege">{x.protege.charAt(0).toUpperCase() + x.protege.slice(1)}</small>{/if}
               {#if x.ordre}
                 <small class:echec={x.ordre.etat !== 'fini' && x.ordre.etat !== 'en_cours'} role="status">
@@ -81,6 +83,9 @@
           {/if}
         </li>
       {/each}
+      {#each m.injoignables || [] as phrase (phrase)}
+        <li><span class="echec" role="status">{phrase}</span></li>
+      {/each}
       {#if !aFaire.length}<li><span class="text-muted-foreground">Tout est à jour.</span></li>{/if}
     </ul>
     <p class="pied">
@@ -89,7 +94,7 @@
     </p>
     {#if m.non_verifiees?.length}
       <details class="pied"><summary>Images non vérifiées</summary>
-        <ul>{#each m.non_verifiees as n (n.nom)}<li>{n.nom} : {n.raison}</li>{/each}</ul>
+        <ul>{#each m.non_verifiees as n, i (i)}<li>{n.nom}{m.deux_machines && n.machine ? ` (${n.machine})` : ''} : {n.raison}</li>{/each}</ul>
       </details>
     {/if}
     {#if m.erreur || erreurVerif}<p class="pied echec" role="alert">{erreurVerif || m.erreur}</p>{/if}
@@ -109,6 +114,8 @@
   .ligne { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; }
   .ligne > span { min-width: 0; }
   .ligne b { font-weight: 600; }
+  .machine { display: inline-block; margin-left: 0.35rem; padding: 0 0.4rem; border: 1px solid var(--border); border-radius: 9999px;
+             font-size: 0.72rem; color: var(--muted-foreground); vertical-align: 1px; }
   .phrase { display: block; color: var(--muted-foreground); font-size: 0.88rem; font-variant-numeric: tabular-nums; }
   small { display: block; color: var(--muted-foreground); font-size: 0.82rem; }
   .protege { color: var(--braise); }

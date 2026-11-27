@@ -135,6 +135,7 @@ class Veille:
         self.vus = sante.Vus(data)              # 0.12 : les « Vu » des tuiles orange
         self._versionner = versionner           # 0.13 : lit la version_url d'une tuile tierce
         self.versions = versions.EnService(data)   # 0.13 : versions en service et journal des changements
+        self.versions_conteneurs: dict[str, str] = {}   # 0.21 : clé de tuile → étiquette de version de son image (Portainer)
         from . import __version__ as _moi           # 0.13 : la mise à jour de l'Anneau lui-même entre aussi au journal
         self.versions.noter("@anneau", "L'Anneau", _moi)
         self.eteints: set[str] = set()          # 0.17 : tuiles dont le conteneur est arrêté chez Portainer (exited) : « éteint »
@@ -277,7 +278,10 @@ class Veille:
         for s, v in zip(a_lire, await asyncio.gather(*(self._versionner(s.version_url) for s in a_lire), return_exceptions=True)):
             lues[s.cle] = None if isinstance(v, BaseException) else versions.nettoyer(v)
         for k, s in vivantes.items():
-            entree = self.versions.noter(k, s.nom, lues.get(k))
+            lue, machine = lues.get(k), None
+            if not lue and self.versions_conteneurs.get(k):   # 0.21 : appli tierce sans /health : version de son image
+                lue, machine = versions.nettoyer(self.versions_conteneurs[k]), (s.machine or None)
+            entree = self.versions.noter(k, s.nom, lue, machine=machine)
             if entree:
                 log.info("%s : %s → %s", s.nom, entree["de"], entree["vers"])
         self.versions.oublier_sauf({s.cle for s in self.fichier.services})

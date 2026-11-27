@@ -32,10 +32,15 @@ class Config:
     garde_https: bool = True         # 0.19 : l'écriture d'un secret (clé publique, export chiffré) exige https ; « non » = secours
     ha_url: str = ""                 # 0.19 : adresse de Home Assistant vue depuis la stack (réveil du PC) ; vide : pas de réveil
     ha_webhook_reveil: str = ""      # 0.19 : identifiant du webhook de réveil du PC dans HA ; jamais montré ni écrit
+    qnap_portainer_env: str = ""     # 0.21 : numéro de l'environnement du QNAP dans Portainer (agent) ; vide : pas de QNAP
+    qnap_watchtower_url: str = ""    # 0.21 : API de Watchtower du QNAP (http://<QNAP>:8099) ; vide : pas de « Mettre à jour » au QNAP
+    qnap_watchtower_jeton: str = ""  # 0.21 : jeton propre au QNAP (WATCHTOWER_HTTP_API_TOKEN de la stack media) ; jamais montré ni écrit
+    qnap_machine: str = "Qnap"       # 0.21 : champ machine: des tuiles servies par le QNAP
 
     def __repr__(self) -> str:       # 0.17 : jamais un secret dans une trace
         return (f"Config(data={self.data!s}, portainer_url={self.portainer_url!r}, portainer_env={self.portainer_env!r}, "
-                f"watchtower_url={self.watchtower_url!r}, ha_url={self.ha_url!r})")
+                f"watchtower_url={self.watchtower_url!r}, ha_url={self.ha_url!r}, qnap_portainer_env={self.qnap_portainer_env!r}, "
+                f"qnap_watchtower_url={self.qnap_watchtower_url!r})")
 
     @property
     def reveil(self) -> bool:
@@ -66,6 +71,30 @@ class Config:
         return ""
 
 
+    @property
+    def qnap(self) -> bool:
+        """0.21 : le QNAP est relié (même Portainer, environnement écrit)."""
+        return self.portainer and bool(self.qnap_portainer_env)
+
+    def qnap_manque(self) -> str:
+        if not self.portainer:
+            return "le QNAP n'est pas relié (Portainer n'est pas réglé)"
+        if not self.qnap_portainer_env:
+            return "le QNAP n'est pas relié (ANNEAU_QNAP_PORTAINER_ENV vide)"
+        return ""
+
+    @property
+    def qnap_watchtower(self) -> bool:
+        return bool(self.qnap_watchtower_url and self.qnap_watchtower_jeton)
+
+    def qnap_watchtower_manque(self) -> str:
+        if not self.qnap_watchtower_url:
+            return "le Watchtower du QNAP n'est pas relié (ANNEAU_QNAP_WATCHTOWER_URL vide)"
+        if not self.qnap_watchtower_jeton:
+            return "le Watchtower du QNAP n'est pas relié (ANNEAU_QNAP_WATCHTOWER_JETON vide)"
+        return ""
+
+
 def charger() -> Config:
     mot_de_passe = maison.mot_de_passe()      # 0.8 : MAISON_PASSWORD seul (ANNEAU_PASSWORD n'est plus lu)
     if len(mot_de_passe) < 12:
@@ -87,4 +116,8 @@ def charger() -> Config:
         garde_https=os.environ.get("ANNEAU_GARDE_HTTPS", "").strip().lower() not in ("non", "no", "false", "0", "off"),
         ha_url=os.environ.get("ANNEAU_HA_URL", "").strip().rstrip("/"),
         ha_webhook_reveil=os.environ.get("ANNEAU_HA_WEBHOOK_REVEIL", "").strip(),
+        qnap_portainer_env=os.environ.get("ANNEAU_QNAP_PORTAINER_ENV", "").strip(),
+        qnap_watchtower_url=os.environ.get("ANNEAU_QNAP_WATCHTOWER_URL", "").strip().rstrip("/"),
+        qnap_watchtower_jeton=os.environ.get("ANNEAU_QNAP_WATCHTOWER_JETON", "").strip(),
+        qnap_machine=os.environ.get("ANNEAU_QNAP_MACHINE", "").strip() or "Qnap",
     )

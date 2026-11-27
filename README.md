@@ -25,6 +25,8 @@ Depuis la 0.8 : **la sauvegarde des réglages** des applis maison (voir plus bas
 | `ANNEAU_PORTAINER_URL` | 0.17 : adresse de Portainer. Vide : pas de boutons Allumer / Éteindre / Mettre à jour. |
 | `ANNEAU_PORTAINER_CLE` | 0.17 : clé d'API d'un utilisateur Portainer standard « anneau » (en-tête `X-API-Key`). Jamais écrite dans un journal, une page ni la sauvegarde. |
 | `ANNEAU_PORTAINER_ENV` | 0.17 : numéro de l'environnement Docker dans Portainer. Vide : le premier environnement Docker local (`Type` 1) de `GET /api/endpoints`. |
+| `ANNEAU_QNAP_PORTAINER_ENV` | 0.21 : numéro de l'environnement du QNAP (agent) dans le même Portainer. Vide : pas de QNAP. Les tuiles `machine: Qnap` (ou `ANNEAU_QNAP_MACHINE`) marquées `conteneur:` sont servies par cet environnement (projet `media`). |
+| `ANNEAU_QNAP_WATCHTOWER_URL`, `ANNEAU_QNAP_WATCHTOWER_JETON` | 0.21 : API du Watchtower du QNAP (`http://<QNAP>:8099`) et son jeton propre (`WATCHTOWER_HTTP_API_TOKEN` de la stack media). Vide : pas de « Mettre à jour » pour le QNAP. Jamais écrit dans un journal, une page ni la sauvegarde. |
 | `ANNEAU_LECTURE_SEULE` / `MAISON_LECTURE_SEULE` | « oui » : aucun ordre à un autre service — Portainer, Watchtower, Home Assistant (boutons grisés, routes 403, bandeau dans Réglages). Ce que l'Anneau écrit dans son propre dossier reste permis. |
 | `ANNEAU_HA_URL` | 0.19 : adresse de Home Assistant vue depuis la stack (`http://<HA>:8123`). Vide : pas de bouton « Réveiller ». |
 | `ANNEAU_HA_WEBHOOK_REVEIL` | 0.19 : identifiant du webhook de réveil du PC dans Home Assistant (long, aléatoire). Jamais affiché, écrit au journal ni sauvegardé. |
