@@ -807,7 +807,7 @@ def test_018_reglages_connexion_portainer(page):
     portainer = zone.get_by_role("listitem").filter(has_text="Portainer").filter(has_not_text="Watchtower répond")
     portainer.first.get_by_role("button", name="Vérifier").click()
     portainer.first.get_by_text("environnement 3").wait_for()
-    watchtower = zone.get_by_role("listitem").filter(has_text="POST /v1/update")
+    watchtower = zone.get_by_role("listitem").filter(has_text="POST /v1/update").filter(has_not_text="QNAP")   # 0.21 : fiche du QNAP à part
     assert watchtower.count() == 1
     watchtower.get_by_role("button", name="Vérifier").click()
     watchtower.get_by_text("adresse et jeton présents", exact=False).wait_for()
