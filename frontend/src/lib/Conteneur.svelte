@@ -5,6 +5,8 @@
   //  - Allumé : « Éteindre » et « Mettre à jour » (confirmation dans une fenêtre) ; mémoire et processeur (lus à l'ouverture).
   //  - Éteint : « Allumer » (sans confirmation) et « Allumer et mettre à jour » (confirmation) ; âge de l'image.
   //  - Pendant un ordre : la phrase (« démarrage… », « mise à jour en cours… ») ; l'écran se relit plus souvent.
+  // 0.22 : un seul état éteint, la veille : « Mettre en veille » (appli puis compagnons) et « Démarrer » (compagnons puis
+  // appli) ; « Mettre à jour » reste sur une appli en veille (Watchtower la met à jour sans la rallumer).
   // Le serveur vérifie tout (session, origine, liste blanche, interdits, étiquette de la stack, lecture seule) : ici, on
   // n'envoie que la clé de la tuile et le geste, jamais un nom de conteneur.
   import { tick } from 'svelte'
@@ -26,7 +28,7 @@
   const mo = (n) => (n == null ? '' : n < 1073741824 ? `${Math.round(n / 1048576)} Mo` : `${(n / 1073741824).toFixed(1).replace('.', ',')} Go`)
   const age = (n) => (n == null ? '' : n === 0 ? "aujourd'hui" : n === 1 ? 'il y a 1 jour' : `il y a ${n} jours`)
   const TEXTES = {
-    eteindre: { titre: (n) => `Éteindre ${n} ?`, oui: 'Éteindre' },
+    eteindre: { titre: (n) => `Mettre ${n} en veille ?`, oui: 'Mettre en veille' },
     'mettre-a-jour': { titre: (n) => `Mettre à jour ${n} ?`, oui: 'Mettre à jour' },
     'allumer-et-mettre-a-jour': { titre: (n) => `Allumer et mettre à jour ${n} ?`, oui: 'Allumer et mettre à jour' },
   }
@@ -70,7 +72,7 @@
   {:else}
     <p class="text-sm" role="status">
       {#if enCours}<span class="tourne" aria-hidden="true"></span>{c.ordre.phrase}
-      {:else if eteint}Éteint{c.image_date ? ` · image du ${date(c.image_date)}, ${age(c.image_age)} (plus mise à jour la nuit tant qu'il est éteint)` : ''}.
+      {:else if eteint}{c.en_veille ? 'En veille' : 'Éteint'}{c.image_date ? ` · image du ${date(c.image_date)}, ${age(c.image_age)}` : ''}.
       {:else}Allumé{c.image_date ? ` · image du ${date(c.image_date)}` : ''}{stats ? ` · mémoire ${mo(stats.memoire)} · processeur ${String(stats.processeur).replace('.', ',')} %` : ''}.{/if}
     </p>
     {#if c.ordre && !enCours}
@@ -83,10 +85,10 @@
     {/if}
     <div class="boutons">
       {#if eteint}
-        <Button class="h-10 px-4" onclick={(ev) => demander('allumer', ev)} disabled={attente || enCours || c.lecture_seule}>Allumer</Button>
-        {#if c.maj}<Button class="h-10 px-4" variant="outline" onclick={(ev) => demander('allumer-et-mettre-a-jour', ev)} disabled={attente || enCours || c.lecture_seule}>Allumer et mettre à jour</Button>{/if}
+        <Button class="h-10 px-4" onclick={(ev) => demander('allumer', ev)} disabled={attente || enCours || c.lecture_seule}>Démarrer</Button>
+        {#if c.maj}<Button class="h-10 px-4" variant="outline" onclick={(ev) => demander('mettre-a-jour', ev)} disabled={attente || enCours || c.lecture_seule}>Mettre à jour</Button>{/if}
       {:else}
-        <Button class="h-10 px-4" variant="outline" onclick={(ev) => demander('eteindre', ev)} disabled={attente || enCours || c.lecture_seule || c.statut !== 'running'}>Éteindre</Button>
+        <Button class="h-10 px-4" variant="outline" onclick={(ev) => demander('eteindre', ev)} disabled={attente || enCours || c.lecture_seule || c.statut !== 'running'}>Mettre en veille</Button>
         {#if c.maj}<Button class="h-10 px-4" variant="outline" onclick={(ev) => demander('mettre-a-jour', ev)} disabled={attente || enCours || c.lecture_seule}>Mettre à jour</Button>{/if}
       {/if}
     </div>
@@ -95,7 +97,8 @@
     {#if c.redemarrage === 'always'}
       <p class="text-sm avert">Redémarrage « always » : éteint, il se rallumera au redémarrage du NAS.</p>
     {/if}
-    <p class="text-xs text-muted-foreground">Un redéploiement de la stack le rallume. Mettre à jour demande à Watchtower la dernière image (sans relire la stack).</p>
+    {#if c.compagnons?.length}<p class="text-xs text-muted-foreground">Compagnons : {c.compagnons.join(', ')} (arrêtés après l'appli, démarrés avant elle ; jamais s'ils servent une autre appli allumée).</p>{/if}
+    <p class="text-xs text-muted-foreground">En veille, un redéploiement de la stack le rallume : l'Anneau le dit dans « À traiter ». Mettre à jour demande à Watchtower la dernière image (sans relire la stack), même en veille.</p>
   {/if}
   {#if c.erreur}<p class="text-xs text-muted-foreground">Portainer : {c.erreur}.</p>{/if}
 </section>
@@ -106,11 +109,13 @@
       <h2 id="titre-confirmer" class="plume">{TEXTES[confirmer].titre(s.nom)}</h2>
       <div id="texte-confirmer" class="grid gap-2 text-sm">
         {#if confirmer === 'eteindre'}
-          <p>Ses données restent sur le disque. Éteint, il n'est plus mis à jour la nuit.</p>
+          <p>Ses données restent sur le disque. En veille, sa tuile reste grise, jamais rouge, et la sauvegarde de nuit le saute.</p>
+          {#if c.compagnons?.length}<p>Ses compagnons ({c.compagnons.join(', ')}) s'arrêtent après lui, sauf ceux qui servent une autre appli allumée.</p>{/if}
           {#if c.redemarrage === 'always'}<p class="avert">Il se rallumera au redémarrage du NAS (redémarrage « always »).</p>{/if}
-          <p class="text-muted-foreground">Un redéploiement de la stack le rallume.</p>
+          <p class="text-muted-foreground">Un redéploiement de la stack le rallume : l'Anneau le dira dans « À traiter ».</p>
         {:else}
           {#if confirmer === 'allumer-et-mettre-a-jour'}<p>Portainer l'allume d'abord (Watchtower ignore un conteneur éteint).</p>{/if}
+          {#if confirmer === 'mettre-a-jour' && eteint}<p>Il reste en veille : Watchtower le met à jour sans le rallumer.</p>{/if}
           <p>Watchtower télécharge la dernière image et recrée le conteneur : quelques minutes (plus s'il est déjà en train de tout mettre à jour). Ses données restent sur le disque.</p>
           <p class="text-muted-foreground">Tout autre conteneur allumé de la même image est mis à jour aussi. La stack n'est pas redéployée : une variable changée dans la stack n'est pas prise.</p>
         {/if}

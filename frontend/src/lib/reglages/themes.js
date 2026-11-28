@@ -4,7 +4,7 @@
 // thème pour l'accueil (`resumer`, fonction pure, à partir de ce que l'écran a déjà lu).
 
 export const THEMES = [
-  { id: 'services', nom: 'Services', icone: 'services', dit: 'Le fichier des tuiles, les versions, le bac à sable.' },
+  { id: 'services', nom: 'Services', icone: 'services', dit: 'Le fichier des tuiles, les applis en veille, les versions, le bac à sable.' },
   { id: 'stack', nom: 'Stack et variables', icone: 'stack', dit: 'homelab.yml, la clé de chiffrement, les exports chiffrés.' },
   { id: 'sauvegardes', nom: 'Sauvegardes', icone: 'sauvegardes', dit: 'La collecte de nuit, ce qui a changé, restaurer.' },
   { id: 'connexions', nom: 'Connexions', icone: 'connexions', dit: 'Portainer, Watchtower, GitHub, Home Assistant.' },

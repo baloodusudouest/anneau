@@ -132,7 +132,7 @@ def test_portes_et_jetons(client, env):
 def test_reglages_defauts_put_et_types(client):
     assert client.get("/api/reglages").status_code == 401
     connecter(client)
-    assert client.get("/api/reglages").json()["reglages"] == {"heure_sauvegarde": "03:30", "cle_publique": "", "coffre_obsidian": "Maison"}
+    assert client.get("/api/reglages").json()["reglages"] == {"heure_sauvegarde": "03:30", "cle_publique": "", "coffre_obsidian": "Maison", "veille": ""}
     r = client.put("/api/reglages", json={"reglages": {"heure_sauvegarde": "04:15"}})
     assert r.status_code == 200 and r.json()["reglages"]["heure_sauvegarde"] == "04:15"
     for faux in ({"heure_sauvegarde": "25:00"}, {"heure_sauvegarde": 4}, {"heure_sauvegarde": "4h"},
@@ -166,7 +166,7 @@ def test_sa_propre_sauvegarde_sans_la_cle(client, env):
     client.put("/api/cle-publique", json={"cle_publique": CLE_AGE}, headers=HTTPS)
     env.setenv("MAISON_JETON", JETON)
     r = client.get("/externe/sauvegarde", headers={"Authorization": f"Bearer {JETON}"}).json()
-    assert r["contrat"] == 1 and r["appli"] == "anneau" and r["reglages"] == {"heure_sauvegarde": "03:30", "coffre_obsidian": "Maison"}
+    assert r["contrat"] == 1 and r["appli"] == "anneau" and r["reglages"] == {"heure_sauvegarde": "03:30", "coffre_obsidian": "Maison", "veille": ""}
     assert CLE_AGE not in json.dumps(r) and "cle_publique" not in json.dumps(r)
 
 

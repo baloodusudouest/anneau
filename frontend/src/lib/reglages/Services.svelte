@@ -1,4 +1,5 @@
 <script>
+  // 0.22 : section « Applis en veille » (Veille.svelte), juste après le fichier des services.
   // 0.19 — Réglages › Services : le fichier des services (importer, relire, télécharger : tout ici), les versions des
   // tuiles, le bac à sable. Repris de l'ancienne page Réglages (0.6, 0.13, 0.15) ; le téléchargement de services.yaml
   // vient de l'ancienne page Variables.
@@ -6,6 +7,7 @@
   import { api } from '$lib/api.js'
   import { duree } from '$lib/temps.js'
   import { Button } from '$lib/components/ui/button/index.js'
+  import Veille from '$lib/reglages/Veille.svelte'
 
   let { ondeconnecte } = $props()
   let e = $state(null)
@@ -88,6 +90,8 @@
     {/if}
     {#if message}<p class="mt-3 text-sm" role="status" id="message">{message}</p>{/if}
   </section>
+
+  <Veille {ondeconnecte} />
 
   <section class="mt-3 rounded-2xl border bg-card p-5" aria-label="Versions" id="section-versions" tabindex="-1">
     <h2 class="text-lg font-semibold">Versions</h2>

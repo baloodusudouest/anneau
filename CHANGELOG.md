@@ -1,5 +1,18 @@
 # Journal des versions
 
+## 0.22.0 — 28 novembre 2026 (les applis en veille)
+
+Demande de Julien du 28/11/2026 : éteindre les applis qu'il n'utilise pas sans qu'elles sortent en rouge dans l'Anneau, avec un réglage à cocher et la possibilité de démarrer depuis l'Anneau. Mode Évolution : cadrage par questions à choix, dossier, Ultron, arbitrages de Julien (`docs/ajout-0.22.0.md`).
+
+- **Réglages › Services › « Applis en veille »** : une case par tuile marquée `conteneur:`, rangée par famille (Synology et QNAP). Cocher arrête l'appli puis ses compagnons ; décocher la démarre. Une case impossible est grisée avec sa raison (interdite, hors stack, compagnon inconnu, QNAP pas réglé, ordre en cours, lecture seule) ; le serveur refuse aussi.
+- **Un seul état éteint, la veille** : la liste est le réglage `veille` de l'Anneau (clés des tuiles), donc dans la sauvegarde de nuit et la restauration. « Éteindre » et « Allumer » d'une fiche deviennent « Mettre en veille » et « Démarrer » (mêmes routes). Une appli en veille est un arrêt attendu : grise, phrase « en veille », jamais rouge, même Portainer injoignable ; la collecte de nuit la saute.
+- **Clic sur une tuile grise en veille** (anneau, pastilles sur téléphone) : fenêtre « Démarrer … ? » ; l'appli sort de la veille et la tuile tourne jusqu'au vert. « Voir sa fiche » reste possible.
+- **Compagnons** : champ de tuile `compagnons: [base, cache]` (même format et mêmes interdits que `conteneur:`, même étiquette de stack exigée). Mise en veille : l'appli, puis ses compagnons ; démarrage : les compagnons (attente de « running »), puis l'appli. Un compagnon qui sert une autre tuile hors veille n'est jamais arrêté.
+- **Retour sans ordre** (choix de Julien : prévenir, jamais réarrêter seul) : une appli en veille qui tourne sans ordre de l'Anneau (redéploiement de la stack, démarrage dans Portainer) donne la tuile « À traiter » « Revenue de veille » avec « Remettre en veille » et « La laisser allumée ».
+- **Mise à jour d'une appli en veille** (choix de Julien) : « Mettre à jour » reste sur la fiche ; Watchtower la met à jour sans la rallumer (`WATCHTOWER_INCLUDE_STOPPED=true`, `WATCHTOWER_REVIVE_STOPPED=false` à poser dans les deux stacks). L'Anneau conclut à la nouvelle empreinte d'image, sans attendre « running » ; sans ces variables, la fiche le dit.
+- Routes : `GET /api/veille`, `POST /api/veille/{cle}` (`{"veille": vrai|faux}` : session, Origin, jamais en lecture seule), `POST /api/veille/{cle}/laisser` (aucun ordre).
+- Tests : 236 du serveur (dont 13 nouveaux : `tests/test_022.py` ; faux Watchtower avec `include_stopped`) et 59 d'écran (dont 2 nouveaux : `test_022`, PC et iPhone ; `test_017` suit les nouveaux libellés). **Jamais essayé sur la vraie installation** : `WATCHTOWER_INCLUDE_STOPPED` avec `?image=` sur un vrai conteneur arrêté (lu dans le code de nickfedor/watchtower seulement), l'ordre réel des compagnons d'une vraie appli, le retour après un vrai redéploiement de la stack.
+
 ## 0.21.0 — 27 novembre 2026 (le QNAP comme le Synology)
 
 Demande de Julien du 27/11/2026 : suivre les versions et mettre à jour la stack « media » du QNAP, comme la stack homelab. Cadrage par questions à choix, dossier et Conseil (`docs/ajout-0.21.0.md`) ; arbitrages de Julien après le Conseil : trois boutons gardés sur les fiches du QNAP, risque de l'accès de l'équipe « anneau » à la stack media accepté, mise à jour en paire gluetun/qBittorrent coupée (test de `depends-on` à la main d'abord), version codée en parallèle des essais de la 0.18.

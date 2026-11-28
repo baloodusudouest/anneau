@@ -712,7 +712,8 @@ def _deborde(page) -> bool:
 
 
 def test_017_conteneur_eteindre_allumer_mettre_a_jour(page):
-    """0.17 : boutons du conteneur (faux Portainer) : absents sans marquage ou hors stack ; Éteindre et Mettre à jour
+    """0.22 : « Éteindre » est devenu « Mettre en veille », « Allumer » « Démarrer ».
+    0.17 : boutons du conteneur (faux Portainer) : absents sans marquage ou hors stack ; Éteindre et Mettre à jour
     confirmés dans une fenêtre, Allumer sans ; tuile grise « éteint » ; suivi de la mise à jour lente ; nouvelle image
     puis « déjà à jour ». PC : Séries ; iPhone : Films (serveur partagé)."""
     nom = "Séries" if page.ecran == "pc" else "Films"
@@ -735,37 +736,37 @@ def test_017_conteneur_eteindre_allumer_mettre_a_jour(page):
         etat.click()
     zone = page.get_by_role("region", name="Conteneur de " + nom)
     zone.get_by_text(re.compile("mémoire 260 Mo · processeur 40 %")).wait_for()
-    assert "image du 10/11" in zone.inner_text() and "Un redéploiement de la stack le rallume" in zone.inner_text()
+    assert "image du 10/11" in zone.inner_text() and "redéploiement de la stack le rallume" in zone.inner_text()
     if nom == "Séries":
         assert "se rallumera au redémarrage du NAS" in zone.inner_text()
-    # Éteindre : fenêtre de confirmation ; « Annuler » ne fait rien
-    zone.get_by_role("button", name="Éteindre").click()
-    fenetre = page.get_by_role("dialog", name=f"Éteindre {nom} ?")
+    # 0.22 : « Mettre en veille » : fenêtre de confirmation ; « Annuler » ne fait rien
+    zone.get_by_role("button", name="Mettre en veille").click()
+    fenetre = page.get_by_role("dialog", name=f"Mettre {nom} en veille ?")
     assert "Ses données restent sur le disque" in fenetre.inner_text() and "redéploiement de la stack" in fenetre.inner_text()
     assert not _deborde(page)
     fenetre.get_by_role("button", name="Annuler").click()
     assert page.get_by_role("dialog").count() == 0
     time.sleep(1)
     assert "Allumé" in zone.inner_text()
-    zone.get_by_role("button", name="Éteindre").click()
-    page.get_by_role("dialog").get_by_role("button", name="Éteindre").click()
-    # éteint : la fiche propose Allumer (sans confirmation) et Allumer et mettre à jour, à la place de « Ouvrir »
-    zone.get_by_role("button", name="Allumer", exact=True).wait_for(timeout=15000)
-    assert zone.get_by_role("button", name="Allumer et mettre à jour").count() == 1
+    zone.get_by_role("button", name="Mettre en veille").click()
+    page.get_by_role("dialog").get_by_role("button", name="Mettre en veille").click()
+    # en veille : la fiche propose Démarrer (sans confirmation) et Mettre à jour, à la place de « Ouvrir »
+    zone.get_by_role("button", name="Démarrer", exact=True).wait_for(timeout=15000)
+    assert zone.get_by_role("button", name="Mettre à jour").count() == 1
     zone.get_by_text(re.compile(r"image du 10/11, il y a \d+ jours")).wait_for(timeout=15000)   # l'ordre fini : l'âge de l'image
-    etat.click()                                                     # fiche de la tuile (plus de cadre : elle est éteinte)
+    etat.click()                                                     # fiche de la tuile (plus de cadre : elle est en veille)
     fiche = page.get_by_role("region", name=nom, exact=True)
-    fiche.get_by_text("est éteint (conteneur arrêté)").wait_for(timeout=15000)
+    fiche.get_by_text("est en veille").wait_for(timeout=15000)
     assert fiche.get_by_role("button", name="Ouvrir " + nom).count() == 0
     pastille = page.get_by_label("Services de Collecte").get_by_role("button", name=re.compile("^" + nom))
-    assert "éteint" in pastille.inner_text()
+    assert "en veille" in pastille.inner_text()
     gris = pastille.locator("svg.trait").evaluate("e => getComputedStyle(e).stroke")
     assert gris == "rgb(138, 133, 128)", gris                       # gris
     assert not _deborde(page)
     if os.environ.get("CAPTURES"):
         page.screenshot(path=f"{os.environ['CAPTURES']}/anneau-eteint-{page.ecran}.png", full_page=True)
-    fiche.get_by_role("button", name="Allumer", exact=True).click()
-    assert page.get_by_role("dialog").count() == 0                 # pas de confirmation pour allumer
+    fiche.get_by_role("button", name="Démarrer", exact=True).click()
+    assert page.get_by_role("dialog").count() == 0                 # pas de confirmation pour démarrer depuis la fiche
     page.locator(f"iframe[title='{nom}']:visible").wait_for(timeout=15000)   # rallumé : de nouveau dans le cadre
     # Mettre à jour : confirmation, « mise à jour en cours… » (recréation lente), puis « image du 10/11 → 20/11 »
     etat.click()
@@ -819,6 +820,53 @@ def test_018_reglages_connexion_portainer(page):
         page.screenshot(path=f"{os.environ['CAPTURES']}/anneau-connexion-{page.ecran}.png", full_page=True)
     page.get_by_role("link", name="Revenir à l'anneau").click()
     page.locator("svg.anneau").wait_for()
+
+
+def test_022_applis_en_veille(page):
+    """0.22 : Réglages › Services › « Applis en veille » : une case par tuile marquée (Musique, hors stack, grisée avec sa
+    raison) ; cochée, la tuile passe en gris « en veille » ; un clic sur la tuile grise ouvre « Démarrer … ? » ; Démarrer
+    la sort de la veille. Même tuile que test_017 sur chaque écran (PC : Séries ; iPhone : Films), qui passe avant :
+    une phrase de résultat reste 30 min sur la pastille et changerait son nom pour les tests suivants."""
+    nom = "Séries" if page.ecran == "pc" else "Films"
+    page.goto(page.url.split("#")[0] + "#/reglages/services")
+    zone = page.get_by_role("region", name="Applis en veille")
+    zone.get_by_role("checkbox", name=re.compile("^" + nom)).wait_for()
+    musique = zone.get_by_role("checkbox", name=re.compile("^Musique"))
+    assert musique.is_disabled()
+    assert "com.docker.compose.project" in zone.locator("label", has_text="Musique").inner_text()
+    assert not _deborde(page)
+    case = zone.get_by_role("checkbox", name=re.compile("^" + nom))
+    assert not case.is_checked()
+    case.check()
+    zone.locator("label", has_text=nom).get_by_text("en veille").wait_for(timeout=15000)
+    assert case.is_checked()
+    if os.environ.get("CAPTURES"):
+        page.screenshot(path=f"{os.environ['CAPTURES']}/anneau-veille-reglages-{page.ecran}.png", full_page=True)
+    page.goto(page.url.split("#")[0] + "#/")
+    page.locator("svg.anneau").wait_for()
+    if famille(page, "Collecte").get_attribute("aria-expanded") != "true":
+        famille(page, "Collecte").click()
+    if page.ecran == "pc":
+        page.locator("text.phrase-service.conteneur", has_text="en veille").first.wait_for(timeout=15000)
+        page.locator("text.service", has_text=nom).click()
+    else:
+        tuile = page.locator(".dessous").get_by_role("button", name=re.compile("^" + nom))
+        tuile.get_by_text("en veille").wait_for(timeout=15000)
+        tuile.click()
+    fenetre = page.get_by_role("dialog", name=f"Démarrer {nom} ?")
+    assert "sort de la veille" in fenetre.inner_text()
+    assert not _deborde(page)
+    if os.environ.get("CAPTURES"):
+        page.screenshot(path=f"{os.environ['CAPTURES']}/anneau-veille-demarrer-{page.ecran}.png", full_page=True)
+    fenetre.get_by_role("button", name="Démarrer", exact=True).click()
+    fenetre.wait_for(state="detached", timeout=15000)               # la fenêtre se ferme quand le serveur a accepté
+    page.goto(page.url.split("#")[0] + "#/reglages/services")
+    zone = page.get_by_role("region", name="Applis en veille")
+    zone.locator("label", has_text=nom).get_by_text("tourne").wait_for(timeout=20000)
+    assert not zone.get_by_role("checkbox", name=re.compile("^" + nom)).is_checked()
+    page.goto(page.url.split("#")[0] + "#/")
+    page.locator("svg.anneau").wait_for()
+    famille(page, "Collecte").click()
 
 
 def test_019_applis_a_mettre_a_jour_dans_a_faire(page):

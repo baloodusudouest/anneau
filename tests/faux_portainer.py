@@ -81,11 +81,12 @@ class FauxPortainer:
                 return c
         return None
 
-    def remplacer(self, nom: str, image: str) -> dict:
+    def remplacer(self, nom: str, image: str, demarrer: bool = True) -> dict:
         """Ce que fait Watchtower : arrête l'ancien, crée un nouveau conteneur du même nom (nouvel identifiant, nouvelle
-        image), le démarre."""
+        image), le démarre (0.22 : sauf un conteneur arrêté sans WATCHTOWER_REVIVE_STOPPED)."""
         ancien = self.conteneurs[nom]
-        neuf = {**ancien, "Id": _ident(), "Image": image, "State": {"Status": "running", "Running": True}}
+        etat = {"Status": "running", "Running": True} if demarrer else {"Status": "exited", "Running": False}
+        neuf = {**ancien, "Id": _ident(), "Image": image, "State": etat}
         self.conteneurs[nom] = neuf
         return neuf
 

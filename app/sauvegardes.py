@@ -55,12 +55,14 @@ DEBUT_AGE = "-----BEGIN AGE ENCRYPTED FILE-----"
 FIN_AGE = "-----END AGE ENCRYPTED FILE-----"
 
 # Réglages d'usage de l'Anneau (maison.Reglages dans <données>/reglages.json). Aucune ancienne variable à reprendre.
-DEFAUTS = {"heure_sauvegarde": "03:30", "cle_publique": "", "coffre_obsidian": "Maison"}   # 0.10 : nom du coffre pour les liens obsidian://
+DEFAUTS = {"heure_sauvegarde": "03:30", "cle_publique": "", "coffre_obsidian": "Maison",   # 0.10 : nom du coffre pour les liens obsidian://
+           "veille": ""}      # 0.22 : clés des tuiles en veille, séparées par des virgules (« gazette,comptoir »)
 EXCLUS = ("cle_publique",)   # jamais dans la sauvegarde de l'Anneau (est_secret l'écarte déjà : « cle »)
 
 RE_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 RE_APPLI = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 RE_HEURE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+RE_CLE_TUILE = re.compile(r"^[a-z0-9][a-z0-9-]{0,79}$")
 RE_CLE_AGE = re.compile(r"^age1[02-9ac-hj-np-z]{58}$")       # clé publique age : bech32, 62 caractères
 RE_EXPORT = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{6}(-\d{1,3})?\.age$")
 RE_MANUELLE = re.compile(r"^(\d{4}-\d{2}-\d{2})-\d{6}(-\d{1,3})?-manuelle$")
@@ -87,10 +89,31 @@ def valider(valeurs: dict) -> dict:
             raise Refus("heure_sauvegarde : une heure « HH:MM » est attendue (par exemple 03:30).")
         if k == "cle_publique":
             v = valider_cle(v)
+        if k == "veille":
+            v = joindre_veille(lire_veille(v, strict=True))
         if k == "coffre_obsidian" and (not v or len(v) > 80 or any(c in v for c in "/\\\n")):
             raise Refus("coffre_obsidian : le nom du coffre tel qu'Obsidian l'affiche (80 caractères au plus, sans /).")
         propres[k] = v
     return propres
+
+
+def lire_veille(texte: str, strict: bool = False) -> list[str]:
+    """0.22 : « gazette, comptoir » → ["comptoir", "gazette"] (triées, sans doublon). strict : une clé fausse est refusée."""
+    sortie = set()
+    for x in str(texte or "").split(","):
+        x = x.strip()
+        if not x:
+            continue
+        if not RE_CLE_TUILE.match(x):
+            if strict:
+                raise Refus(f"veille : « {x} » n'est pas une clé de tuile (minuscules, chiffres, « - »).")
+            continue
+        sortie.add(x)
+    return sorted(sortie)
+
+
+def joindre_veille(cles) -> str:
+    return ",".join(sorted(set(cles)))
 
 
 def valider_cle(v: str) -> str:

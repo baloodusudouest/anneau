@@ -156,6 +156,8 @@ ROUTES = {
     ("POST", "/api/ha/etat"): "public", ("POST", "/api/deconnexion"): "chez-soi",
     ("GET", "/api/https"): "lecture", ("GET", "/api/etat"): "lecture",
     ("POST", "/api/reveil/{cle}"): "ailleurs",
+    ("GET", "/api/veille"): "lecture", ("POST", "/api/veille/{cle}"): "ailleurs",
+    ("POST", "/api/veille/{cle}/laisser"): "chez-soi",
     ("POST", "/api/conteneurs/{cle}/{geste}"): "ailleurs", ("POST", "/api/majs/{ident}/mettre-a-jour"): "ailleurs",
     ("POST", "/api/majs/verifier"): "lecture", ("GET", "/api/conteneurs/journal"): "lecture",
     ("GET", "/api/conteneurs/{cle}/stats"): "lecture", ("GET", "/api/applis/{cle}/services"): "lecture",

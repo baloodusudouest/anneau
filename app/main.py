@@ -26,6 +26,9 @@ GET /api/conteneurs/{cle}/stats, GET /api/conteneurs/journal ; fiches « Connexi
 0.19 — GET /api/https (ce que voit le serveur) ; la clé publique et le rangement d'un export exigent une page sûre (403,
 ANNEAU_GARDE_HTTPS=non pour le dépannage) ; POST /api/reveil/{cle} (réveil du PC par le webhook de Home Assistant,
 ANNEAU_HA_URL, ANNEAU_HA_WEBHOOK_REVEIL), fiche « Connexion » Home Assistant ;
+0.22 — applis en veille : liste « veille » des réglages (sauvegardée, restaurée), GET /api/veille, POST /api/veille/{cle}
+({"veille": vrai|faux}), POST /api/veille/{cle}/laisser ; Éteindre et Allumer d'une fiche mettent et sortent de la veille ;
+une appli en veille qui tourne sans ordre donne une tuile « À traiter » (jamais d'arrêt seul) ;
 puis l'interface. Le chiffrement et le déchiffrement de l'export des variables se font dans la page (HTTPS seulement) :
 le serveur ne reçoit jamais que la clé publique et du texte déjà chiffré.
 """
@@ -124,8 +127,10 @@ async def un_tour(veille: Veille) -> None:
             await c.relire(veille.fichier)
         except Exception:                          # noqa: BLE001 — Portainer en panne n'arrête pas la veille
             log.exception("Lecture des conteneurs interrompue")
-        veille.eteints = c.eteints()
+        veille.eteints = c.eteints() | (_en_veille() - set(c.revenues(_en_veille())))   # 0.22 : en veille = arrêt attendu
         veille.versions_conteneurs = c.versions()   # 0.21 : version des applis tierces (étiquette de leur image)
+    else:
+        veille.eteints = _en_veille()
     await veille.tour()
     if c is not None and c.actif:
         await c.suivre(veille.fichier, veille.repond)
@@ -567,7 +572,117 @@ def diagnostic_https(request: Request):
 
 
 def _a_traiter() -> list[dict]:
-    return sauvegardes.a_traiter(ETAT["cfg"].data, cle_publique=ETAT["reglages"].get("cle_publique"))
+    return _tuiles_revenues() + sauvegardes.a_traiter(ETAT["cfg"].data, cle_publique=ETAT["reglages"].get("cle_publique"))
+
+
+# ================================================================ applis en veille (0.22)
+
+def _en_veille() -> set[str]:
+    """Clés des tuiles en veille (réglage « veille »), limitées aux tuiles marquées conteneur:."""
+    r, v = ETAT.get("reglages"), ETAT.get("veille")
+    if r is None or v is None:
+        return set()
+    marquees = {t.cle for t in v.fichier.services if t.conteneur}
+    return set(sauvegardes.lire_veille(r.get("veille") or "")) & marquees
+
+
+def _poser_veille(cles: set[str]) -> None:
+    ETAT["reglages"].changer({"veille": sauvegardes.joindre_veille(cles)})
+
+
+def _revenues() -> list[str]:
+    c = ETAT.get("conteneurs")
+    return c.revenues(_en_veille()) if c is not None and c.actif else []
+
+
+def _tuiles_revenues() -> list[dict]:
+    noms = {t.cle: t.nom for t in ETAT["veille"].fichier.services} if ETAT.get("veille") else {}
+    return [{"cle": f"veille-revenue-{k}", "sorte": "veille-revenue", "tuile": k, "nom": noms.get(k, k),
+             "phrase": f"Revenue de veille : {noms.get(k, k)}",
+             "detail": "Elle tourne sans ordre de l'Anneau (redéploiement de la stack ou démarrage dans Portainer)."}
+            for k in _revenues()]
+
+
+def _partages(t) -> set[str]:
+    """Conteneurs de t (compagnons) encore utilisés par une autre tuile hors veille : jamais arrêtés avec t."""
+    veille = _en_veille()
+    utilises = set()
+    for x in ETAT["veille"].fichier.services:
+        if x.cle != t.cle and x.cle not in veille and x.conteneur:
+            utilises |= {x.conteneur.lower(), *(c.lower() for c in x.compagnons)}
+    return {c for c in t.compagnons if c.lower() in utilises}
+
+
+async def _changer_veille(t, en_veille: bool) -> dict:
+    """Met en veille (ajoute à la liste, puis arrête) ou sort de veille (retire, puis démarre). Un ordre refusé remet la
+    liste comme avant ; « déjà éteint » / « déjà allumé » ne sont pas des refus ici."""
+    gestion = ETAT["conteneurs"]
+    avant = _en_veille()
+    apres = (avant | {t.cle}) if en_veille else (avant - {t.cle})
+    if not t.conteneur:
+        raise HTTPException(404, "Cette tuile n'a pas de conteneur à gérer (champ conteneur: absent).")
+    _poser_veille(apres)
+    ordre = None
+    try:
+        ordre = await gestion.ordonner(t, "eteindre" if en_veille else "allumer", _lecture_seule(),
+                                       partages=_partages(t) if en_veille else frozenset())
+    except conteneurs.Refus as r:
+        e = gestion.etats.get(t.cle) or {}
+        deja = r.statut == 409 and not gestion.en_cours(t.cle) and e and not e.get("absent") \
+            and bool(e.get("running")) != en_veille and "déjà" in r.phrase
+        if not deja:
+            _poser_veille(avant)
+            raise HTTPException(r.statut, r.phrase) from None
+    gestion.noter("veille" if en_veille else "sortie de veille", t.nom, "liste changée", conteneur=t.conteneur)
+    if ETAT.get("reveil") is not None:
+        ETAT["reveil"].set()
+    return {"veille": sorted(apres), "ordre": ordre}
+
+
+def _vue_veille(seule: bool) -> dict:
+    gestion = ETAT.get("conteneurs")
+    veille, revenues = _en_veille(), set(_revenues())
+    lignes = []
+    for t in ETAT["veille"].fichier.services:
+        if not t.conteneur:
+            continue
+        v = gestion.vue(t, seule, en_veille=t.cle in veille) if gestion is not None else None
+        pourquoi = "Portainer n'est pas réglé (ANNEAU_PORTAINER_URL, ANNEAU_PORTAINER_CLE)" if v is None else v["pourquoi"]
+        if not pourquoi and v and v.get("ordre") and v["ordre"].get("etat") == "en_cours":
+            pourquoi = "un ordre est déjà en cours"
+        if not pourquoi and seule:
+            pourquoi = "lecture seule"
+        lignes.append({"cle": t.cle, "nom": t.nom, "famille": t.famille, "machine": (v or {}).get("machine", ""),
+                       "en_veille": t.cle in veille, "revenue": t.cle in revenues,
+                       "statut": (v or {}).get("statut", "inconnu"), "phrase": (v or {}).get("phrase", ""),
+                       "compagnons": list(t.compagnons), "possible": not pourquoi, "pourquoi": pourquoi})
+    return {"tuiles": lignes, "erreur": (gestion.erreur if gestion is not None else "")}
+
+
+@app.get("/api/veille")
+def lire_veille():
+    return _vue_veille(_lecture_seule())
+
+
+@app.post("/api/veille/{cle}")
+async def changer_veille(cle: str, request: Request, corps: dict = Body(...)):
+    """Cocher / décocher une appli en veille (Réglages) ou « Démarrer » depuis une tuile grise. Session, Origin, jamais
+    en lecture seule. Le nom du conteneur vient de services.yaml, jamais de la requête."""
+    _verifier_origine(request)
+    _exiger_ecriture()
+    if not isinstance(corps, dict) or not isinstance(corps.get("veille"), bool):
+        raise HTTPException(400, "Corps attendu : {\"veille\": true} ou {\"veille\": false}.")
+    return await _changer_veille(_tuile(cle), corps["veille"])
+
+
+@app.post("/api/veille/{cle}/laisser")
+def laisser_allumee(cle: str, request: Request):
+    """Une appli revenue de veille : « La laisser allumée » la retire de la liste, sans ordre (rien n'est envoyé)."""
+    _verifier_origine(request)
+    t = _tuile(cle)
+    _poser_veille(_en_veille() - {t.cle})
+    ETAT["conteneurs"].noter("laissée allumée", t.nom, "retirée de la veille", conteneur=t.conteneur)
+    return {"veille": sorted(_en_veille())}
 
 
 @app.get("/api/etat")
@@ -576,11 +691,13 @@ def etat(request: Request):
     maisons = fiches.cibles(ETAT["veille"].fichier, APPLI)       # 0.16 : tuiles qui ont des fiches « Connexion »
     tuiles = {t.cle: t for t in ETAT["veille"].fichier.services}
     gestion, seule = ETAT.get("conteneurs"), _lecture_seule()
+    en_veille = _en_veille()                                     # 0.22
     for fam in e.get("familles", []):
         for s in fam.get("services", []):
             s["fiches"] = s.get("cle") in maisons
             t = tuiles.get(s.get("cle"))                         # 0.17 : conteneur gérable depuis la fiche
-            s["conteneur"] = gestion.vue(t, seule) if gestion is not None and t is not None else None
+            s["conteneur"] = gestion.vue(t, seule, en_veille=t.cle in en_veille) \
+                if gestion is not None and t is not None else None
             s["reveil"] = _vue_reveil(t, seule) if t is not None else None            # 0.19
             b = tuiles.get(t.besoin) if t is not None and t.besoin else None          # 0.19 : « besoin: Pc de calcul »
             s["besoin"] = {"cle": b.cle, "nom": b.nom, "reveil": _vue_reveil(b, seule)} if b is not None else None
@@ -680,6 +797,10 @@ async def ordre_conteneur(cle: str, geste: str, request: Request):
     if geste not in conteneurs.GESTES:
         raise HTTPException(404, "Geste inconnu.")
     t = _tuile(cle)
+    if geste in ("eteindre", "allumer"):                       # 0.22 : un seul état éteint, celui de la veille
+        _exiger_ecriture()
+        r = await _changer_veille(t, geste == "eteindre")
+        return JSONResponse({"ordre": r["ordre"], "veille": r["veille"]}, status_code=202)
     try:
         ordre = await gestion.ordonner(t, geste, _lecture_seule())
     except conteneurs.Refus as r:
@@ -880,7 +1001,7 @@ def _propre() -> dict:
 def _noms_eteints() -> set[str]:
     """0.17 : noms des tuiles dont le conteneur est arrêté chez Portainer (pas demandées à la collecte)."""
     c = ETAT.get("conteneurs")
-    cles = c.eteints() if c is not None else set()
+    cles = (c.eteints() if c is not None else set()) | (_en_veille() - set(_revenues()))   # 0.22 : en veille aussi
     return {s.nom for s in ETAT["veille"].fichier.services if s.cle in cles}
 
 

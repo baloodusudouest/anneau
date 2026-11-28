@@ -386,6 +386,12 @@ def lire_stats(s: dict | None) -> dict | None:
         return None
 
 
+def _resume_compagnon(d: dict) -> dict:
+    """0.22 : ce que l'Anneau garde d'un compagnon (nom réel, marche, projet)."""
+    r = resume(d)
+    return {k: r[k] for k in ("nom_reel", "statut", "running", "projet")}
+
+
 def resume(d: dict) -> dict:
     """Ce que l'Anneau garde d'un GET …/containers/{nom}/json."""
     etat = d.get("State") or {}
@@ -548,9 +554,17 @@ class Conteneurs:
                 continue
             r = resume(d)
             await self._lire_image(m, r["image"])
+            comp = {}
+            for c in getattr(s, "compagnons", ()) or ():          # 0.22 : base, cache… qui suivent l'appli en veille
+                try:
+                    dc = await m.portainer.inspecter(c)
+                except ErreurPortainer as exc:
+                    comp[c] = {"erreur": exc.phrase}
+                    continue
+                comp[c] = {"absent": True} if dc is None else _resume_compagnon(dc)
             self.etats[s.cle] = {**r, "image_date": self._dates.get(r["image"]),
                                  "version_image": self._versions_img.get(r["image"], ""), "machine": m.cle,
-                                 "lu_le": maintenant(), "lecture": self._lectures}
+                                 "lu_le": maintenant(), "lecture": self._lectures, "compagnons": comp}
         for k in [k for k in self.etats if k not in {s.cle for s in marquees}]:
             del self.etats[k]
         self.erreur = erreurs[0] if erreurs else ""
@@ -595,6 +609,20 @@ class Conteneurs:
             return f"Portainer rend un autre conteneur (« {e.get('nom_reel')} ») que celui de la tuile"
         if e.get("projet") != m.projet:
             return f"le conteneur n'a pas l'étiquette {ETIQUETTE_PROJET}={m.projet} (il n'est pas de la stack)"
+        for c in getattr(s, "compagnons", ()) or ():               # 0.22 : mêmes barrières pour chaque compagnon
+            ec = (e.get("compagnons") or {}).get(c)
+            if interdit(c) or (ec and interdit(ec.get("nom_reel", ""))):
+                return f"compagnon « {c} » : l'Anneau ne touche jamais à ce conteneur"
+            if ec is None:
+                return f"compagnon « {c} » pas encore lu chez Portainer"
+            if ec.get("erreur"):
+                return f"compagnon « {c} » : {ec['erreur']}"
+            if ec.get("absent"):
+                return f"Portainer ne connaît pas de conteneur « {c} » (compagnon)"
+            if ec.get("nom_reel") != c:
+                return f"compagnon « {c} » : Portainer rend un autre conteneur (« {ec.get('nom_reel')} »)"
+            if ec.get("projet") != m.projet:
+                return f"compagnon « {c} » : pas l'étiquette {ETIQUETTE_PROJET}={m.projet} (il n'est pas de la stack)"
         return ""
 
     def raison_maj(self, e: dict | None, m: Machine | None = None) -> str:
@@ -619,8 +647,9 @@ class Conteneurs:
         return any(o.get("etat") == "en_cours" and t - o.get("debut_t", 0) < PRESSE for o in self.ordres.values())
 
     # ------------------------------------------------------------ ordres
-    async def ordonner(self, s, geste: str, lecture_seule: bool) -> dict:
-        """Vérifie toutes les barrières (nom relu chez Portainer), lance l'ordre, rend l'ordre en cours. Refus : Refus."""
+    async def ordonner(self, s, geste: str, lecture_seule: bool, partages: frozenset[str] | set[str] = frozenset()) -> dict:
+        """Vérifie toutes les barrières (nom relu chez Portainer), lance l'ordre, rend l'ordre en cours. Refus : Refus.
+        0.22 : `partages` = compagnons encore utilisés par une autre tuile hors veille (jamais arrêtés)."""
         nom_tuile = s.nom if s else "?"
         try:
             if geste not in GESTES:
@@ -650,6 +679,14 @@ class Conteneurs:
             await self._lire_image(m, e["image"])
             e["image_date"] = self._dates.get(e["image"])
             e["version_image"] = self._versions_img.get(e["image"], "")
+            comp = {}
+            for c in getattr(s, "compagnons", ()) or ():
+                try:
+                    dc = await m.portainer.inspecter(c)
+                except ErreurPortainer as exc:
+                    raise Refus(502, exc.phrase) from exc
+                comp[c] = {"absent": True} if dc is None else _resume_compagnon(dc)
+            e["compagnons"] = comp
             self.etats[s.cle] = {**e, "machine": m.cle, "lu_le": maintenant(), "lecture": self._lectures}
             raison = self.barriere(s, e)
             if raison:
@@ -660,9 +697,12 @@ class Conteneurs:
                 if raison:
                     raise Refus(409, raison)
                 image, _ = image_pour_watchtower(e["image_nom"])
+            garder = {p.lower() for p in partages}
+            a_arreter = [c for c in comp if comp[c].get("running") and c.lower() not in garder]
+            a_demarrer = [c for c in comp if not comp[c].get("running")]
             if geste == "allumer" and e["running"]:
                 raise Refus(409, f"{s.nom} est déjà allumé.")
-            if geste == "eteindre" and not e["running"]:
+            if geste == "eteindre" and not e["running"] and not a_arreter:
                 raise Refus(409, f"{s.nom} est déjà éteint.")
         except Refus as r:
             self.noter(geste, nom_tuile, f"refusé : {r.phrase}", conteneur=getattr(s, "conteneur", "") or None)
@@ -670,7 +710,9 @@ class Conteneurs:
         t = self._horloge()
         ordre = {"geste": geste, "tuile": s.nom, "conteneur": s.conteneur, "etat": "en_cours", "debut": maintenant(),
                  "debut_t": t, "id_avant": e["id"], "image_avant": e["image"], "date_avant": e.get("image_date"),
-                 "phrase": EN_COURS[geste], "detail": "", "demarre": False, "image_param": image, "machine": m.cle}
+                 "phrase": EN_COURS[geste], "detail": "", "demarre": False, "image_param": image, "machine": m.cle,
+                 "app_en_marche": e["running"], "arrete": geste == "mettre-a-jour" and not e["running"],
+                 "compagnons": a_arreter if geste == "eteindre" else a_demarrer if geste == "allumer" else []}
         self.ordres[s.cle] = ordre
         self._garder()
         self.noter(geste, s.nom, "lancé", conteneur=s.conteneur, machine=m.cle)
@@ -684,10 +726,24 @@ class Conteneurs:
     async def _executer(self, cle: str, nom: str, conteneur: str, geste: str, image: str) -> None:
         """L'appel lui-même. Sa réponse ne dit pas le résultat (sauf un refus net) : c'est le suivi qui conclut."""
         m = self._machine_ordre(self.ordres.get(cle) or {}) or self.synology
+        o0 = self.ordres.get(cle) or {}
+        compagnons = list(o0.get("compagnons") or [])
         try:
             if geste == "eteindre":
-                statut = await m.portainer.ordre(conteneur, "stop")
+                statut = 304
+                if o0.get("app_en_marche", True):
+                    statut = await m.portainer.ordre(conteneur, "stop")
+                for c in compagnons:                         # 0.22 : l'appli d'abord, puis sa base, son cache
+                    try:
+                        await m.portainer.ordre(c, "stop")
+                    except ErreurPortainer as exc:
+                        log.warning("Compagnon %s non arrêté : %s", c, exc.phrase)
             elif geste == "allumer":
+                for c in compagnons:                         # 0.22 : la base et le cache d'abord
+                    await m.portainer.ordre(c, "start")
+                    if not await self._attendre_compagnon(m, c):
+                        self._finir(cle, "echec", f"le compagnon « {c} » n'a pas démarré : l'appli n'est pas allumée, voir Portainer.")
+                        return
                 statut = await m.portainer.ordre(conteneur, "start")
             else:
                 if geste == "allumer-et-mettre-a-jour":
@@ -719,6 +775,17 @@ class Conteneurs:
         finally:
             if self.reveil is not None:
                 self.reveil.set()
+
+    async def _attendre_compagnon(self, m: Machine, nom: str) -> bool:
+        """0.22 : un compagnon démarré tourne-t-il (avant d'allumer l'appli) ?"""
+        fin = time.monotonic() + self.delai_demarrage
+        while True:
+            d = await m.portainer.inspecter(nom)
+            if d and (d.get("State") or {}).get("Running"):
+                return True
+            if time.monotonic() >= fin:
+                return False
+            await asyncio.sleep(min(1.0, max(self.delai_demarrage / 20, 0.01)))
 
     async def _attendre_marche(self, cle: str, conteneur: str) -> bool:
         """« Allumer et mettre à jour » : Watchtower ignore un conteneur arrêté, on attend donc qu'il tourne."""
@@ -820,6 +887,8 @@ class Conteneurs:
         wt = o.get("wt", "")
         neuve = bool(e.get("image")) and e.get("image") != o.get("image_avant")
         repondu = wt == "fini" and e.get("lecture", 0) > o.get("wt_lecture", 10 ** 12)
+        if o.get("arrete"):                               # 0.22 : appli en veille, Watchtower la met à jour sans la rallumer
+            return self._suivre_maj_arrete(cle, o, e, neuve, repondu)
         if not e.get("running"):
             if repondu:
                 self._finir(cle, "echec", "le conteneur n'est pas en marche après le passage de Watchtower : voir Portainer.")
@@ -848,8 +917,33 @@ class Conteneurs:
             self._finir(cle, "fini", "déjà à jour.")
         return True
 
+    def _suivre_maj_arrete(self, cle: str, o: dict, e: dict, neuve: bool, repondu: bool) -> bool:
+        """0.22 : mise à jour d'un conteneur arrêté (WATCHTOWER_INCLUDE_STOPPED=true, REVIVE_STOPPED=false dans la stack) :
+        fini dès que l'empreinte d'image change ; jamais d'attente de « running » ni de /health."""
+        if neuve:
+            avant, apres = jour_mois(o.get("date_avant")), jour_mois(e.get("image_date"))
+            reste = " (toujours arrêté)" if not e.get("running") else ""
+            self._finir(cle, "fini", (f"image du {avant} → {apres}" if avant and apres else "nouvelle image") + reste + ".")
+            return True
+        if not repondu:
+            return False
+        r = o.get("wt_resume") or {}
+        if r.get("failed"):
+            self._finir(cle, "echec", "Watchtower signale un échec (voir son journal) : image inchangée.")
+        elif r and not r.get("scanned"):
+            self._finir(cle, "echec", "Watchtower n'a pas vu le conteneur arrêté : WATCHTOWER_INCLUDE_STOPPED=true dans "
+                                      "son service de la stack ? Rien n'a changé.")
+        else:
+            self._finir(cle, "fini", "déjà à jour.")
+        return False
+
+    def revenues(self, cles) -> list[str]:
+        """0.22 : tuiles de la liste « en veille » dont le conteneur tourne sans ordre de l'Anneau en cours (redéploiement
+        de la stack, démarrage à la main dans Portainer : l'Anneau ne sait pas lequel). Rien n'est arrêté seul."""
+        return sorted(k for k in cles if (self.etats.get(k) or {}).get("running") and not self.en_cours(k))
+
     # ------------------------------------------------------------ pour l'écran
-    def vue(self, s, lecture_seule: bool) -> dict | None:
+    def vue(self, s, lecture_seule: bool, en_veille: bool = False) -> dict | None:
         """Ce que /api/etat rend pour une tuile marquée (None : pas de conteneur, ou Portainer pas réglé)."""
         if not self.actif or not s.conteneur:
             return None
@@ -869,7 +963,7 @@ class Conteneurs:
         elif o and o.get("fin_t") and t - o["fin_t"] < RESULTAT_VISIBLE and not (o["geste"] == "eteindre" and o["etat"] == "fini"):
             phrase = o["phrase"].rstrip(".")
         elif statut == "exited":
-            phrase = "éteint"
+            phrase = "en veille" if en_veille else "éteint"
         date = (e or {}).get("image_date")
         age = None
         if date:
@@ -881,6 +975,7 @@ class Conteneurs:
                 "image_date": date, "image_age": age, "redemarrage": (e or {}).get("redemarrage", ""),
                 "maj": not raison and not raison_maj, "maj_pourquoi": raison_maj,
                 "machine": "QNAP" if self.est_qnap(s) else "Synology",
+                "compagnons": list(getattr(s, "compagnons", ()) or ()), "en_veille": en_veille,
                 "lecture_seule": lecture_seule, "erreur": self.erreur}
 
     async def stats(self, s) -> dict:

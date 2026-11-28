@@ -14,6 +14,8 @@
   //    Pendant un ordre, la phrase est écrite sur la tuile et l'écran se relit toutes les 2,5 s.
   // 0.18 : « À faire quand tu veux » montre aussi les applis de la stack à mettre à jour (une ligne repliée, un bouton par
   //    appli : MisesAJour.svelte) ; pendant une mise à jour, l'écran se relit toutes les 2,5 s.
+  // 0.22 : une appli en veille reste grise à sa place ; un clic sur elle ouvre « Démarrer … ? » (Demarrer.svelte) au lieu
+  //    de la fiche. « À traiter » : « Revenue de veille » avec « Remettre en veille » et « La laisser allumée ».
   import { onMount } from 'svelte'
   import { api } from '$lib/api.js'
   import { duree, secondes } from '$lib/temps.js'
@@ -23,6 +25,7 @@
   import Conteneur from '$lib/Conteneur.svelte'
   import Reveil from '$lib/Reveil.svelte'
   import MisesAJour from '$lib/MisesAJour.svelte'
+  import Demarrer from '$lib/Demarrer.svelte'
   import { Button } from '$lib/components/ui/button/index.js'
 
   let { ondeconnecte, onreglages } = $props()
@@ -74,7 +77,8 @@
   const leService = $derived(familleDuService?.services.find((s) => s.cle === service.cle) || null)
 
   const PHRASES = { ok: 'répond', panne: 'ne répond plus', eteint: 'est éteint (arrêt attendu)', inconnu: 'pas encore vérifié' }
-  const phraseEtat = (s) => (s.etat === 'eteint' && s.conteneur?.statut === 'exited' ? 'est éteint (conteneur arrêté)' : PHRASES[s.etat])
+  const phraseEtat = (s) => (s.etat === 'eteint' && s.conteneur?.en_veille ? 'est en veille'
+    : s.etat === 'eteint' && s.conteneur?.statut === 'exited' ? 'est éteint (conteneur arrêté)' : PHRASES[s.etat])
   const ETATS_TACHE = { ok: 'ok', en_retard: 'en retard', bloquee: 'bloquée', jamais: 'pas encore passée', erreur: 'dernier essai en erreur' }
   const octets = (n) => (n == null ? '' : n < 1048576 ? `${Math.max(1, Math.round(n / 1024))} Ko` : `${(n / 1048576).toFixed(1).replace('.', ',')} Mo`)
   const periode = (n) => (!n ? '' : n % 86400 === 0 ? (n === 86400 ? 'chaque jour' : `tous les ${n / 86400} j`) : n % 3600 === 0 ? (n === 3600 ? 'chaque heure' : `toutes les ${n / 3600} h`) : n >= 60 ? `toutes les ${Math.round(n / 60)} min` : `toutes les ${n} s`)
@@ -98,6 +102,19 @@
   // Toucher le service déjà affiché le recharge.
   const ouvrir = (f, s) => { garder(s, service?.cle === s.cle); service = { famille: f.cle, cle: s.cle }; ouverte = f.cle; etatOuvert = false }
   const fermer = () => { service = null; etatOuvert = false }
+  // 0.22 : tuile grise en veille → fenêtre « Démarrer » ; sinon le service s'ouvre comme avant
+  let aDemarrer = $state(null)       // { famille, service }
+  const enVeille = (s) => allumable(s) && !!s.conteneur?.en_veille && s.conteneur?.ordre?.etat !== 'en_cours'
+  const toucher = (f, s) => { if (enVeille(s)) aDemarrer = { f, s }; else ouvrir(f, s) }
+  let traiteMsg = $state('')
+  async function revenue(x, remettre) {
+    traiteMsg = ''
+    try {
+      if (remettre) await api.post(`/api/veille/${encodeURIComponent(x.tuile)}`, { veille: true })
+      else await api.post(`/api/veille/${encodeURIComponent(x.tuile)}/laisser`)
+      await lire()
+    } catch (err) { traiteMsg = err.message }
+  }
   // 0.12 : « Voir » d'une tuile orange ouvre le service sur sa fiche « État »
   function voirEtat(x) {
     const f = familles.find((g) => g.cle === x.famille_cle), s = f?.services.find((t) => t.cle === x.cle)
@@ -235,12 +252,12 @@
           {#if leService.version_phrase}<p class="version-tuile text-sm">{leService.version_phrase}</p>{/if}
           <p role="status">{leService.nom} {phraseEtat(leService)}{leService.depuis ? ` depuis ${duree(leService.depuis, tic)}` : ''}{leService.etat === 'ok' && leService.delai != null ? ` · réponse en ${leService.delai} ms` : ''}.</p>
           {#if leService.machine_en_panne}<p class="text-sm text-muted-foreground">{leService.machine} ne répond plus : c'est lui qui est en panne.</p>{/if}
-          <!-- 0.17 : conteneur arrêté : « Allumer » et « Allumer et mettre à jour » à la place de « Ouvrir » -->
+          <!-- 0.17 : conteneur arrêté : les boutons du conteneur à la place de « Ouvrir » (0.22 : « Démarrer », « Mettre à jour ») -->
           {#if !allumable(leService)}<Button onclick={() => dehors(leService)}>Ouvrir {leService.nom}</Button>{/if}
           {#if leService.conteneur}{#key leService.cle}<Conteneur s={leService} onfait={lire} />{/key}{/if}
           {#if leService.reveil}<Reveil cible={leService} onfait={lire} />{/if}
           {#if leService.besoin}<Reveil cible={leService.besoin} besoin appli={leService.nom} onfait={lire} />{/if}
-          {#if !allumable(leService)}<p class="text-sm text-muted-foreground">{leService.cadre ? (leService.etat === 'eteint' ? 'Éteint : rien à afficher ici.' : 'En panne : rien à afficher ici.') : `${leService.nom} s'ouvre à côté, toujours dans la même fenêtre : ${leService.hors_cadre}.`}</p>{/if}
+          {#if !allumable(leService)}<p class="text-sm text-muted-foreground">{leService.cadre ? (leService.etat === 'eteint' ? (leService.conteneur?.en_veille ? 'En veille : rien à afficher ici.' : 'Éteint : rien à afficher ici.') : 'En panne : rien à afficher ici.') : `${leService.nom} s'ouvre à côté, toujours dans la même fenêtre : ${leService.hors_cadre}.`}</p>{/if}
         </div>
       {/if}
     </section>
@@ -257,13 +274,13 @@
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M5 7.500h6M15 7.500h4M5 16.500h3M12 16.500h7" /><circle cx="13" cy="7.500" r="2" /><circle cx="10" cy="16.500" r="2" /></svg>
     </button>
     <div class="rond">
-      <Cercle {familles} {etats} {ouverte} {etroit} {centre} onfamille={deplier} onservice={(s) => ouvrir(familleOuverte, s)} onmilieu={onglet} />
+      <Cercle {familles} {etats} {ouverte} {etroit} {centre} onfamille={deplier} onservice={(s) => toucher(familleOuverte, s)} onmilieu={onglet} />
       {#if etroit && familleOuverte}
         <div class="dessous" aria-label={'Services de ' + familleOuverte.nom}>
           <h2 class="plume">{familleOuverte.nom}</h2>
           <div class="pastilles libres">
             {#each familleOuverte.services as s, i (s.cle)}
-              <button type="button" style:animation-delay="{i * 28}ms" class:surveiller={s.surveiller} class:avec-phrase={!!phraseConteneur(s)} onclick={() => ouvrir(familleOuverte, s)} {...milieu(s)}><Icone icone={s.icone} etat={etatIcone(s)} />{s.nom}{#if phraseConteneur(s)}<span class="phrase-conteneur">{#if tourne(s)}<span class="tourne" aria-hidden="true"></span>{/if}{phraseConteneur(s)}</span>{/if}{#if s.surveiller}<span class="phrase-tuile">{s.phrase}</span>{:else if s.vu}<span class="vu" title="Vu : redevient orange au prochain changement">vu</span>{/if}</button>
+              <button type="button" style:animation-delay="{i * 28}ms" class:surveiller={s.surveiller} class:avec-phrase={!!phraseConteneur(s)} onclick={() => toucher(familleOuverte, s)} {...milieu(s)}><Icone icone={s.icone} etat={etatIcone(s)} />{s.nom}{#if phraseConteneur(s)}<span class="phrase-conteneur">{#if tourne(s)}<span class="tourne" aria-hidden="true"></span>{/if}{phraseConteneur(s)}</span>{/if}{#if s.surveiller}<span class="phrase-tuile">{s.phrase}</span>{:else if s.vu}<span class="vu" title="Vu : redevient orange au prochain changement">vu</span>{/if}</button>
             {/each}
           </div>
         </div>
@@ -321,10 +338,18 @@
             {#each aTraiter as x (x.cle)}
               <li>
                 <span>{x.phrase}{#if x.detail}<small>{x.detail}</small>{/if}</span>
+                {#if x.sorte === 'veille-revenue'}
+                  <span class="choix">
+                    <button type="button" class="lien" onclick={() => revenue(x, true)} aria-label={'Remettre en veille : ' + x.nom}>Remettre en veille</button>
+                    <button type="button" class="lien" onclick={() => revenue(x, false)} aria-label={'La laisser allumée : ' + x.nom}>La laisser allumée</button>
+                  </span>
+                {:else}
                 <button type="button" class="lien" onclick={() => (location.hash = x.cle === 'export-variables' ? '#/reglages/stack/exports' : '#/reglages/sauvegardes')} aria-label={'Voir : ' + x.phrase}>Voir</button>
+                {/if}
               </li>
             {/each}
           </ul>
+          {#if traiteMsg}<p class="text-sm text-destructive" role="alert">{traiteMsg}</p>{/if}
         </section>
       {/if}
       {#if !pannes.length && !surveiller.length && !nbFaire && !aTraiter.length && e.fraicheur.sonde}
@@ -333,6 +358,10 @@
     </div>
   </div>
 {/if}
+{/if}
+
+{#if aDemarrer}
+  <Demarrer s={aDemarrer.s} onfait={lire} onferme={() => (aDemarrer = null)} onfiche={() => ouvrir(aDemarrer.f, aDemarrer.s)} />
 {/if}
 
 <style>
@@ -396,6 +425,7 @@
   .taches tr.defaut td { color: var(--braise); }
   .rang.traiter { border-color: color-mix(in srgb, var(--app) 45%, var(--border)); }
   .rang.traiter h2 { color: var(--app); }
+  .choix { display: inline-flex; flex-wrap: wrap; gap: 0.25rem 0.9rem; justify-content: flex-end; }
   .rang ul { display: grid; gap: 0.65rem; margin: 0; padding: 0; list-style: none; }
   .rang li { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; }
   .rang li span { min-width: 0; }

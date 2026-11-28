@@ -34,8 +34,9 @@ def _maintenant() -> str:
 
 class FauxWatchtower:
     def __init__(self, docker: FauxPortainer, jeton: str = JETON, lenteur: float = 0.0, containers_api: bool = False,
-                 metrics_api: bool = False):
+                 metrics_api: bool = False, include_stopped: bool = False, revive_stopped: bool = False):
         self.docker, self.jeton, self.lenteur = docker, jeton, lenteur
+        self.include_stopped, self.revive_stopped = include_stopped, revive_stopped   # 0.22 : WATCHTOWER_INCLUDE_STOPPED…
         self.containers_api, self.metrics_api = containers_api, metrics_api
         self.verrou = asyncio.Lock()
         self.echec: set[str] = set()              # conteneurs dont la mise à jour échoue (failed)
@@ -56,8 +57,9 @@ class FauxWatchtower:
     def mise_a_jour(self, images: list[str] | None) -> dict:
         r = {"scanned": 0, "updated": 0, "failed": 0, "restarted": 0, "skipped": 0}
         for nom, c in list(self.docker.conteneurs.items()):
-            if not c["State"]["Running"]:
-                continue                              # Watchtower ne regarde que les conteneurs en marche
+            arrete = not c["State"]["Running"]
+            if arrete and not self.include_stopped:
+                continue                              # sans INCLUDE_STOPPED, Watchtower ne regarde que les conteneurs en marche
             if (c["Config"].get("Labels") or {}).get(ETIQUETTE, "").lower() == "false":
                 continue
             nom_image = c["Config"]["Image"]
@@ -72,7 +74,7 @@ class FauxWatchtower:
                 continue
             derniere = self.docker.dernieres.get(nom_image)
             if derniere and derniere != c["Image"]:
-                self.docker.remplacer(nom, derniere)
+                self.docker.remplacer(nom, derniere, demarrer=not arrete or self.revive_stopped)
                 r["updated"] += 1
         return r
 

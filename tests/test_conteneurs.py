@@ -277,12 +277,13 @@ def test_eteindre_puis_allumer(client, faux):
     assert attendre(lambda: faux.etat("bac-a-sable") == "exited")
     tour(client)
     t = tuile(client, "Bac à sable")
-    assert t["etat"] == "eteint" and t["conteneur"]["statut"] == "exited" and t["conteneur"]["phrase"] == "éteint"
+    assert t["etat"] == "eteint" and t["conteneur"]["statut"] == "exited" and t["conteneur"]["phrase"] == "en veille"
     assert t["conteneur"]["ordre"]["etat"] == "fini"
     tour(client, 4)                                                             # jamais « en panne »
     e = client.get("/api/etat").json()
     assert not e["pannes"] and tuile(client, "Bac à sable")["etat"] == "eteint"
-    assert ordre(client, "bac-a-sable", "eteindre").status_code == 409          # déjà éteint
+    r = ordre(client, "bac-a-sable", "eteindre")                               # 0.22 : déjà éteint = reste en veille
+    assert r.status_code == 202 and r.json()["ordre"] is None and r.json()["veille"] == ["bac-a-sable"]
     r = ordre(client, "bac-a-sable", "allumer")
     assert r.status_code == 202 and r.json()["ordre"]["phrase"] == "démarrage…"
     assert attendre(lambda: faux.etat("bac-a-sable") == "running")
@@ -290,7 +291,8 @@ def test_eteindre_puis_allumer(client, faux):
     t = tuile(client, "Bac à sable")
     assert t["etat"] == "ok" and t["conteneur"]["ordre"]["phrase"] == "allumé."
     lignes = [json.loads(l) for l in (main.ETAT["cfg"].data / conteneurs.JOURNAL).read_text().splitlines()]
-    assert [(l["quoi"], l["resultat"].split(" ")[0]) for l in lignes if l["tuile"] == "Bac à sable"] == [
+    assert [(l["quoi"], l["resultat"].split(" ")[0]) for l in lignes
+            if l["tuile"] == "Bac à sable" and l["quoi"] in ("eteindre", "allumer")] == [
         ("eteindre", "lancé"), ("eteindre", "refusé"), ("eteindre", "fini"), ("eteindre", "refusé"),
         ("allumer", "lancé"), ("allumer", "fini")]
     assert all(set(l) >= {"quand", "quoi", "tuile", "resultat"} for l in lignes)

@@ -58,6 +58,8 @@ class Service:
     reveil: bool = False        # 0.19 : « reveil: true » — machine qu'on réveille depuis sa fiche (webhook de Home Assistant)
     besoin: str = ""            # 0.19 : clé de la tuile réveillable dont l'appli a besoin (« besoin: Pc de calcul ») ;
                                 #        sa fiche propose « Réveiller » quand cette tuile est éteinte
+    compagnons: tuple[str, ...] = ()  # 0.22 : conteneurs qui suivent l'appli en veille (base, cache) : arrêtés après elle,
+                                      #        démarrés avant elle ; même format et mêmes interdits que conteneur:
 
     @property
     def a_sonder(self) -> str:
@@ -166,6 +168,25 @@ def _conteneur(valeur, nom: str, erreurs: list[str]) -> str:
     if erreur:
         erreurs.append(f"{nom} : {erreur}")
     return v
+
+
+def _compagnons(valeur, nom: str, conteneur: str, erreurs: list[str]) -> tuple[str, ...]:
+    """0.22 : « compagnons: [treemich_api, treemich_db] » — seulement avec un conteneur:, chacun vérifié comme lui."""
+    if valeur in (None, "", []):
+        return ()
+    if not conteneur:
+        erreurs.append(f"{nom} : compagnons sans conteneur:, ignorés.")
+        return ()
+    liste = valeur if isinstance(valeur, list) else [valeur]
+    sortie: list[str] = []
+    for x in liste:
+        v, erreur = verifier_nom(x)
+        if erreur:
+            erreurs.append(f"{nom} : compagnon : {erreur}")
+            continue
+        if v and v.lower() != conteneur.lower() and v.lower() not in {c.lower() for c in sortie}:
+            sortie.append(v)
+    return tuple(sortie)
 
 
 def _figees(brut, erreurs: list[str]) -> tuple[dict, ...]:
@@ -292,7 +313,8 @@ def comprendre(texte: str, exemple: bool = False, modifie_le: str = "") -> Fichi
                                 depot=_depot(s.get("depot"), nom, erreurs),
                                 version_url=_adresse(s.get("version_url"), f"{nom} (version_url)", erreurs),
                                 conteneur=conteneur, reveil=s.get("reveil") is True,
-                                besoin=str(s.get("besoin") or "").strip()))
+                                besoin=str(s.get("besoin") or "").strip(),
+                                compagnons=_compagnons(s.get("compagnons"), nom, conteneur, erreurs)))
     services = _besoins(services, erreurs)
     reglages = brut.get("reglages") or {}
     try:
